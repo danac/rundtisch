@@ -1,0 +1,112 @@
+{
+  "brand": {
+    "name": "Wren & Willow",
+    "tagline": "Watercolor birds, lettering & little stories"
+  },
+  "nav": {
+    "home": "Home",
+    "portfolio": "Portfolio",
+    "merch": "Shop",
+    "about": "About",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu",
+    "skipToContent": "Skip to content"
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Illustration studio",
+      "title": "Hand-painted birds & happy little stories",
+      "subtitle": "I'm a watercolor artist painting feathered friends, playful hand lettering, and warm illustrations for children's books and curious grown-ups alike.",
+      "ctaPortfolio": "See the portfolio",
+      "ctaShop": "Visit the shop"
+    },
+    "featured": {
+      "eyebrow": "Fresh from the studio",
+      "title": "A little gallery",
+      "subtitle": "A handful of recent watercolor pieces. Tap any painting to take a closer look.",
+      "viewAll": "View the full portfolio"
+    },
+    "categories": {
+      "eyebrow": "What I make",
+      "title": "Three things I love to paint",
+      "birds": {
+        "title": "Birds in watercolor",
+        "text": "Robins, blue tits, owls and hummingbirds, painted with loose, lively washes."
+      },
+      "lettering": {
+        "title": "Playful lettering",
+        "text": "Cheerful hand-lettered words and quotes with a splash of watercolor color."
+      },
+      "children": {
+        "title": "Stories for children",
+        "text": "Warm, characterful illustrations made for picture books and nurseries."
+      }
+    },
+    "cta": {
+      "title": "Let's make something lovely",
+      "subtitle": "Commissions, picture books, and licensing - I'd love to hear what you're dreaming up.",
+      "button": "Get in touch"
+    }
+  },
+  "about": {
+    "eyebrow": "About the artist",
+    "title": "Hello, I'm the maker behind Wren & Willow",
+    "intro": "I'm an illustrator working in watercolor from a sunny little studio. My days are spent painting birds, lettering joyful words, and dreaming up characters for children's stories.",
+    "bodyOne": "I fell in love with watercolor for its happy accidents - the way colors bloom and bleed into something more alive than I planned. Birds became my favorite subject: each one has a personality waiting to be coaxed out with a few confident brushstrokes.",
+    "bodyTwo": "Alongside my bird paintings, I letter cheerful phrases and create gentle, characterful illustrations for picture books, nurseries, and families. Every piece starts on real paper before it ever becomes a print or product.",
+    "factsTitle": "A few things about me",
+    "facts": {
+      "medium": "Medium: watercolor, gouache & ink on cotton paper",
+      "based": "Based in a tiny studio full of plants",
+      "loves": "Happiest painting: robins, owls & hummingbirds",
+      "work": "Open to: commissions, picture books & licensing"
+    },
+    "cta": "Work with me"
+  },
+  "portfolio": {
+    "eyebrow": "Portfolio",
+    "title": "A gallery of recent work",
+    "subtitle": "Browse by what you love - or see it all. Tap a piece to view it larger.",
+    "filters": {
+      "all": "Everything",
+      "birds": "Birds",
+      "lettering": "Lettering",
+      "children": "Children's"
+    },
+    "empty": "No pieces in this category yet - check back soon!"
+  },
+  "merch": {
+    "eyebrow": "Shop",
+    "title": "Prints & lovely things",
+    "subtitle": "Bring a little watercolor joy home. Prints, cards and gifts featuring original paintings.",
+    "from": "from",
+    "soldOut": "Sold out",
+    "buy": "View product",
+    "empty": "The shop is being restocked - please check back soon!"
+  },
+  "categories": {
+    "birds": "Birds",
+    "lettering": "Lettering",
+    "children": "Children's"
+  },
+  "footer": {
+    "tagline": "Hand-painted watercolor birds, lettering & illustrations for children.",
+    "explore": "Explore",
+    "connect": "Connect",
+    "newsletter": "Studio notes",
+    "newsletterText": "Occasional letters with new paintings and shop restocks.",
+    "emailPlaceholder": "you@example.com",
+    "subscribe": "Subscribe",
+    "rights": "All rights reserved.",
+    "madeWith": "Painted & coded with care."
+  },
+  "common": {
+    "loading": "Loading lovely things...",
+    "errorTitle": "Something went wrong",
+    "errorBody": "We couldn't load this just now. Please try again.",
+    "retry": "Try again",
+    "close": "Close",
+    "previous": "Previous",
+    "next": "Next"
+  }
+}
