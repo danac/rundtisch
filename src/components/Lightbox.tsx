@@ -56,14 +56,14 @@ export function Lightbox({ items, index, onClose, onNavigate }: LightboxProps) {
         </button>
       </div>
 
-      <div
-        className="flex flex-1 items-center justify-center gap-3 overflow-hidden sm:gap-6"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex flex-1 items-center justify-center gap-3 overflow-hidden sm:gap-6">
         {items.length > 1 && (
           <button
             type="button"
-            onClick={goPrev}
+            onClick={(e) => {
+              e.stopPropagation();
+              goPrev();
+            }}
             aria-label={t("common.previous")}
             className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
           >
@@ -75,6 +75,7 @@ export function Lightbox({ items, index, onClose, onNavigate }: LightboxProps) {
           <img
             src={item.image}
             alt={item.alt}
+            onClick={(e) => e.stopPropagation()}
             className="max-h-[70vh] w-auto rounded-soft object-contain shadow-lift animate-fade-in"
           />
           <figcaption className="mt-4 text-center text-white">
@@ -88,7 +89,10 @@ export function Lightbox({ items, index, onClose, onNavigate }: LightboxProps) {
         {items.length > 1 && (
           <button
             type="button"
-            onClick={goNext}
+            onClick={(e) => {
+              e.stopPropagation();
+              goNext();
+            }}
             aria-label={t("common.next")}
             className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
           >
