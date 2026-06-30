@@ -1,4 +1,3 @@
-import { useTranslation } from "react-i18next";
 import type { Artwork } from "../types/portfolio";
 import { AsyncImage } from "./AsyncImage";
 
@@ -8,8 +7,6 @@ interface ArtworkCardProps {
 }
 
 export function ArtworkCard({ artwork, onSelect }: ArtworkCardProps) {
-  const { t } = useTranslation();
-
   return (
     <button
       type="button"
@@ -22,16 +19,11 @@ export function ArtworkCard({ artwork, onSelect }: ArtworkCardProps) {
         ratio="4 / 3"
         className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
       />
-      <div className="flex items-center justify-between gap-3 px-5 py-4">
-        <div>
-          <h3 className="text-lg font-bold leading-tight">{artwork.title}</h3>
-          {artwork.year && (
-            <p className="text-sm text-ink-soft">{artwork.year}</p>
-          )}
-        </div>
-        <span className="pill bg-teal-50 text-teal-600">
-          {t(`categories.${artwork.category}`)}
-        </span>
+      <div className="px-5 py-4">
+        <h3 className="text-lg font-bold leading-tight">{artwork.title}</h3>
+        {artwork.year && (
+          <p className="mt-1 text-sm text-ink-soft">{artwork.year}</p>
+        )}
       </div>
     </button>
   );

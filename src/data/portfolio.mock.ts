@@ -1,79 +1,269 @@
-import type { Artwork } from "../types/portfolio";
+import type { Collection } from "../types/portfolio";
 
 /**
- * Local sample portfolio data. This stands in for a future REST response;
- * the shape matches the `Artwork` type so the service can swap to `fetch`
- * without touching any components.
+ * Local sample portfolio data grouped into collections. This stands in for a
+ * future REST response; the shape matches the `Collection` type so the
+ * service can swap to `fetch` without touching any components.
  */
-export const portfolioMock: Artwork[] = [
+export const collectionsMock: Collection[] = [
   {
-    id: "robin-blossom",
-    title: "Robin on Blossom",
+    id: "garden-birds",
+    slug: "garden-birds",
+    title: "Garden Birds",
     category: "birds",
-    image: "/images/bird-robin.png",
-    alt: "Watercolor robin perched on a blossoming cherry branch",
-    year: 2026,
+    description:
+      "Robins and blue tits painted through the seasons — from spring blossoms to winter frost.",
     featured: true,
+    artworks: [
+      {
+        id: "robin-blossom",
+        title: "Robin on Blossom",
+        image: "/images/bird-robin.png",
+        alt: "Watercolor robin perched on a blossoming cherry branch",
+        year: 2026,
+      },
+      {
+        id: "blue-tits",
+        title: "Two Blue Tits",
+        image: "/images/bird-bluetits.png",
+        alt: "A pair of blue tit birds on a flowering twig in teal and yellow",
+        year: 2026,
+      },
+      {
+        id: "blue-tits-spring-morning",
+        title: "Blue Tits — Spring Morning",
+        image: "/images/bird-bluetits-spring-morning-variation.png",
+        alt: "Blue tits among spring blossoms in soft morning light",
+        year: 2026,
+      },
+      {
+        id: "blue-tits-autumn-berries",
+        title: "Blue Tits — Autumn Berries",
+        image: "/images/bird-bluetits-autumn-berries-variation.png",
+        alt: "Blue tits perched near autumn berries and golden foliage",
+        year: 2026,
+      },
+      {
+        id: "blue-tits-rainy-garden",
+        title: "Blue Tits — Rainy Garden",
+        image: "/images/bird-bluetits-rainy-garden-variation.png",
+        alt: "Blue tits in a rain-kissed garden with soft grey washes",
+        year: 2025,
+      },
+      {
+        id: "blue-tits-winter-frost",
+        title: "Blue Tits — Winter Frost",
+        image: "/images/bird-bluetits-winter-frost-variation.png",
+        alt: "Blue tits among frosted branches in cool winter tones",
+        year: 2025,
+      },
+    ],
   },
   {
-    id: "blue-tits",
-    title: "Two Blue Tits",
+    id: "hummingbirds",
+    slug: "hummingbirds",
+    title: "Hummingbirds",
     category: "birds",
-    image: "/images/bird-bluetits.png",
-    alt: "A pair of blue tit birds on a flowering twig in teal and yellow",
-    year: 2026,
+    description:
+      "Iridescent hummingbirds hovering beside trumpet flowers, painted in lively, splattered washes.",
     featured: true,
+    artworks: [
+      {
+        id: "hummingbird",
+        title: "Hummingbird & Trumpet Flower",
+        image: "/images/bird-hummingbird.png",
+        alt: "An iridescent hummingbird beside a pink trumpet flower",
+        year: 2026,
+      },
+      {
+        id: "hummingbird-tropical-sunrise",
+        title: "Tropical Sunrise",
+        image: "/images/bird-hummingbird-tropical-sunrise-variation.png",
+        alt: "Hummingbird among tropical flowers at sunrise",
+        year: 2026,
+      },
+      {
+        id: "hummingbird-moonlit-garden",
+        title: "Moonlit Garden",
+        image: "/images/bird-hummingbird-moonlit-garden-variation.png",
+        alt: "Hummingbird in a moonlit garden with deep blue washes",
+        year: 2026,
+      },
+      {
+        id: "hummingbird-wildflower-meadow",
+        title: "Wildflower Meadow",
+        image: "/images/bird-hummingbird-wildflower-meadow-variation.png",
+        alt: "Hummingbird over a meadow of wildflowers",
+        year: 2025,
+      },
+      {
+        id: "hummingbird-rain-kissed-hibiscus",
+        title: "Rain-Kissed Hibiscus",
+        image: "/images/bird-hummingbird-rain-kissed-hibiscus-variation.png",
+        alt: "Hummingbird beside a rain-kissed hibiscus bloom",
+        year: 2025,
+      },
+    ],
   },
   {
-    id: "autumn-owl",
-    title: "Autumn Owl",
+    id: "woodland-owls",
+    slug: "woodland-owls",
+    title: "Woodland Owls",
     category: "birds",
-    image: "/images/bird-owl.png",
-    alt: "A friendly watercolor owl among autumn leaves",
-    year: 2025,
-    featured: true,
-  },
-  {
-    id: "hummingbird",
-    title: "Hummingbird & Trumpet Flower",
-    category: "birds",
-    image: "/images/bird-hummingbird.png",
-    alt: "An iridescent hummingbird beside a pink trumpet flower",
-    year: 2026,
-    featured: true,
-  },
-  {
-    id: "hello-lettering",
-    title: "Hello in Color",
-    category: "lettering",
-    image: "/images/lettering-hello.png",
-    alt: "Hand-lettered rainbow watercolor word 'Hello' surrounded by flowers",
-    year: 2025,
-    featured: true,
-  },
-  {
-    id: "be-kind-lettering",
-    title: "Be Kind",
-    category: "lettering",
-    image: "/images/lettering-bekind.png",
-    alt: "Hand-lettered 'Be Kind' in pink and blue watercolor with hearts",
-    year: 2026,
+    description:
+      "Friendly owls among autumn leaves, moonlit branches, and spring woodland.",
+    artworks: [
+      {
+        id: "autumn-owl",
+        title: "Autumn Owl",
+        image: "/images/bird-owl.png",
+        alt: "A friendly watercolor owl among autumn leaves",
+        year: 2025,
+      },
+      {
+        id: "owl-spring-woodland",
+        title: "Spring Woodland",
+        image: "/images/bird-owl-spring-woodland-variation.png",
+        alt: "Owl among fresh spring woodland greenery",
+        year: 2026,
+      },
+      {
+        id: "owl-golden-sunset",
+        title: "Golden Sunset",
+        image: "/images/bird-owl-golden-sunset-variation.png",
+        alt: "Owl bathed in warm golden sunset light",
+        year: 2026,
+      },
+      {
+        id: "owl-moonlit",
+        title: "Moonlit Night",
+        image: "/images/bird-owl-moonlit-variation.png",
+        alt: "Owl under a moonlit sky with cool purple washes",
+        year: 2025,
+      },
+      {
+        id: "owl-first-snow",
+        title: "First Snow",
+        image: "/images/bird-owl-first-snow-variation.png",
+        alt: "Owl among branches touched by the first snow",
+        year: 2025,
+      },
+    ],
   },
   {
     id: "tea-party",
+    slug: "tea-party",
     title: "The Tea Party",
     category: "children",
-    image: "/images/kids-teaparty.png",
-    alt: "A fox cub and a little bird having a tea party among flowers",
-    year: 2026,
+    description:
+      "A fox cub and a little bird share tea through the seasons — spring picnics to twilight gatherings.",
     featured: true,
+    artworks: [
+      {
+        id: "tea-party",
+        title: "The Tea Party",
+        image: "/images/kids-teaparty.png",
+        alt: "A fox cub and a little bird having a tea party among flowers",
+        year: 2026,
+      },
+      {
+        id: "tea-party-spring",
+        title: "Spring Picnic",
+        image: "/images/kids-teaparty-spring-variation.png",
+        alt: "Tea party among spring blossoms and fresh greenery",
+        year: 2026,
+      },
+      {
+        id: "tea-party-autumn",
+        title: "Autumn Gathering",
+        image: "/images/kids-teaparty-autumn-variation.png",
+        alt: "Tea party with warm autumn leaves and golden light",
+        year: 2026,
+      },
+      {
+        id: "tea-party-rainy",
+        title: "Rainy Day Tea",
+        image: "/images/kids-teaparty-rainy-variation.png",
+        alt: "Cozy tea party on a rainy day under soft grey skies",
+        year: 2025,
+      },
+      {
+        id: "tea-party-twilight",
+        title: "Twilight Tea",
+        image: "/images/kids-teaparty-twilight-variation.png",
+        alt: "Tea party at twilight with gentle purple and blue washes",
+        year: 2025,
+      },
+    ],
   },
   {
-    id: "story-bunnies",
+    id: "storytime-bunnies",
+    slug: "storytime-bunnies",
     title: "Storytime Bunnies",
     category: "children",
-    image: "/images/kids-bunnies.png",
-    alt: "Two bunnies reading a book under a toadstool in the forest",
-    year: 2025,
+    description:
+      "Two bunnies reading together through rain, spring gardens, and firefly-lit evenings.",
+    artworks: [
+      {
+        id: "story-bunnies",
+        title: "Storytime Bunnies",
+        image: "/images/kids-bunnies.png",
+        alt: "Two bunnies reading a book under a toadstool in the forest",
+        year: 2025,
+      },
+      {
+        id: "bunnies-spring-garden",
+        title: "Spring Garden Story",
+        image: "/images/kids-bunnies-spring-garden-story-variation.png",
+        alt: "Bunnies reading in a spring garden among flowers",
+        year: 2026,
+      },
+      {
+        id: "bunnies-autumn-storytime",
+        title: "Autumn Storytime",
+        image: "/images/kids-bunnies-autumn-storytime-variation.png",
+        alt: "Bunnies reading among autumn leaves and warm tones",
+        year: 2026,
+      },
+      {
+        id: "bunnies-rainy-nook",
+        title: "Rainy Reading Nook",
+        image: "/images/kids-bunnies-rainy-reading-nook-variation.png",
+        alt: "Bunnies curled up reading in a cozy rainy nook",
+        year: 2025,
+      },
+      {
+        id: "bunnies-twilight-fireflies",
+        title: "Twilight Fireflies",
+        image: "/images/kids-bunnies-twilight-fireflies-variation.png",
+        alt: "Bunnies reading at twilight among glowing fireflies",
+        year: 2025,
+      },
+    ],
+  },
+  {
+    id: "hand-lettering",
+    slug: "hand-lettering",
+    title: "Hand Lettering",
+    category: "lettering",
+    description:
+      "Playful hand-lettered words and quotes painted with cheerful watercolor color.",
+    featured: true,
+    artworks: [
+      {
+        id: "hello-lettering",
+        title: "Hello in Color",
+        image: "/images/lettering-hello.png",
+        alt: "Hand-lettered rainbow watercolor word 'Hello' surrounded by flowers",
+        year: 2025,
+      },
+      {
+        id: "be-kind-lettering",
+        title: "Be Kind",
+        image: "/images/lettering-bekind.png",
+        alt: "Hand-lettered 'Be Kind' in pink and blue watercolor with hearts",
+        year: 2026,
+      },
+    ],
   },
 ];

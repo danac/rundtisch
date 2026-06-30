@@ -79,10 +79,9 @@ export function Lightbox({ items, index, onClose, onNavigate }: LightboxProps) {
           />
           <figcaption className="mt-4 text-center text-white">
             <p className="text-xl font-bold">{item.title}</p>
-            <p className="text-sm text-white/70">
-              {t(`categories.${item.category}`)}
-              {item.year ? ` \u00b7 ${item.year}` : ""}
-            </p>
+            {item.year != null && (
+              <p className="text-sm text-white/70">{item.year}</p>
+            )}
           </figcaption>
         </figure>
 
