@@ -42,92 +42,86 @@ export function Lightbox({ items, index, onClose, onNavigate }: LightboxProps) {
       role="dialog"
       aria-modal="true"
       aria-label={item.title}
-      className="fixed inset-0 z-50 flex flex-col bg-ink/80 p-4 backdrop-blur-sm animate-fade-in sm:p-8"
-      onClick={onClose}
+      className="fixed inset-0 z-50 animate-fade-in"
     >
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label={t("common.close")}
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30"
-        >
-          &times;
-        </button>
-      </div>
+      <div
+        aria-hidden
+        className="absolute inset-0 bg-ink/80 backdrop-blur-sm"
+        onClick={onClose}
+      />
 
-      <div className="flex flex-1 items-center justify-center gap-3 overflow-hidden sm:gap-6">
-        {items.length > 1 && (
+      <div className="pointer-events-none relative z-10 flex h-full flex-col p-4 sm:p-8">
+        <div className="pointer-events-auto flex justify-end">
           <button
             type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goPrev();
-            }}
-            aria-label={t("common.previous")}
-            className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
+            onClick={onClose}
+            aria-label={t("common.close")}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30"
           >
-            &#8249;
-          </button>
-        )}
-
-        <figure className="flex max-h-full max-w-4xl flex-col items-center">
-          <img
-            src={item.image}
-            alt={item.alt}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[70vh] w-auto rounded-soft object-contain shadow-lift animate-fade-in"
-          />
-          <figcaption className="mt-4 text-center text-white">
-            <p className="text-xl font-bold">{item.title}</p>
-            {item.year != null && (
-              <p className="text-sm text-white/70">{item.year}</p>
-            )}
-          </figcaption>
-        </figure>
-
-        {items.length > 1 && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goNext();
-            }}
-            aria-label={t("common.next")}
-            className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
-          >
-            &#8250;
-          </button>
-        )}
-      </div>
-
-      {/* Mobile prev/next */}
-      {items.length > 1 && (
-        <div className="flex justify-center gap-4 pt-4 sm:hidden">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goPrev();
-            }}
-            aria-label={t("common.previous")}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white"
-          >
-            &#8249;
-          </button>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              goNext();
-            }}
-            aria-label={t("common.next")}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white"
-          >
-            &#8250;
+            &times;
           </button>
         </div>
-      )}
+
+        <div className="flex flex-1 items-center justify-center gap-3 overflow-hidden sm:gap-6">
+          {items.length > 1 && (
+            <button
+              type="button"
+              onClick={goPrev}
+              aria-label={t("common.previous")}
+              className="pointer-events-auto hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
+            >
+              &#8249;
+            </button>
+          )}
+
+          <figure className="flex max-h-full max-w-4xl flex-col items-center">
+            <img
+              src={item.image}
+              alt={item.alt}
+              className="pointer-events-auto max-h-[70vh] w-auto rounded-soft object-contain shadow-lift animate-fade-in"
+            />
+            <figcaption className="mt-4 text-center text-white">
+              <p className="text-xl font-bold">{item.title}</p>
+              {item.year != null && (
+                <p className="text-sm text-white/70">{item.year}</p>
+              )}
+            </figcaption>
+          </figure>
+
+          {items.length > 1 && (
+            <button
+              type="button"
+              onClick={goNext}
+              aria-label={t("common.next")}
+              className="pointer-events-auto hidden h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/15 text-2xl text-white transition-colors hover:bg-white/30 sm:flex"
+            >
+              &#8250;
+            </button>
+          )}
+        </div>
+
+        {/* Mobile prev/next */}
+        {items.length > 1 && (
+          <div className="pointer-events-auto flex justify-center gap-4 pt-4 sm:hidden">
+            <button
+              type="button"
+              onClick={goPrev}
+              aria-label={t("common.previous")}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white"
+            >
+              &#8249;
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              aria-label={t("common.next")}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-2xl text-white"
+            >
+              &#8250;
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
