@@ -22,7 +22,7 @@ function Hero() {
         aria-hidden
         className="pointer-events-none absolute -right-16 top-32 h-80 w-80 rounded-full bg-coral-100 blur-3xl"
       />
-      <div className="container-page relative grid items-center gap-10 py-16 sm:py-20 lg:grid-cols-2 lg:gap-12">
+      <div className="container-page relative grid items-center gap-10 py-8 sm:py-10 lg:grid-cols-2 lg:gap-12">
         <div className="animate-fade-up">
           <p className="mb-4 text-sm font-bold uppercase tracking-[0.18em] text-coral-500">
             {t("home.hero.eyebrow")}
@@ -90,7 +90,7 @@ function Categories() {
   ] as const;
 
   return (
-    <Section className="bg-paper">
+    <Section className="bg-paper !py-4 sm:!py-5">
       <SectionHeading
         eyebrow={t("home.categories.eyebrow")}
         title={t("home.categories.title")}
@@ -135,7 +135,7 @@ function FeaturedWork() {
   const { data, loading, error, reload } = useAsyncData(fetcher);
 
   return (
-    <Section>
+    <Section className="!py-4 sm:!py-5">
       <SectionHeading
         eyebrow={t("home.featured.eyebrow")}
         title={t("home.featured.title")}
@@ -164,7 +164,7 @@ function FeaturedWork() {
 function CallToAction() {
   const { t } = useTranslation();
   return (
-    <Section>
+    <Section className="!py-4 sm:!py-5">
       <div className="relative overflow-hidden rounded-blob bg-gradient-to-br from-coral-500 to-blossom-500 px-8 py-14 text-center text-white shadow-lift sm:px-16">
         <h2 className="text-3xl font-bold text-white sm:text-4xl">
           {t("home.cta.title")}
