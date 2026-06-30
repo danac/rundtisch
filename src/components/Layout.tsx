@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { ConstructionBanner } from "./ConstructionBanner";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
 
@@ -21,6 +22,7 @@ export function Layout() {
       >
         {t("nav.skipToContent")}
       </a>
+      <ConstructionBanner />
       <Navbar />
       <main id="main" className="flex-1">
         <Outlet />

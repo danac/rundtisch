@@ -1,7 +1,10 @@
 {
   "brand": {
-    "name": "Wren & Willow",
+    "name": "Anika",
     "tagline": "Watercolor birds, lettering & little stories"
+  },
+  "banner": {
+    "construction": "This site is still under construction — thank you for your patience."
   },
   "nav": {
     "home": "Home",
@@ -50,7 +53,7 @@
   },
   "about": {
     "eyebrow": "About the artist",
-    "title": "Hello, I'm the maker behind Wren & Willow",
+    "title": "Hello, I'm Anika",
     "intro": "I'm an illustrator working in watercolor from a sunny little studio. My days are spent painting birds, lettering joyful words, and dreaming up characters for children's stories.",
     "bodyOne": "I fell in love with watercolor for its happy accidents - the way colors bloom and bleed into something more alive than I planned. Birds became my favorite subject: each one has a personality waiting to be coaxed out with a few confident brushstrokes.",
     "bodyTwo": "Alongside my bird paintings, I letter cheerful phrases and create gentle, characterful illustrations for picture books, nurseries, and families. Every piece starts on real paper before it ever becomes a print or product.",
