@@ -1,15 +1,14 @@
-# Wren & Willow — Artist Portfolio Website
+# anikaelsa — Artist Portfolio Website
 
-A modern, lively, image-focused website for a visual artist who paints
+A modern, lively, image-focused website for **Anika**, a visual artist who paints
 watercolor birds, hand lettering, and illustrations for children.
 
 Built as a client-side single-page app with **React + Vite + TypeScript +
 Tailwind CSS v4**, with async image loading, a data layer ready for a future
 REST backend, and internationalization wired through `react-i18next`.
 
-> The artist name, copy, and sample artwork are placeholders. Swap the
-> contents of `src/i18n/locales/en/translation.json` and the images in
-> `public/images/` to make it your own.
+> Copy and sample artwork can be customized in
+> `src/i18n/locales/en/translation.json` and the images in `public/images/`.
 
 ## Tech stack
 
