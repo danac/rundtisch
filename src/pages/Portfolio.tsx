@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Gallery } from "../components/Gallery";
+import { CollectionCard } from "../components/CollectionCard";
 import { Section, SectionHeading } from "../components/Section";
 import { LoadingGrid, ErrorState, EmptyState } from "../components/States";
 import { useAsyncData } from "../hooks/useAsyncData";
-import { getArtworks } from "../services/portfolioService";
+import { getCollections } from "../services/portfolioService";
 import type { ArtworkCategory } from "../types/portfolio";
 
 type Filter = "all" | ArtworkCategory;
@@ -14,12 +14,14 @@ const filters: Filter[] = ["all", "birds", "lettering", "children"];
 
 export function Portfolio() {
   const { t } = useTranslation();
-  const { data, loading, error, reload } = useAsyncData(getArtworks);
+  const { data, loading, error, reload } = useAsyncData(getCollections);
   const [filter, setFilter] = useState<Filter>("all");
 
   const visible = useMemo(() => {
     if (!data) return [];
-    return filter === "all" ? data : data.filter((a) => a.category === filter);
+    return filter === "all"
+      ? data
+      : data.filter((c) => c.category === filter);
   }, [data, filter]);
 
   return (
@@ -48,11 +50,15 @@ export function Portfolio() {
       </div>
 
       <div className="mt-12">
-        {loading && <LoadingGrid count={9} />}
+        {loading && <LoadingGrid count={6} />}
         {error && <ErrorState onRetry={reload} />}
         {data &&
           (visible.length > 0 ? (
-            <Gallery items={visible} />
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {visible.map((collection) => (
+                <CollectionCard key={collection.id} collection={collection} />
+              ))}
+            </div>
           ) : (
             <EmptyState message={t("portfolio.empty")} />
           ))}

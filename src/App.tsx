@@ -4,6 +4,7 @@ import { Home } from "./pages/Home";
 import { Portfolio } from "./pages/Portfolio";
 import { Merch } from "./pages/Merch";
 import { About } from "./pages/About";
+import { CollectionPage } from "./pages/CollectionPage";
 import { NotFound } from "./pages/NotFound";
 
 export default function App() {
@@ -12,6 +13,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="portfolio" element={<Portfolio />} />
+        <Route path="portfolio/:slug" element={<CollectionPage />} />
         <Route path="shop" element={<Merch />} />
         <Route path="about" element={<About />} />
         <Route path="*" element={<NotFound />} />
