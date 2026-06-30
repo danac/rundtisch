@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { CollectionCard } from "../components/CollectionCard";
@@ -12,10 +13,29 @@ type Filter = "all" | ArtworkCategory;
 
 const filters: Filter[] = ["all", "birds", "lettering", "children"];
 
+const CATEGORY_VALUES: ArtworkCategory[] = ["birds", "lettering", "children"];
+
+function parseCategoryParam(value: string | null): Filter {
+  if (value && CATEGORY_VALUES.includes(value as ArtworkCategory)) {
+    return value as ArtworkCategory;
+  }
+  return "all";
+}
+
 export function Portfolio() {
   const { t } = useTranslation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data, loading, error, reload } = useAsyncData(getCollections);
-  const [filter, setFilter] = useState<Filter>("all");
+
+  const filter = parseCategoryParam(searchParams.get("category"));
+
+  const setFilter = (next: Filter) => {
+    if (next === "all") {
+      setSearchParams({}, { replace: true });
+    } else {
+      setSearchParams({ category: next }, { replace: true });
+    }
+  };
 
   const visible = useMemo(() => {
     if (!data) return [];
