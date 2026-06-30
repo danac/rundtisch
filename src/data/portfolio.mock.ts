@@ -76,20 +76,4 @@ export const portfolioMock: Artwork[] = [
     alt: "Two bunnies reading a book under a toadstool in the forest",
     year: 2025,
   },
-  {
-    id: "watercolor-fox",
-    title: "Little Fox",
-    category: "children",
-    image: "/images/watercolor-fox.png",
-    alt: "A watercolor fox illustration among lily of the valley",
-    year: 2024,
-  },
-  {
-    id: "sea-friends",
-    title: "Sea Friends",
-    category: "children",
-    image: "/images/sea-friends.png",
-    alt: "A cheerful group of sea creatures including a whale and turtle",
-    year: 2024,
-  },
 ];
