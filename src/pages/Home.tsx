@@ -52,14 +52,6 @@ function Hero() {
             priority
             className="relative rounded-blob shadow-lift"
           />
-          <div className="absolute -bottom-6 -left-6 hidden h-28 w-28 animate-float overflow-hidden rounded-3xl shadow-lift sm:block">
-            <AsyncImage
-              src="/images/bird-hummingbird.png"
-              alt=""
-              ratio="1 / 1"
-              priority
-            />
-          </div>
         </div>
       </div>
     </section>
