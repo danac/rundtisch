@@ -7,80 +7,100 @@ interface CollectionCardProps {
   collection: Collection;
 }
 
-/** Up to 3 preview images for the mosaic; extras shown as +N overlay. */
-const PREVIEW_COUNT = 3;
+/** Visual config per stack position: 0 = front, 1 = middle, 2 = back. */
+const STACK_LAYERS = [
+  {
+    rotate: "rotate-0",
+    hoverRotate: "group-hover:rotate-[1.5deg]",
+    translate: "translate-x-0 translate-y-0",
+    hoverTranslate: "group-hover:translate-x-1 group-hover:translate-y-1",
+    scale: "scale-100",
+    opacity: "opacity-100",
+    z: "z-30",
+    shadow: true,
+  },
+  {
+    rotate: "rotate-[-4deg]",
+    hoverRotate: "group-hover:rotate-[-7deg]",
+    translate: "-translate-x-2 -translate-y-3",
+    hoverTranslate: "group-hover:-translate-x-5 group-hover:-translate-y-6",
+    scale: "scale-[0.92]",
+    opacity: "opacity-55",
+    z: "z-20",
+    shadow: false,
+  },
+  {
+    rotate: "rotate-[-8deg]",
+    hoverRotate: "group-hover:rotate-[-12deg]",
+    translate: "-translate-x-4 -translate-y-6",
+    hoverTranslate: "group-hover:-translate-x-8 group-hover:-translate-y-10",
+    scale: "scale-[0.84]",
+    opacity: "opacity-35",
+    z: "z-10",
+    shadow: false,
+  },
+] as const;
 
-function CollectionMosaic({ collection }: { collection: Collection }) {
-  const previews = collection.artworks.slice(0, PREVIEW_COUNT);
-  const extra = collection.artworks.length - PREVIEW_COUNT;
-  const count = previews.length;
+function CollectionStack({ collection }: { collection: Collection }) {
+  const previews = collection.artworks.slice(0, 3);
 
-  if (count === 0) {
-    return (
-      <div className="aspect-[4/3] bg-paper" aria-hidden />
-    );
+  if (previews.length === 0) {
+    return <div className="aspect-[4/3] bg-paper" aria-hidden />;
   }
 
-  if (count === 1) {
+  if (previews.length === 1) {
     return (
-      <AsyncImage
-        src={previews[0].image}
-        alt=""
-        ratio="4 / 3"
-        className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
-      />
-    );
-  }
-
-  if (count === 2) {
-    return (
-      <div className="grid aspect-[4/3] grid-cols-2 gap-0.5">
-        {previews.map((art) => (
-          <AsyncImage
-            key={art.id}
-            src={art.image}
-            alt=""
-            ratio="1 / 1"
-            className="h-full [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
-          />
-        ))}
-      </div>
-    );
-  }
-
-  // 3+ previews: large left tile + stacked right column
-  return (
-    <div className="grid aspect-[4/3] grid-cols-3 gap-0.5">
-      <div className="col-span-2 row-span-2">
+      <div className="aspect-[4/3] overflow-hidden bg-paper">
         <AsyncImage
           src={previews[0].image}
           alt=""
-          ratio="1 / 1"
-          className="h-full [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
-        />
-      </div>
-      <AsyncImage
-        src={previews[1].image}
-        alt=""
-        ratio="1 / 1"
-        className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
-      />
-      <div className="relative">
-        <AsyncImage
-          src={previews[2].image}
-          alt=""
-          ratio="1 / 1"
+          ratio="4 / 3"
           className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
         />
-        {extra > 0 && (
-          <span
-            aria-hidden
-            className="absolute inset-0 flex items-center justify-center bg-ink/45 text-lg font-bold text-white"
-          >
-            +{extra}
-          </span>
-        )}
       </div>
+    );
+  }
+
+  const stacked = previews.map((art, i) => ({
+    art,
+    layer: STACK_LAYERS[i],
+  }));
+
+  return (
+    <div className="relative aspect-[4/3] overflow-hidden bg-paper px-5 py-6">
+      {[...stacked].reverse().map(({ art, layer }) => {
+        const isFront = layer.z === "z-30";
+        return (
+          <div
+            key={art.id}
+            aria-hidden={!isFront}
+            className={[
+              "pointer-events-none absolute inset-x-5 top-6 bottom-4 origin-center",
+              "transition-all duration-300 ease-out",
+              layer.z,
+              layer.rotate,
+              layer.hoverRotate,
+              layer.translate,
+              layer.hoverTranslate,
+              layer.scale,
+              layer.opacity,
+            ].join(" ")}
+          >
+            <div
+              className={`h-full overflow-hidden rounded-soft ring-2 ring-white/80 ${
+                layer.shadow ? "shadow-soft" : ""
+              }`}
+            >
+              <AsyncImage
+                src={art.image}
+                alt=""
+                ratio="4 / 3"
+                className="h-full [&_img]:object-cover [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-[1.02]"
+              />
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -94,9 +114,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
       to={`/portfolio/${collection.slug}`}
       className="group block overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-4 focus-visible:ring-coral-300/50"
     >
-      <div className="overflow-hidden">
-        <CollectionMosaic collection={collection} />
-      </div>
+      <CollectionStack collection={collection} />
       <div className="flex items-start justify-between gap-3 px-5 py-4">
         <div>
           <h3 className="text-lg font-bold leading-tight">{collection.title}</h3>
