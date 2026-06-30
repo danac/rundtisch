@@ -32,13 +32,20 @@ export function CollectionPage() {
 
   return (
     <Section>
-      <Link
-        to="/portfolio"
-        className="inline-flex items-center gap-2 text-sm font-semibold text-coral-600 transition-colors hover:text-coral-500"
-      >
-        <span aria-hidden>&#8592;</span>
-        {t("portfolio.backToPortfolio")}
-      </Link>
+      <div className="flex items-center gap-4">
+        {collection && (
+          <span className="pill shrink-0 bg-teal-50 text-teal-600">
+            {t(`categories.${collection.category}`)}
+          </span>
+        )}
+        <Link
+          to="/portfolio"
+          className="ml-auto inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-coral-600 transition-colors hover:text-coral-500"
+        >
+          <span aria-hidden>&#8592;</span>
+          {t("portfolio.backToPortfolio")}
+        </Link>
+      </div>
 
       {loading && (
         <div className="mt-12">
@@ -60,11 +67,8 @@ export function CollectionPage() {
 
       {collection && (
         <>
-          <header className="mt-8 max-w-2xl animate-fade-up">
-            <span className="pill bg-teal-50 text-teal-600">
-              {t(`categories.${collection.category}`)}
-            </span>
-            <h1 className="mt-4 text-3xl font-bold sm:text-4xl">
+          <header className="mt-4 max-w-2xl animate-fade-up">
+            <h1 className="text-3xl font-bold sm:text-4xl">
               {collection.title}
             </h1>
             <p className="mt-4 text-lg text-ink-soft">
