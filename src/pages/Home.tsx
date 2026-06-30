@@ -3,11 +3,11 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
 import { AsyncImage } from "../components/AsyncImage";
-import { Gallery } from "../components/Gallery";
+import { CollectionCard } from "../components/CollectionCard";
 import { Section, SectionHeading } from "../components/Section";
 import { LoadingGrid, ErrorState } from "../components/States";
 import { useAsyncData } from "../hooks/useAsyncData";
-import { getFeaturedArtworks } from "../services/portfolioService";
+import { getFeaturedCollections } from "../services/portfolioService";
 
 function Hero() {
   const { t } = useTranslation();
@@ -129,7 +129,7 @@ function Categories() {
 function FeaturedWork() {
   const { t } = useTranslation();
   const fetcher = useCallback(
-    (signal: AbortSignal) => getFeaturedArtworks(6, signal),
+    (signal: AbortSignal) => getFeaturedCollections(3, signal),
     [],
   );
   const { data, loading, error, reload } = useAsyncData(fetcher);
@@ -142,9 +142,15 @@ function FeaturedWork() {
         subtitle={t("home.featured.subtitle")}
       />
       <div className="mt-12">
-        {loading && <LoadingGrid count={6} />}
+        {loading && <LoadingGrid count={3} />}
         {error && <ErrorState onRetry={reload} />}
-        {data && <Gallery items={data} />}
+        {data && (
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {data.map((collection) => (
+              <CollectionCard key={collection.id} collection={collection} />
+            ))}
+          </div>
+        )}
       </div>
       <div className="mt-10 text-center">
         <Link to="/portfolio" className="btn-secondary">

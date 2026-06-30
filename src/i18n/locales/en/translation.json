@@ -68,15 +68,19 @@
   },
   "portfolio": {
     "eyebrow": "Portfolio",
-    "title": "A gallery of recent work",
-    "subtitle": "Browse by what you love - or see it all. Tap a piece to view it larger.",
+    "title": "Collections of recent work",
+    "subtitle": "Browse collections by what you love — or see them all. Open a collection to view every piece.",
     "filters": {
       "all": "Everything",
       "birds": "Birds",
       "lettering": "Lettering",
       "children": "Children's"
     },
-    "empty": "No pieces in this category yet - check back soon!"
+    "empty": "No collections in this category yet — check back soon!",
+    "pieceCount_one": "{{count}} piece",
+    "pieceCount_other": "{{count}} pieces",
+    "backToPortfolio": "All collections",
+    "collectionNotFound": "We couldn't find that collection."
   },
   "merch": {
     "eyebrow": "Shop",
