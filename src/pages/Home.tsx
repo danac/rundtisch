@@ -72,19 +72,16 @@ function Categories() {
     {
       key: "birds",
       image: "/images/bird-robin.png",
-      to: "/portfolio",
       accent: "bg-coral-50 text-coral-600",
     },
     {
       key: "lettering",
       image: "/images/lettering-hello.png",
-      to: "/portfolio",
       accent: "bg-teal-50 text-teal-600",
     },
     {
       key: "children",
       image: "/images/kids-teaparty.png",
-      to: "/portfolio",
       accent: "bg-sun-300/30 text-ink",
     },
   ] as const;
@@ -99,7 +96,7 @@ function Categories() {
         {cards.map((card) => (
           <Link
             key={card.key}
-            to={card.to}
+            to={`/portfolio?category=${card.key}`}
             className="group overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
           >
             <AsyncImage
