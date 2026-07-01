@@ -20,11 +20,14 @@ REST backend, and internationalization wired through `react-i18next`.
 ## Getting started
 
 ```bash
+cd frontend
 npm install
 npm run dev      # start the dev server (http://localhost:5173)
 npm run build    # type-check + production build into dist/
 npm run preview  # preview the production build
 ```
+
+Configuration for Cloudflare deployment is in `wrangler.jsonc` at the repository root.
 
 ## Pages
 
