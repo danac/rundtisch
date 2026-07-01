@@ -7,13 +7,20 @@ import { CollectionCard } from "../components/CollectionCard";
 import { Section, SectionHeading } from "../components/Section";
 import { LoadingGrid, ErrorState } from "../components/States";
 import { useAsyncData } from "../hooks/useAsyncData";
-import { getFeaturedCollections } from "../services/portfolioService";
+import { getHomepageContent } from "../services/homepageService";
+import type { HomepageCategoryPromo, HomepageHero } from "../types/homepage";
+import type { ArtworkCategory, Collection } from "../types/portfolio";
 
-function Hero() {
+const CATEGORY_ACCENTS: Record<ArtworkCategory, string> = {
+  birds: "bg-coral-50 text-coral-600",
+  lettering: "bg-teal-50 text-teal-600",
+  children: "bg-sun-300/30 text-ink",
+};
+
+function Hero({ hero, loading }: { hero?: HomepageHero; loading: boolean }) {
   const { t } = useTranslation();
   return (
     <section className="relative overflow-hidden">
-      {/* Soft watercolor blobs */}
       <div
         aria-hidden
         className="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-teal-100 blur-3xl"
@@ -45,38 +52,34 @@ function Hero() {
 
         <div className="relative animate-fade-in">
           <div className="absolute inset-0 -rotate-3 rounded-blob bg-sun-300/30" />
-          <AsyncImage
-            src="/images/bird-bluetits.png"
-            alt={t("home.hero.title")}
-            ratio="3 / 2"
-            priority
-            className="relative rounded-blob shadow-lift"
-          />
+          {hero ? (
+            <AsyncImage
+              src={hero.image}
+              alt={hero.alt}
+              ratio="3 / 2"
+              priority
+              className="relative rounded-blob shadow-lift"
+            />
+          ) : loading ? (
+            <div
+              className="relative aspect-[3/2] animate-pulse rounded-blob bg-paper shadow-lift"
+              aria-hidden
+            />
+          ) : null}
         </div>
       </div>
     </section>
   );
 }
 
-function Categories() {
+function Categories({
+  promos,
+  loading,
+}: {
+  promos?: HomepageCategoryPromo[];
+  loading: boolean;
+}) {
   const { t } = useTranslation();
-  const cards = [
-    {
-      key: "birds",
-      image: "/images/bird-robin.png",
-      accent: "bg-coral-50 text-coral-600",
-    },
-    {
-      key: "lettering",
-      image: "/images/lettering-hello.png",
-      accent: "bg-teal-50 text-teal-600",
-    },
-    {
-      key: "children",
-      image: "/images/kids-teaparty.png",
-      accent: "bg-sun-300/30 text-ink",
-    },
-  ] as const;
 
   return (
     <Section className="bg-paper !py-4 sm:!py-5">
@@ -84,44 +87,54 @@ function Categories() {
         eyebrow={t("home.categories.eyebrow")}
         title={t("home.categories.title")}
       />
-      <div className="mt-12 grid gap-6 sm:grid-cols-3">
-        {cards.map((card) => (
-          <Link
-            key={card.key}
-            to={`/portfolio?category=${card.key}`}
-            className="group overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
-          >
-            <AsyncImage
-              src={card.image}
-              alt={t(`home.categories.${card.key}.title`)}
-              ratio="4 / 3"
-              className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
-            />
-            <div className="p-6">
-              <span className={`pill ${card.accent}`}>
-                {t(`categories.${card.key}`)}
-              </span>
-              <h3 className="mt-3 text-xl font-bold">
-                {t(`home.categories.${card.key}.title`)}
-              </h3>
-              <p className="mt-2 text-ink-soft">
-                {t(`home.categories.${card.key}.text`)}
-              </p>
-            </div>
-          </Link>
-        ))}
+      <div className="mt-12">
+        {loading && !promos && <LoadingGrid count={3} />}
+        {promos && (
+          <div className="grid gap-6 sm:grid-cols-3">
+            {promos.map((promo) => (
+              <Link
+                key={promo.category}
+                to={`/portfolio?category=${promo.category}`}
+                className="group overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
+              >
+                <AsyncImage
+                  src={promo.image}
+                  alt={promo.alt}
+                  ratio="4 / 3"
+                  className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
+                />
+                <div className="p-6">
+                  <span className={`pill ${CATEGORY_ACCENTS[promo.category]}`}>
+                    {t(`categories.${promo.category}`)}
+                  </span>
+                  <h3 className="mt-3 text-xl font-bold">
+                    {t(`home.categories.${promo.category}.title`)}
+                  </h3>
+                  <p className="mt-2 text-ink-soft">
+                    {t(`home.categories.${promo.category}.text`)}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </Section>
   );
 }
 
-function FeaturedWork() {
+function FeaturedWork({
+  collections,
+  loading,
+  error,
+  reload,
+}: {
+  collections?: Collection[];
+  loading: boolean;
+  error: Error | null;
+  reload: () => void;
+}) {
   const { t } = useTranslation();
-  const fetcher = useCallback(
-    (signal: AbortSignal) => getFeaturedCollections(3, signal),
-    [],
-  );
-  const { data, loading, error, reload } = useAsyncData(fetcher);
 
   return (
     <Section className="!py-4 sm:!py-5">
@@ -131,11 +144,11 @@ function FeaturedWork() {
         subtitle={t("home.featured.subtitle")}
       />
       <div className="mt-12">
-        {loading && <LoadingGrid count={3} />}
+        {loading && !collections && <LoadingGrid count={3} />}
         {error && <ErrorState onRetry={reload} />}
-        {data && (
+        {collections && (
           <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {data.map((collection) => (
+            {collections.map((collection) => (
               <CollectionCard key={collection.id} collection={collection} />
             ))}
           </div>
@@ -173,11 +186,22 @@ function CallToAction() {
 }
 
 export function Home() {
+  const fetcher = useCallback(
+    (signal: AbortSignal) => getHomepageContent(signal),
+    [],
+  );
+  const { data, loading, error, reload } = useAsyncData(fetcher);
+
   return (
     <>
-      <Hero />
-      <FeaturedWork />
-      <Categories />
+      <Hero hero={data?.hero} loading={loading} />
+      <FeaturedWork
+        collections={data?.featuredCollections}
+        loading={loading}
+        error={error}
+        reload={reload}
+      />
+      <Categories promos={data?.categoryPromos} loading={loading} />
       <CallToAction />
     </>
   );
