@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import type { Product } from "../types/merch";
 import { AsyncImage } from "./AsyncImage";
@@ -16,10 +17,13 @@ export function ProductCard({ product }: { product: Product }) {
   const { t } = useTranslation();
 
   return (
-    <article className="group flex flex-col overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift">
+    <Link
+      to={`/shop/${product.id}`}
+      className="group flex flex-col overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-4 focus-visible:ring-coral-300/50"
+    >
       <div className="relative">
         <AsyncImage
-          src={product.image}
+          src={product.thumbnail}
           alt={product.alt}
           ratio="1 / 1"
           className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
@@ -37,21 +41,19 @@ export function ProductCard({ product }: { product: Product }) {
           <span className="text-xl font-bold text-coral-600">
             {formatPrice(product)}
           </span>
-          <a
-            href={product.url}
-            target="_blank"
-            rel="noreferrer noopener"
-            aria-disabled={product.soldOut}
+          <span
             className={`btn px-5 py-2 text-sm ${
               product.soldOut
-                ? "pointer-events-none bg-ink/10 text-ink-soft"
-                : "bg-teal-500 text-white hover:bg-teal-600"
+                ? "bg-ink/10 text-ink-soft"
+                : "bg-teal-500 text-white group-hover:bg-teal-600"
             }`}
           >
             {product.soldOut ? t("merch.soldOut") : t("merch.buy")}
-          </a>
+          </span>
         </div>
       </div>
-    </article>
+    </Link>
   );
 }
+
+export { formatPrice };

@@ -17,6 +17,7 @@ function pickFeaturedCollections() {
  */
 export const homepageMock: HomepageContent = {
   hero: {
+    thumbnail: "/images/thumbs/bird-bluetits.png",
     image: "/images/bird-bluetits.png",
     alt: "A pair of blue tit birds on a flowering twig in teal and yellow",
     artworkId: "blue-tits",
@@ -26,16 +27,19 @@ export const homepageMock: HomepageContent = {
   categoryPromos: [
     {
       category: "birds",
+      thumbnail: "/images/thumbs/bird-robin.png",
       image: "/images/bird-robin.png",
       alt: "Watercolor robin perched on a blossoming cherry branch",
     },
     {
       category: "lettering",
+      thumbnail: "/images/thumbs/lettering-hello.png",
       image: "/images/lettering-hello.png",
       alt: "Hand-lettered rainbow watercolor word 'Hello' surrounded by flowers",
     },
     {
       category: "children",
+      thumbnail: "/images/thumbs/kids-teaparty.png",
       image: "/images/kids-teaparty.png",
       alt: "A fox cub and a little bird having a tea party among flowers",
     },

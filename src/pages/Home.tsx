@@ -54,7 +54,7 @@ function Hero({ hero, loading }: { hero?: HomepageHero; loading: boolean }) {
           <div className="absolute inset-0 -rotate-3 rounded-blob bg-sun-300/30" />
           {hero ? (
             <AsyncImage
-              src={hero.image}
+              src={hero.thumbnail}
               alt={hero.alt}
               ratio="3 / 2"
               priority
@@ -98,7 +98,7 @@ function Categories({
                 className="group overflow-hidden rounded-blob bg-white shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift"
               >
                 <AsyncImage
-                  src={promo.image}
+                  src={promo.thumbnail}
                   alt={promo.alt}
                   ratio="4 / 3"
                   className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"

@@ -105,6 +105,9 @@
     "from": "à partir de",
     "soldOut": "Épuisé",
     "buy": "Voir le produit",
+    "buyNow": "Acheter",
+    "backToShop": "Retour à la boutique",
+    "productNotFound": "Ce produit est introuvable.",
     "empty": "La boutique se réapprovisionne — revenez bientôt !"
   },
   "categories": {

@@ -105,6 +105,9 @@
     "from": "from",
     "soldOut": "Sold out",
     "buy": "View product",
+    "buyNow": "Buy now",
+    "backToShop": "Back to shop",
+    "productNotFound": "That product could not be found.",
     "empty": "The shop is being restocked - please check back soon!"
   },
   "categories": {
