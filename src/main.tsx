@@ -7,14 +7,17 @@ import "./index.css";
 import App from "./App";
 
 async function bootstrap() {
-  const rootEl = document.getElementById("root")!;
-  rootEl.className =
-    "flex min-h-dvh items-center justify-center bg-cream text-ink-soft";
-  rootEl.textContent = "Loading…";
+  const root = createRoot(document.getElementById("root")!);
+
+  root.render(
+    <div className="flex min-h-dvh items-center justify-center bg-cream text-ink-soft">
+      <p className="text-sm font-semibold">Loading…</p>
+    </div>,
+  );
 
   await initI18n();
 
-  createRoot(rootEl).render(
+  root.render(
     <StrictMode>
       <BrowserRouter>
         <App />
