@@ -54,7 +54,7 @@ export function About() {
             <p>{t("about.bodyOne")}</p>
             <p>{t("about.bodyTwo")}</p>
           </div>
-          <a href="mailto:hello@example.com" className="btn-primary mt-8">
+          <a href={`mailto:${t("common.contactEmail")}`} className="btn-primary mt-8">
             {t("about.cta")}
           </a>
         </div>
