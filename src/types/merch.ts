@@ -4,6 +4,9 @@ export interface Product {
   id: string;
   title: string;
   description: string;
+  /** Public path or absolute URL to a lower-resolution thumbnail. */
+  thumbnail: string;
+  /** Public path or absolute URL to the full-resolution image. */
   image: string;
   alt: string;
   price: number;
