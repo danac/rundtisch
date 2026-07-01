@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { LanguageSwitcher } from "./LanguageSwitcher";
 
 interface NavItem {
   to: string;
@@ -66,7 +65,6 @@ export function Navbar() {
               {t(item.key)}
             </NavLink>
           ))}
-          <LanguageSwitcher />
         </div>
 
         <button
@@ -119,9 +117,6 @@ export function Navbar() {
               {t(item.key)}
             </NavLink>
           ))}
-          <div className="px-4 pt-3">
-            <LanguageSwitcher />
-          </div>
         </div>
       </div>
     </header>

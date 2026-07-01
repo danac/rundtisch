@@ -2,38 +2,51 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 
-import en from "./locales/en/translation.json";
+import { getTranslations } from "../services/translationService";
+import {
+  LANGUAGE_CODES,
+  type LanguageCode,
+} from "./languages";
 
-/**
- * Supported locales. Adding a new language is a two-step change:
- *   1. add a `locales/<lng>/translation.json` file
- *   2. register it in `resources` and `SUPPORTED_LANGUAGES` below
- * The rest of the app already reads every string through `t()`.
- */
-export const SUPPORTED_LANGUAGES = [
-  { code: "en", label: "English" },
-] as const;
+export { SUPPORTED_LANGUAGES, type LanguageCode } from "./languages";
 
-export type LanguageCode = (typeof SUPPORTED_LANGUAGES)[number]["code"];
+const loaded = new Set<string>();
 
-export const resources = {
-  en: { translation: en },
-} as const;
+async function loadLanguage(lng: LanguageCode): Promise<void> {
+  if (loaded.has(lng)) return;
+  const bundle = await getTranslations(lng);
+  i18n.addResourceBundle(lng, "translation", bundle, true, true);
+  loaded.add(lng);
+}
 
-void i18n
-  .use(LanguageDetector)
-  .use(initReactI18next)
-  .init({
-    resources,
-    fallbackLng: "en",
-    supportedLngs: SUPPORTED_LANGUAGES.map((l) => l.code),
-    interpolation: {
-      escapeValue: false,
-    },
-    detection: {
-      order: ["localStorage", "navigator", "htmlTag"],
-      caches: ["localStorage"],
-    },
-  });
+export async function changeAppLanguage(lng: LanguageCode): Promise<void> {
+  await loadLanguage(lng);
+  await i18n.changeLanguage(lng);
+}
+
+export async function initI18n(): Promise<void> {
+  await i18n
+    .use(LanguageDetector)
+    .use(initReactI18next)
+    .init({
+      fallbackLng: "en",
+      supportedLngs: LANGUAGE_CODES,
+      interpolation: {
+        escapeValue: false,
+      },
+      detection: {
+        order: ["localStorage", "navigator", "htmlTag"],
+        caches: ["localStorage"],
+      },
+    });
+
+  const initial = (i18n.resolvedLanguage ?? "en") as LanguageCode;
+  await loadLanguage(initial);
+
+  const other = LANGUAGE_CODES.find((code) => code !== initial);
+  if (other) {
+    void loadLanguage(other);
+  }
+}
 
 export default i18n;

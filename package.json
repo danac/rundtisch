@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "sync:locales": "rm -rf public/locales && cp -r src/i18n/locales public/locales",
+    "predev": "npm run sync:locales",
+    "prebuild": "npm run sync:locales",
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
