@@ -13,3 +13,14 @@ export async function getProducts(signal?: AbortSignal): Promise<Product[]> {
   }
   return withLatency(merchMock);
 }
+
+export async function getProductById(
+  id: string,
+  signal?: AbortSignal,
+): Promise<Product | undefined> {
+  if (hasBackend) {
+    return apiGet<Product>(`/products/${id}`, signal);
+  }
+  const products = await withLatency(merchMock);
+  return products.find((product) => product.id === id);
+}

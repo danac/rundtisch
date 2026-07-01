@@ -5,6 +5,7 @@ import { Portfolio } from "./pages/Portfolio";
 import { Merch } from "./pages/Merch";
 import { About } from "./pages/About";
 import { CollectionPage } from "./pages/CollectionPage";
+import { ProductPage } from "./pages/ProductPage";
 import { NotFound } from "./pages/NotFound";
 
 export default function App() {
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="portfolio" element={<Portfolio />} />
         <Route path="portfolio/:slug" element={<CollectionPage />} />
         <Route path="shop" element={<Merch />} />
+        <Route path="shop/:id" element={<ProductPage />} />
         <Route path="about" element={<About />} />
         <Route path="*" element={<NotFound />} />
       </Route>
