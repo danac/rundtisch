@@ -3,7 +3,9 @@ export type ArtworkCategory = "birds" | "lettering" | "children";
 export interface Artwork {
   id: string;
   title: string;
-  /** Public path or absolute URL to the image. */
+  /** Public path or absolute URL to a lower-resolution thumbnail. */
+  thumbnail: string;
+  /** Public path or absolute URL to the full-resolution image. */
   image: string;
   /** Short alt / description text for accessibility. */
   alt: string;
