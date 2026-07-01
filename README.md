@@ -76,11 +76,26 @@ Pass `priority` for above-the-fold images (e.g. the hero) to load eagerly.
 
 ## Internationalization
 
-All user-facing text lives in `src/i18n/locales/<lng>/translation.json` and is
-read via the `t()` helper. To add a language:
+Static UI copy is translated for **English** (`en`) and **French** (`fr`). Every
+shell string (nav, pages, footer, errors, meta tags) flows through `react-i18next`
+and the `t()` helper.
 
-1. add `src/i18n/locales/<lng>/translation.json`
-2. register it in `resources` and `SUPPORTED_LANGUAGES` in `src/i18n/index.ts`
+**Source of truth:** `src/i18n/locales/<lng>/translation.json`
 
-The `LanguageSwitcher` (hidden while only one language exists) then appears
-automatically in the navbar.
+At dev/build time these files are copied to `public/locales/` and served as
+static JSON. The app loads them via `src/services/translationService.ts`, which
+can also fetch `GET /translations/<lng>` when `VITE_API_BASE_URL` is set.
+
+**Portfolio and shop content** (collection titles, artwork names, product
+descriptions) is **not** in translation files — that content will come from the
+CMS/backend later.
+
+**Switching language:** flag links in the footer (GB = English, FR = French).
+The choice is persisted in `localStorage`.
+
+To add another language later:
+
+1. Add `src/i18n/locales/<lng>/translation.json` (same key structure as `en`)
+2. Register the code in `src/i18n/languages.ts` and add a bundled fallback in
+   `translationService.ts`
+3. Add a flag asset under `public/images/flags/`

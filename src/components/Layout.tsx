@@ -4,10 +4,12 @@ import { useTranslation } from "react-i18next";
 import { ConstructionBanner } from "./ConstructionBanner";
 import { Navbar } from "./Navbar";
 import { Footer } from "./Footer";
+import { useDocumentMeta } from "../hooks/useDocumentMeta";
 
 export function Layout() {
   const { t } = useTranslation();
   const { pathname } = useLocation();
+  useDocumentMeta();
 
   // Scroll to top on route change (SPA navigation).
   useEffect(() => {

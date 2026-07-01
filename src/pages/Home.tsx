@@ -162,7 +162,7 @@ function CallToAction() {
           {t("home.cta.subtitle")}
         </p>
         <a
-          href="mailto:hello@example.com"
+          href={`mailto:${t("common.contactEmail")}`}
           className="btn mt-8 bg-white text-coral-600 hover:-translate-y-0.5 hover:bg-cream"
         >
           {t("home.cta.button")}

@@ -1,11 +1,13 @@
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
+import { FooterLanguageSwitcher } from "./FooterLanguageSwitcher";
+
 const socials = [
-  { label: "Instagram", href: "https://instagram.com" },
-  { label: "Etsy", href: "https://etsy.com" },
-  { label: "Patreon", href: "https://patreon.com" },
-];
+  { key: "instagram", href: "https://instagram.com" },
+  { key: "etsy", href: "https://etsy.com" },
+  { key: "patreon", href: "https://patreon.com" },
+] as const;
 
 export function Footer() {
   const { t } = useTranslation();
@@ -51,14 +53,14 @@ export function Footer() {
           </h3>
           <ul className="mt-4 space-y-2">
             {socials.map((s) => (
-              <li key={s.label}>
+              <li key={s.key}>
                 <a
                   href={s.href}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="font-semibold text-ink transition-colors hover:text-coral-500"
                 >
-                  {s.label}
+                  {t(`footer.social.${s.key}`)}
                 </a>
               </li>
             ))}
@@ -88,11 +90,14 @@ export function Footer() {
       </div>
 
       <div className="border-t border-ink/5">
-        <div className="container-page flex flex-col items-center justify-between gap-2 py-6 text-sm text-ink-soft sm:flex-row">
+        <div className="container-page flex flex-col items-center justify-between gap-4 py-6 text-sm text-ink-soft sm:flex-row">
           <p>
             &copy; {year} {t("brand.name")}. {t("footer.rights")}
           </p>
-          <p>{t("footer.madeWith")}</p>
+          <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+            <FooterLanguageSwitcher />
+            <p>{t("footer.madeWith")}</p>
+          </div>
         </div>
       </div>
     </footer>

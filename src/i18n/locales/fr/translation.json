@@ -1,0 +1,141 @@
+{
+  "brand": {
+    "name": "Anika",
+    "tagline": "Oiseaux à l'aquarelle, lettrages & petites histoires"
+  },
+  "banner": {
+    "construction": "Ce site est encore en construction — merci de votre patience."
+  },
+  "nav": {
+    "home": "Accueil",
+    "portfolio": "Portfolio",
+    "merch": "Boutique",
+    "about": "À propos",
+    "openMenu": "Ouvrir le menu",
+    "closeMenu": "Fermer le menu",
+    "skipToContent": "Aller au contenu"
+  },
+  "meta": {
+    "title": "Anika — Oiseaux à l'aquarelle, lettrage & art pour enfants",
+    "description": "Anika — peintures à l'aquarelle d'oiseaux, lettrage à la main et illustrations pour enfants."
+  },
+  "language": {
+    "label": "Langue",
+    "en": "Anglais",
+    "fr": "Français",
+    "switchTo": "Passer en {{language}}",
+    "loading": "Chargement…"
+  },
+  "notFound": {
+    "title": "404",
+    "message": "Ce petit oiseau s'est égaré. Retournons à l'accueil.",
+    "imageAlt": "Un colibri à l'aquarelle"
+  },
+  "home": {
+    "hero": {
+      "eyebrow": "Atelier d'illustration",
+      "title": "Oiseaux peints à la main & petites histoires joyeuses",
+      "subtitle": "Je suis artiste aquarelliste : amis à plumes, lettrages ludiques et illustrations chaleureuses pour les livres jeunesse et les curieux de tous âges.",
+      "ctaPortfolio": "Voir le portfolio",
+      "ctaShop": "Visiter la boutique"
+    },
+    "featured": {
+      "eyebrow": "Fraîchement sorti de l'atelier",
+      "title": "Une petite galerie",
+      "subtitle": "Quelques aquarelles récentes. Touchez une peinture pour l'admirer de plus près.",
+      "viewAll": "Voir tout le portfolio"
+    },
+    "categories": {
+      "eyebrow": "Ce que je crée",
+      "title": "Trois sujets que j'adore peindre",
+      "birds": {
+        "title": "Oiseaux à l'aquarelle",
+        "text": "Rouges-gorges, mésanges, hiboux et colibris, peints en lavis libres et vivants."
+      },
+      "lettering": {
+        "title": "Lettrage ludique",
+        "text": "Mots et citations en lettrage à la main, avec une touche de couleur aquarelle."
+      },
+      "children": {
+        "title": "Histoires pour enfants",
+        "text": "Illustrations chaleureuses et pleines de caractère pour albums et chambres d'enfant."
+      }
+    },
+    "cta": {
+      "title": "Créons quelque chose de joli",
+      "subtitle": "Commandes, albums illustrés et licences — j'aimerais entendre vos projets.",
+      "button": "Me contacter"
+    }
+  },
+  "about": {
+    "eyebrow": "À propos de l'artiste",
+    "title": "Bonjour, je suis Anika",
+    "intro": "Je suis illustratrice et je travaille à l'aquarelle dans un petit atelier ensoleillé. Mes journées passent à peindre des oiseaux, à lettrer des mots joyeux et à imaginer des personnages pour les histoires d'enfants.",
+    "bodyOne": "Je suis tombée amoureuse de l'aquarelle pour ses heureux accidents — la façon dont les couleurs s'épanouissent et se fondent en quelque chose de plus vivant que prévu. Les oiseaux sont devenus mon sujet favori : chacun a une personnalité qui attend d'être révélée en quelques coups de pinceau assurés.",
+    "bodyTwo": "À côté de mes peintures d'oiseaux, je lettrage des phrases joyeuses et je crée des illustrations douces et pleines de caractère pour les albums, les chambres d'enfant et les familles. Chaque pièce commence sur du vrai papier avant de devenir une estampe ou un produit.",
+    "factsTitle": "Quelques infos sur moi",
+    "facts": {
+      "medium": "Techniques : aquarelle, gouache et encre sur papier coton",
+      "based": "Installée dans un petit atelier rempli de plantes",
+      "loves": "Peint avec le plus de bonheur : rouges-gorges, hiboux & colibris",
+      "work": "Ouverte à : commandes, albums illustrés & licences"
+    },
+    "cta": "Travailler avec moi"
+  },
+  "portfolio": {
+    "eyebrow": "Portfolio",
+    "title": "Collections de travaux récents",
+    "subtitle": "Parcourez les collections par thème — ou voyez-les toutes. Ouvrez une collection pour voir chaque pièce.",
+    "filters": {
+      "all": "Tout",
+      "birds": "Oiseaux",
+      "lettering": "Lettrage",
+      "children": "Jeunesse"
+    },
+    "empty": "Pas encore de collections dans cette catégorie — revenez bientôt !",
+    "pieceCount_one": "{{count}} pièce",
+    "pieceCount_other": "{{count}} pièces",
+    "backToPortfolio": "Toutes les collections",
+    "collectionNotFound": "Nous n'avons pas trouvé cette collection."
+  },
+  "merch": {
+    "eyebrow": "Boutique",
+    "title": "Estampes & jolies choses",
+    "subtitle": "Emportez un peu de joie aquarelle chez vous. Estampes, cartes et cadeaux inspirés des peintures originales.",
+    "from": "à partir de",
+    "soldOut": "Épuisé",
+    "buy": "Voir le produit",
+    "empty": "La boutique se réapprovisionne — revenez bientôt !"
+  },
+  "categories": {
+    "birds": "Oiseaux",
+    "lettering": "Lettrage",
+    "children": "Jeunesse"
+  },
+  "footer": {
+    "tagline": "Oiseaux à l'aquarelle peints à la main, lettrage & illustrations pour enfants.",
+    "explore": "Explorer",
+    "connect": "Réseaux",
+    "newsletter": "Notes d'atelier",
+    "newsletterText": "Lettres occasionnelles avec de nouvelles peintures et réassorts boutique.",
+    "emailPlaceholder": "vous@exemple.com",
+    "subscribe": "S'abonner",
+    "rights": "Tous droits réservés.",
+    "madeWith": "Peint & codé avec soin.",
+    "social": {
+      "instagram": "Instagram",
+      "etsy": "Etsy",
+      "patreon": "Patreon"
+    }
+  },
+  "common": {
+    "loading": "Chargement de jolies choses…",
+    "errorTitle": "Un problème est survenu",
+    "errorBody": "Nous n'avons pas pu charger ceci pour le moment. Veuillez réessayer.",
+    "retry": "Réessayer",
+    "close": "Fermer",
+    "previous": "Précédent",
+    "next": "Suivant",
+    "contactEmail": "hello@example.com"
+  }
+}
