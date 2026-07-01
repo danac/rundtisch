@@ -18,6 +18,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "robin-blossom",
         title: "Robin on Blossom",
+        thumbnail: "/images/thumbs/bird-robin.png",
         image: "/images/bird-robin.png",
         alt: "Watercolor robin perched on a blossoming cherry branch",
         year: 2026,
@@ -25,6 +26,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "blue-tits",
         title: "Two Blue Tits",
+        thumbnail: "/images/thumbs/bird-bluetits.png",
         image: "/images/bird-bluetits.png",
         alt: "A pair of blue tit birds on a flowering twig in teal and yellow",
         year: 2026,
@@ -32,6 +34,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "blue-tits-spring-morning",
         title: "Blue Tits — Spring Morning",
+        thumbnail: "/images/thumbs/bird-bluetits-spring-morning-variation.png",
         image: "/images/bird-bluetits-spring-morning-variation.png",
         alt: "Blue tits among spring blossoms in soft morning light",
         year: 2026,
@@ -39,6 +42,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "blue-tits-autumn-berries",
         title: "Blue Tits — Autumn Berries",
+        thumbnail: "/images/thumbs/bird-bluetits-autumn-berries-variation.png",
         image: "/images/bird-bluetits-autumn-berries-variation.png",
         alt: "Blue tits perched near autumn berries and golden foliage",
         year: 2026,
@@ -46,6 +50,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "blue-tits-rainy-garden",
         title: "Blue Tits — Rainy Garden",
+        thumbnail: "/images/thumbs/bird-bluetits-rainy-garden-variation.png",
         image: "/images/bird-bluetits-rainy-garden-variation.png",
         alt: "Blue tits in a rain-kissed garden with soft grey washes",
         year: 2025,
@@ -53,6 +58,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "blue-tits-winter-frost",
         title: "Blue Tits — Winter Frost",
+        thumbnail: "/images/thumbs/bird-bluetits-winter-frost-variation.png",
         image: "/images/bird-bluetits-winter-frost-variation.png",
         alt: "Blue tits among frosted branches in cool winter tones",
         year: 2025,
@@ -71,6 +77,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hummingbird",
         title: "Hummingbird & Trumpet Flower",
+        thumbnail: "/images/thumbs/bird-hummingbird.png",
         image: "/images/bird-hummingbird.png",
         alt: "An iridescent hummingbird beside a pink trumpet flower",
         year: 2026,
@@ -78,6 +85,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hummingbird-tropical-sunrise",
         title: "Tropical Sunrise",
+        thumbnail: "/images/thumbs/bird-hummingbird-tropical-sunrise-variation.png",
         image: "/images/bird-hummingbird-tropical-sunrise-variation.png",
         alt: "Hummingbird among tropical flowers at sunrise",
         year: 2026,
@@ -85,6 +93,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hummingbird-moonlit-garden",
         title: "Moonlit Garden",
+        thumbnail: "/images/thumbs/bird-hummingbird-moonlit-garden-variation.png",
         image: "/images/bird-hummingbird-moonlit-garden-variation.png",
         alt: "Hummingbird in a moonlit garden with deep blue washes",
         year: 2026,
@@ -92,6 +101,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hummingbird-wildflower-meadow",
         title: "Wildflower Meadow",
+        thumbnail: "/images/thumbs/bird-hummingbird-wildflower-meadow-variation.png",
         image: "/images/bird-hummingbird-wildflower-meadow-variation.png",
         alt: "Hummingbird over a meadow of wildflowers",
         year: 2025,
@@ -99,6 +109,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hummingbird-rain-kissed-hibiscus",
         title: "Rain-Kissed Hibiscus",
+        thumbnail: "/images/thumbs/bird-hummingbird-rain-kissed-hibiscus-variation.png",
         image: "/images/bird-hummingbird-rain-kissed-hibiscus-variation.png",
         alt: "Hummingbird beside a rain-kissed hibiscus bloom",
         year: 2025,
@@ -116,6 +127,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "autumn-owl",
         title: "Autumn Owl",
+        thumbnail: "/images/thumbs/bird-owl.png",
         image: "/images/bird-owl.png",
         alt: "A friendly watercolor owl among autumn leaves",
         year: 2025,
@@ -123,6 +135,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "owl-spring-woodland",
         title: "Spring Woodland",
+        thumbnail: "/images/thumbs/bird-owl-spring-woodland-variation.png",
         image: "/images/bird-owl-spring-woodland-variation.png",
         alt: "Owl among fresh spring woodland greenery",
         year: 2026,
@@ -130,6 +143,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "owl-golden-sunset",
         title: "Golden Sunset",
+        thumbnail: "/images/thumbs/bird-owl-golden-sunset-variation.png",
         image: "/images/bird-owl-golden-sunset-variation.png",
         alt: "Owl bathed in warm golden sunset light",
         year: 2026,
@@ -137,6 +151,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "owl-moonlit",
         title: "Moonlit Night",
+        thumbnail: "/images/thumbs/bird-owl-moonlit-variation.png",
         image: "/images/bird-owl-moonlit-variation.png",
         alt: "Owl under a moonlit sky with cool purple washes",
         year: 2025,
@@ -144,6 +159,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "owl-first-snow",
         title: "First Snow",
+        thumbnail: "/images/thumbs/bird-owl-first-snow-variation.png",
         image: "/images/bird-owl-first-snow-variation.png",
         alt: "Owl among branches touched by the first snow",
         year: 2025,
@@ -162,6 +178,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "tea-party",
         title: "The Tea Party",
+        thumbnail: "/images/thumbs/kids-teaparty.png",
         image: "/images/kids-teaparty.png",
         alt: "A fox cub and a little bird having a tea party among flowers",
         year: 2026,
@@ -169,6 +186,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "tea-party-spring",
         title: "Spring Picnic",
+        thumbnail: "/images/thumbs/kids-teaparty-spring-variation.png",
         image: "/images/kids-teaparty-spring-variation.png",
         alt: "Tea party among spring blossoms and fresh greenery",
         year: 2026,
@@ -176,6 +194,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "tea-party-autumn",
         title: "Autumn Gathering",
+        thumbnail: "/images/thumbs/kids-teaparty-autumn-variation.png",
         image: "/images/kids-teaparty-autumn-variation.png",
         alt: "Tea party with warm autumn leaves and golden light",
         year: 2026,
@@ -183,6 +202,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "tea-party-rainy",
         title: "Rainy Day Tea",
+        thumbnail: "/images/thumbs/kids-teaparty-rainy-variation.png",
         image: "/images/kids-teaparty-rainy-variation.png",
         alt: "Cozy tea party on a rainy day under soft grey skies",
         year: 2025,
@@ -190,6 +210,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "tea-party-twilight",
         title: "Twilight Tea",
+        thumbnail: "/images/thumbs/kids-teaparty-twilight-variation.png",
         image: "/images/kids-teaparty-twilight-variation.png",
         alt: "Tea party at twilight with gentle purple and blue washes",
         year: 2025,
@@ -207,6 +228,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "story-bunnies",
         title: "Storytime Bunnies",
+        thumbnail: "/images/thumbs/kids-bunnies.png",
         image: "/images/kids-bunnies.png",
         alt: "Two bunnies reading a book under a toadstool in the forest",
         year: 2025,
@@ -214,6 +236,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "bunnies-spring-garden",
         title: "Spring Garden Story",
+        thumbnail: "/images/thumbs/kids-bunnies-spring-garden-story-variation.png",
         image: "/images/kids-bunnies-spring-garden-story-variation.png",
         alt: "Bunnies reading in a spring garden among flowers",
         year: 2026,
@@ -221,6 +244,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "bunnies-autumn-storytime",
         title: "Autumn Storytime",
+        thumbnail: "/images/thumbs/kids-bunnies-autumn-storytime-variation.png",
         image: "/images/kids-bunnies-autumn-storytime-variation.png",
         alt: "Bunnies reading among autumn leaves and warm tones",
         year: 2026,
@@ -228,6 +252,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "bunnies-rainy-nook",
         title: "Rainy Reading Nook",
+        thumbnail: "/images/thumbs/kids-bunnies-rainy-reading-nook-variation.png",
         image: "/images/kids-bunnies-rainy-reading-nook-variation.png",
         alt: "Bunnies curled up reading in a cozy rainy nook",
         year: 2025,
@@ -235,6 +260,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "bunnies-twilight-fireflies",
         title: "Twilight Fireflies",
+        thumbnail: "/images/thumbs/kids-bunnies-twilight-fireflies-variation.png",
         image: "/images/kids-bunnies-twilight-fireflies-variation.png",
         alt: "Bunnies reading at twilight among glowing fireflies",
         year: 2025,
@@ -253,6 +279,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "hello-lettering",
         title: "Hello in Color",
+        thumbnail: "/images/thumbs/lettering-hello.png",
         image: "/images/lettering-hello.png",
         alt: "Hand-lettered rainbow watercolor word 'Hello' surrounded by flowers",
         year: 2025,
@@ -260,6 +287,7 @@ export const collectionsMock: Collection[] = [
       {
         id: "be-kind-lettering",
         title: "Be Kind",
+        thumbnail: "/images/thumbs/lettering-bekind.png",
         image: "/images/lettering-bekind.png",
         alt: "Hand-lettered 'Be Kind' in pink and blue watercolor with hearts",
         year: 2026,
