@@ -56,7 +56,7 @@ function CollectionStack({ collection }: { collection: Collection }) {
       <div className="aspect-[4/3] overflow-hidden bg-paper px-5 py-6">
         <div className="h-full overflow-hidden rounded-soft shadow-[0_8px_22px_-8px_rgba(47,42,61,0.22)] ring-2 ring-white/80 transition-shadow duration-300 group-hover:shadow-[0_12px_28px_-8px_rgba(47,42,61,0.28)]">
           <AsyncImage
-            src={previews[0].image}
+            src={previews[0].thumbnail}
             alt=""
             ratio="4 / 3"
             className="h-full [&_img]:object-cover [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
@@ -95,7 +95,7 @@ function CollectionStack({ collection }: { collection: Collection }) {
               className={`h-full overflow-hidden rounded-soft ring-2 ring-white/80 transition-shadow duration-300 ${layer.shadow}`}
             >
               <AsyncImage
-                src={art.image}
+                src={art.thumbnail}
                 alt=""
                 ratio="4 / 3"
                 className="h-full [&_img]:object-cover [&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-[1.02]"

@@ -14,7 +14,7 @@ export function ArtworkCard({ artwork, onSelect }: ArtworkCardProps) {
       className="group block w-full overflow-hidden rounded-blob bg-white text-left shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-4 focus-visible:ring-coral-300/50"
     >
       <AsyncImage
-        src={artwork.image}
+        src={artwork.thumbnail}
         alt={artwork.alt}
         ratio="4 / 3"
         className="[&_img]:transition-transform [&_img]:duration-500 group-hover:[&_img]:scale-105"
