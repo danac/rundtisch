@@ -15,6 +15,22 @@
     "closeMenu": "Close menu",
     "skipToContent": "Skip to content"
   },
+  "meta": {
+    "title": "Anika — Watercolor birds, lettering & children's art",
+    "description": "Anika — watercolor paintings of birds, hand lettering, and illustrations for children."
+  },
+  "language": {
+    "label": "Language",
+    "en": "English",
+    "fr": "French",
+    "switchTo": "Switch to {{language}}",
+    "loading": "Loading…"
+  },
+  "notFound": {
+    "title": "404",
+    "message": "This little bird flew off course. Let's get you back home.",
+    "imageAlt": "A watercolor hummingbird"
+  },
   "home": {
     "hero": {
       "eyebrow": "Illustration studio",
@@ -105,7 +121,12 @@
     "emailPlaceholder": "you@example.com",
     "subscribe": "Subscribe",
     "rights": "All rights reserved.",
-    "madeWith": "Painted & coded with care."
+    "madeWith": "Painted & coded with care.",
+    "social": {
+      "instagram": "Instagram",
+      "etsy": "Etsy",
+      "patreon": "Patreon"
+    }
   },
   "common": {
     "loading": "Loading lovely things...",
@@ -114,6 +135,7 @@
     "retry": "Try again",
     "close": "Close",
     "previous": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "contactEmail": "hello@example.com"
   }
 }
