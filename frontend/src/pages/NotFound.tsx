@@ -11,7 +11,7 @@ export function NotFound() {
       <div className="mx-auto max-w-md">
         <div className="mx-auto mb-8 w-48">
           <AsyncImage
-            src="/images/bird-hummingbird.png"
+            src="/images/thumbs/bird-hummingbird.png"
             alt={t("notFound.imageAlt")}
             ratio="3 / 2"
             priority
