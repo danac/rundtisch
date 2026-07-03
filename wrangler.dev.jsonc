@@ -3,9 +3,8 @@
   "main": "./backend/build/index.js",
   "compatibility_date": "2026-07-01",
   "workers_dev": true,
-  "preview_urls": true,
   "build": {
-    "command": "cd backend && cargo install -q worker-build@^0.8 && worker-build --release"
+    "command": "cd backend && cargo install -q worker-build@^0.8 && worker-build"
   },
   "assets": {
     "directory": "./frontend/dist",
