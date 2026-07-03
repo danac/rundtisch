@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n fe,api -c blue,green \"npm run dev --prefix frontend\" \"wrangler dev --config wrangler.dev.jsonc --port 8787\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "wrangler": "^4.104.0"
+  }
+}

@@ -28,3 +28,9 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
+
+# Rust / Cloudflare Workers backend
+backend/target/
+backend/build/
+backend/pkg/
+backend/.wrangler/
