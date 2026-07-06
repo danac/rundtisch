@@ -1,13 +1,22 @@
-use axum::{http::StatusCode, routing::get, Router};
+mod app_state;
+mod handlers;
+mod routes;
+mod traits;
+
+use crate::app_state::AppState;
+use crate::traits::Platform;
+use std::sync::Arc;
 use tower_service::Service;
 use worker::*;
 
-async fn health() -> StatusCode {
-    StatusCode::OK
-}
+struct CloudFlareWorker;
+struct CloudFlareSecrets;
 
-fn router() -> Router {
-    Router::new().route("/api/health", get(health))
+impl Platform for CloudFlareWorker {
+    type SecretStore = CloudFlareSecrets;
+    fn secrets(&self) -> Arc<Self::SecretStore> {
+        Arc::new(CloudFlareSecrets)
+    }
 }
 
 #[event(fetch)]
@@ -16,5 +25,8 @@ async fn fetch(
     _env: Env,
     _ctx: Context,
 ) -> Result<axum::http::Response<axum::body::Body>> {
-    Ok(router().call(req).await?)
+    let platform = CloudFlareWorker {};
+    let state = AppState::from_platform(&platform);
+
+    Ok(routes::router(state).call(req).await?)
 }
