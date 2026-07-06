@@ -1,9 +1,22 @@
-node_modules
-dist
-dist-ssr
-public/locales
-*.local
+# Dependencies
+node_modules/
+
+# Frontend (Vite) — frontend/
+frontend/dist/
+frontend/dist-ssr/
+frontend/public/locales/
 *.tsbuildinfo
+
+# Rust / Cloudflare Workers backend — backend/
+backend/target/
+backend/build/
+backend/pkg/
+
+# Wrangler local dev state (repo root + backend/)
+.wrangler/
+
+# Local overrides
+*.local
 
 # Logs
 logs
@@ -28,9 +41,3 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-
-# Rust / Cloudflare Workers backend
-backend/target/
-backend/build/
-backend/pkg/
-backend/.wrangler/
