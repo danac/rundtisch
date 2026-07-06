@@ -10,39 +10,8 @@ export function About() {
 
   return (
     <Section>
-      <div className="grid items-start gap-10 lg:grid-cols-[5fr_6fr] lg:gap-14">
-        <div className="lg:sticky lg:top-28">
-          <div className="relative">
-            <div
-              aria-hidden
-              className="absolute inset-0 -rotate-3 rounded-blob bg-teal-100"
-            />
-            <AsyncImage
-              src="/images/bird-owl.png"
-              alt={t("about.title")}
-              ratio="1 / 1"
-              priority
-              className="relative rounded-blob shadow-lift"
-            />
-          </div>
-
-          <div className="mt-8 rounded-blob bg-paper p-6">
-            <h2 className="text-xl font-bold">{t("about.factsTitle")}</h2>
-            <ul className="mt-4 space-y-3">
-              {facts.map((fact) => (
-                <li key={fact} className="flex items-start gap-3 text-ink-soft">
-                  <span
-                    aria-hidden
-                    className="mt-2 h-2 w-2 shrink-0 rounded-full bg-coral-500"
-                  />
-                  <span>{t(`about.facts.${fact}`)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <div className="animate-fade-up">
+      <div className="grid items-start gap-8 lg:grid-cols-[5fr_6fr] lg:gap-14">
+        <div className="animate-fade-up lg:col-start-2 lg:row-start-1">
           <p className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-coral-500">
             {t("about.eyebrow")}
           </p>
@@ -58,6 +27,37 @@ export function About() {
             {t("about.cta")}
           </a>
         </div>
+
+        <aside className="lg:sticky lg:top-28 lg:col-start-1 lg:row-start-1">
+          <div className="relative mx-auto w-full max-w-48 sm:max-w-56 lg:max-w-none">
+            <div
+              aria-hidden
+              className="absolute inset-0 -rotate-3 rounded-blob bg-teal-100"
+            />
+            <AsyncImage
+              src="/images/bird-owl.png"
+              alt={t("about.title")}
+              ratio="1 / 1"
+              priority
+              className="relative rounded-blob shadow-lift"
+            />
+          </div>
+
+          <div className="mt-6 rounded-blob bg-paper p-6 lg:mt-8">
+            <h2 className="text-xl font-bold">{t("about.factsTitle")}</h2>
+            <ul className="mt-4 space-y-3">
+              {facts.map((fact) => (
+                <li key={fact} className="flex items-start gap-3 text-ink-soft">
+                  <span
+                    aria-hidden
+                    className="mt-2 h-2 w-2 shrink-0 rounded-full bg-coral-500"
+                  />
+                  <span>{t(`about.facts.${fact}`)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
       </div>
     </Section>
   );
