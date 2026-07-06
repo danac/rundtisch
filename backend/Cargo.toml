@@ -7,7 +7,9 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-axum = { version = "0.8", default-features = false }
+axum = { version = "0.8", default-features = false, features = ["json"] }
 tower-service = "0.3"
+serde_json = "1.0"
 worker = { version = "0.8", features = ["http", "axum"] }
+serde = { version = "1.0", features = ["derive"] }
 worker-macros = { version = "0.8", features = ["http"] }
