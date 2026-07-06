@@ -9,7 +9,10 @@ use std::sync::Arc;
 use tower_service::Service;
 use worker::*;
 
-struct CloudFlareWorker;
+struct CloudFlareWorker
+{
+    env: Env
+}
 struct CloudFlareSecrets;
 
 impl Platform for CloudFlareWorker {
@@ -22,10 +25,10 @@ impl Platform for CloudFlareWorker {
 #[event(fetch)]
 async fn fetch(
     req: HttpRequest,
-    _env: Env,
+    env: Env,
     _ctx: Context,
 ) -> Result<axum::http::Response<axum::body::Body>> {
-    let platform = CloudFlareWorker {};
+    let platform = CloudFlareWorker {env};
     let state = AppState::from_platform(&platform);
 
     Ok(routes::router(state).call(req).await?)
