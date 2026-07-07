@@ -1,11 +1,11 @@
 {
   "name": "anikaelsa",
-  "main": "./backend/build/index.js",
+  "main": "./backend/worker/build/index.js",
   "compatibility_date": "2026-07-01",
   "workers_dev": true,
   "build": {
-    "command": "cd backend && cargo install -q worker-build@^0.8 && worker-build --dev",
-    "watch_dir": "backend/src"
+    "command": "cd backend/worker && cargo install -q worker-build@^0.8 && worker-build --dev",
+    "watch_dir": ["backend/src", "backend/worker/src"]
   },
   "assets": {
     "directory": "./frontend/dist",
