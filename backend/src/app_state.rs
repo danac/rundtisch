@@ -7,7 +7,7 @@ pub struct AppState<P: Platform> {
 
 impl<P: Platform> Clone for AppState<P> {
     fn clone(&self) -> Self {
-        AppState{
+        AppState {
             secrets: self.secrets.clone(),
         }
     }

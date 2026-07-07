@@ -9,3 +9,7 @@ pub trait Platform: Send + Sync + 'static {
 pub trait SecretStore {
     fn get_secret_by_name(&self, name: String) -> Option<String>;
 }
+
+pub trait DatabaseExecutor {
+    
+}
