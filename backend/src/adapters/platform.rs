@@ -1,6 +1,4 @@
-#[cfg(target_arch = "wasm32")]
-mod cloudflare;
-#[cfg(target_arch = "wasm32")]
+pub mod cloudflare;
 pub use cloudflare::CloudFlareWorker;
 
 #[cfg(not(target_arch = "wasm32"))]

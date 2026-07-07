@@ -1,0 +1,13 @@
+[package]
+name = "backend-worker"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+backend = { path = ".." }
+axum = { version = "0.8", default-features = false, features = ["json", "http1"] }
+worker = { version = "0.8", features = ["http", "axum"] }
+worker-macros = { version = "0.8", features = ["http"] }

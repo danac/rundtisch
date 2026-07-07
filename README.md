@@ -26,7 +26,7 @@ The repository is a **monorepo** deployed as a **single Cloudflare Worker**: a R
 | `/api/*` | Rust Axum worker (WASM) | `backend/` via `worker-build` |
 | `/*` | Static SPA + SPA fallback | `frontend/dist/` |
 
-Wrangler config at the repo root ties both together. The worker script (`backend/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
+Wrangler config at the repo root ties both together. The worker script (`backend/worker/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
 
 ### Development model
 
@@ -151,12 +151,12 @@ Output: `frontend/dist/` (TypeScript check + Vite production bundle).
 ### Backend
 
 ```bash
-cd backend
+cd backend/worker
 cargo install -q worker-build@^0.8
 worker-build --release    # or omit --release for debug
 ```
 
-Output: `backend/build/index.js` + `index_bg.wasm` (gitignored; regenerated on every deploy).
+Output: `backend/worker/build/index.js` + `index_bg.wasm` (gitignored; regenerated on every deploy).
 
 Wrangler runs the backend build automatically via `build.command` in `wrangler.jsonc` — you do not need a separate backend build step before `wrangler deploy`.
 

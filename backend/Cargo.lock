@@ -83,6 +83,15 @@ dependencies = [
  "tokio",
  "tower-service",
  "worker",
+]
+
+[[package]]
+name = "backend-worker"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "backend",
+ "worker",
  "worker-macros",
 ]
 
