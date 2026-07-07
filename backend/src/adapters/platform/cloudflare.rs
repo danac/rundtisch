@@ -4,7 +4,6 @@ use crate::{routes, AppState};
 use std::sync::Arc;
 use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
-use worker_macros::event;
 
 pub struct CloudFlareWorker {
     _env: Env,
@@ -24,8 +23,7 @@ impl CloudFlareWorker {
     }
 }
 
-#[event(fetch)]
-async fn fetch(
+pub async fn handle_fetch(
     req: HttpRequest,
     env: Env,
     _ctx: Context,

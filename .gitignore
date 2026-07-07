@@ -9,7 +9,7 @@ frontend/public/locales/
 
 # Rust / Cloudflare Workers backend — backend/
 backend/target/
-backend/build/
+backend/worker/build/
 backend/pkg/
 
 # Wrangler local dev state (repo root + backend/)
