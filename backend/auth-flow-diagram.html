@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auth Flow — Registration, Activation &amp; JWT Refresh</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface-2: #243044;
+      --border: #2d3a4f;
+      --text: #e8eef7;
+      --muted: #8b9bb4;
+      --user: #7c9cff;
+      --fe: #5ec8a0;
+      --api: #f0a05a;
+      --mail: #c084fc;
+      --db: #67e8f9;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --line: #3d4f6a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+
+    header h1 {
+      font-size: 1.65rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 36rem;
+      margin: 0 auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem 1.25rem;
+      margin: 1.5rem 0 2rem;
+      padding: 0.85rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem 1rem 2rem;
+      overflow-x: auto;
+    }
+
+    /* Actor columns */
+    .actors {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 0.5rem;
+      min-width: 720px;
+      margin-bottom: 0.25rem;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--surface);
+      padding-bottom: 0.75rem;
+    }
+
+    .actor {
+      text-align: center;
+      padding: 0.65rem 0.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.8rem;
+      border: 1px solid transparent;
+    }
+
+    .actor.user { background: color-mix(in srgb, var(--user) 18%, transparent); color: var(--user); border-color: color-mix(in srgb, var(--user) 35%, transparent); }
+    .actor.fe   { background: color-mix(in srgb, var(--fe) 18%, transparent); color: var(--fe); border-color: color-mix(in srgb, var(--fe) 35%, transparent); }
+    .actor.api  { background: color-mix(in srgb, var(--api) 18%, transparent); color: var(--api); border-color: color-mix(in srgb, var(--api) 35%, transparent); }
+    .actor.mail { background: color-mix(in srgb, var(--mail) 18%, transparent); color: var(--mail); border-color: color-mix(in srgb, var(--mail) 35%, transparent); }
+    .actor.db   { background: color-mix(in srgb, var(--db) 18%, transparent); color: var(--db); border-color: color-mix(in srgb, var(--db) 35%, transparent); }
+
+    .actor small {
+      display: block;
+      font-weight: 400;
+      font-size: 0.65rem;
+      opacity: 0.75;
+      margin-top: 0.15rem;
+    }
+
+    /* Lifelines + steps */
+    .flow {
+      position: relative;
+      min-width: 720px;
+    }
+
+    .lifelines {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 0.5rem;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .lifeline {
+      display: flex;
+      justify-content: center;
+    }
+
+    .lifeline::after {
+      content: "";
+      width: 2px;
+      height: 100%;
+      background: repeating-linear-gradient(
+        to bottom,
+        var(--line) 0 6px,
+        transparent 6px 12px
+      );
+      opacity: 0.55;
+    }
+
+    .steps {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    /* Phase banner */
+    .phase {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1rem 0 0.4rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border-left: 3px solid var(--user);
+    }
+
+    .phase:first-child { margin-top: 0.25rem; }
+
+    .phase .badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .phase .title {
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .phase.register { border-color: var(--user); }
+    .phase.activate { border-color: var(--mail); }
+    .phase.login { border-color: var(--fe); }
+    .phase.usage { border-color: var(--ok); }
+    .phase.refresh { border-color: var(--err); }
+    .phase.logout { border-color: var(--muted); }
+
+    /* Message rows */
+    .msg {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 0.5rem;
+      align-items: center;
+      min-height: 2.4rem;
+    }
+
+    .msg-cell {
+      position: relative;
+      height: 100%;
+      min-height: 2.4rem;
+    }
+
+    .arrow-wrap {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0.15rem;
+      z-index: 1;
+    }
+
+    .arrow-label {
+      font-size: 0.68rem;
+      font-weight: 500;
+      padding: 0.2rem 0.45rem;
+      border-radius: 6px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+      align-self: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+
+    .arrow-label code {
+      font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+      font-size: 0.65rem;
+      color: var(--warn);
+    }
+
+    .arrow-label .status {
+      font-weight: 700;
+      font-size: 0.62rem;
+      padding: 0.05rem 0.3rem;
+      border-radius: 4px;
+      margin-right: 0.25rem;
+    }
+
+    .status.ok { background: color-mix(in srgb, var(--ok) 25%, transparent); color: var(--ok); }
+    .status.created { background: color-mix(in srgb, var(--fe) 25%, transparent); color: var(--fe); }
+    .status.err { background: color-mix(in srgb, var(--err) 25%, transparent); color: var(--err); }
+    .status.warn { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+
+    .arrow-line {
+      height: 2px;
+      background: var(--line);
+      position: relative;
+      width: 100%;
+    }
+
+    .arrow-line::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      width: 0;
+      height: 0;
+      border: 5px solid transparent;
+      transform: translateY(-50%);
+    }
+
+    .arrow-line.forward::after {
+      right: -1px;
+      border-left-color: var(--line);
+      border-right: 0;
+    }
+
+    .arrow-line.back::after {
+      left: -1px;
+      border-right-color: var(--line);
+      border-left: 0;
+    }
+
+    /* Colored arrows by destination */
+    .to-fe .arrow-line { background: var(--fe); }
+    .to-fe .arrow-line.forward::after { border-left-color: var(--fe); }
+    .to-fe .arrow-line.back::after { border-right-color: var(--fe); }
+
+    .to-api .arrow-line { background: var(--api); }
+    .to-api .arrow-line.forward::after { border-left-color: var(--api); }
+    .to-api .arrow-line.back::after { border-right-color: var(--api); }
+
+    .to-mail .arrow-line { background: var(--mail); }
+    .to-mail .arrow-line.forward::after { border-left-color: var(--mail); }
+    .to-mail .arrow-line.back::after { border-right-color: var(--mail); }
+
+    .to-db .arrow-line { background: var(--db); }
+    .to-db .arrow-line.forward::after { border-left-color: var(--db); }
+    .to-db .arrow-line.back::after { border-right-color: var(--db); }
+
+    .to-user .arrow-line { background: var(--user); }
+    .to-user .arrow-line.forward::after { border-left-color: var(--user); }
+    .to-user .arrow-line.back::after { border-right-color: var(--user); }
+
+    .reply .arrow-label {
+      border-style: dashed;
+    }
+
+    .reply .arrow-line {
+      background-image: repeating-linear-gradient(
+        90deg,
+        currentColor 0 4px,
+        transparent 4px 8px
+      );
+      background-color: transparent;
+      height: 2px;
+    }
+
+    /* Span helpers: from col start to col end (1-indexed actors) */
+    /* col1=User, 2=FE, 3=API, 4=Mail, 5=DB */
+    .span-1-2 { left: 10%; width: calc(100% + 50% - 20%); }
+    .span-2-3 { left: 10%; width: calc(100% + 50% - 20%); }
+    .span-3-4 { left: 10%; width: calc(100% + 50% - 20%); }
+    .span-3-5 { left: 10%; width: calc(200% + 100% - 20%); }
+
+    /* Better span positioning using grid column placement on arrow-wrap via parent cells */
+
+    .note {
+      grid-column: 1 / -1;
+      margin: 0.35rem 12% ;
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--err) 12%, var(--surface-2));
+      border: 1px dashed color-mix(in srgb, var(--err) 45%, transparent);
+      color: #fecaca;
+      font-size: 0.75rem;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .note.ok {
+      background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
+      border-color: color-mix(in srgb, var(--ok) 45%, transparent);
+      color: #a7f3d0;
+    }
+
+    footer {
+      margin-top: 1.75rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    /* --- Arrow rows with precise column spans --- */
+    .row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(120px, 1fr));
+      gap: 0.5rem;
+      padding: 0.2rem 0;
+      align-items: center;
+    }
+
+    .bubble {
+      grid-column: var(--from) / var(--to);
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding: 0 0.35rem;
+    }
+
+    .bubble.request .label,
+    .bubble.reply .label,
+    .bubble.self .label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      padding: 0.28rem 0.55rem;
+      border-radius: 7px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    }
+
+    .bubble.reply .label {
+      border-style: dashed;
+      background: color-mix(in srgb, var(--surface-2) 80%, black);
+    }
+
+    .bubble.self .label {
+      border-left-width: 3px;
+    }
+
+    .bar {
+      height: 2px;
+      position: relative;
+      border-radius: 1px;
+    }
+
+    .bar::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border: 5px solid transparent;
+    }
+
+    .bubble.ltr .bar::after {
+      right: 0;
+      border-left-color: inherit;
+      border-right-width: 0;
+    }
+
+    .bubble.rtl .bar::after {
+      left: 0;
+      border-right-color: inherit;
+      border-left-width: 0;
+    }
+
+    .c-user { color: var(--user); }
+    .c-fe { color: var(--fe); }
+    .c-api { color: var(--api); }
+    .c-mail { color: var(--mail); }
+    .c-db { color: var(--db); }
+
+    .bar.user { background: var(--user); border-left-color: var(--user); color: var(--user); }
+    .bar.fe { background: var(--fe); color: var(--fe); }
+    .bar.api { background: var(--api); color: var(--api); }
+    .bar.mail { background: var(--mail); color: var(--mail); }
+    .bar.db { background: var(--db); color: var(--db); }
+
+    .bubble.ltr .bar.user::after { border-left-color: var(--user); }
+    .bubble.ltr .bar.fe::after { border-left-color: var(--fe); }
+    .bubble.ltr .bar.api::after { border-left-color: var(--api); }
+    .bubble.ltr .bar.mail::after { border-left-color: var(--mail); }
+    .bubble.ltr .bar.db::after { border-left-color: var(--db); }
+
+    .bubble.rtl .bar.user::after { border-right-color: var(--user); }
+    .bubble.rtl .bar.fe::after { border-right-color: var(--fe); }
+    .bubble.rtl .bar.api::after { border-right-color: var(--api); }
+    .bubble.rtl .bar.mail::after { border-right-color: var(--mail); }
+    .bubble.rtl .bar.db::after { border-right-color: var(--db); }
+
+    .bubble.rtl .bar {
+      background-image: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px);
+      background-color: transparent;
+      height: 2px;
+    }
+
+    .bubble.self {
+      --from: 3;
+      --to: 4;
+    }
+
+    .db-action {
+      grid-column: 3 / 6;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.6rem;
+      margin: 0.1rem 0.35rem;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--db) 10%, var(--surface-2));
+      border: 1px solid color-mix(in srgb, var(--db) 30%, transparent);
+      font-size: 0.7rem;
+      color: var(--db);
+    }
+
+    .db-action::before {
+      content: "↔";
+      font-weight: 700;
+      opacity: 0.7;
+    }
+
+    @media (max-width: 800px) {
+      .diagram { padding: 1rem 0.5rem 1.5rem; }
+      header h1 { font-size: 1.35rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>Registration &amp; Authentication Flow</h1>
+      <p>Web frontend ↔ REST API with email activation, JWT access tokens, and rotating refresh tokens</p>
+    </header>
+
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:var(--user)"></span> User</div>
+      <div class="legend-item"><span class="dot" style="background:var(--fe)"></span> Frontend</div>
+      <div class="legend-item"><span class="dot" style="background:var(--api)"></span> REST API</div>
+      <div class="legend-item"><span class="dot" style="background:var(--mail)"></span> Email</div>
+      <div class="legend-item"><span class="dot" style="background:var(--db)"></span> Database</div>
+      <div class="legend-item"><span style="border-bottom:2px solid var(--fe);width:18px;display:inline-block"></span> Request</div>
+      <div class="legend-item"><span style="border-bottom:2px dashed var(--muted);width:18px;display:inline-block"></span> Response</div>
+    </div>
+
+    <div class="diagram">
+      <div class="actors">
+        <div class="actor user">User<small>Browser</small></div>
+        <div class="actor fe">Frontend<small>Web app</small></div>
+        <div class="actor api">REST API<small>Backend</small></div>
+        <div class="actor mail">Email<small>Mailer</small></div>
+        <div class="actor db">Database<small>Users + tokens</small></div>
+      </div>
+
+      <div class="flow">
+        <div class="lifelines" aria-hidden="true">
+          <div class="lifeline"></div>
+          <div class="lifeline"></div>
+          <div class="lifeline"></div>
+          <div class="lifeline"></div>
+          <div class="lifeline"></div>
+        </div>
+
+        <div class="steps">
+
+          <!-- REGISTER -->
+          <div class="phase register">
+            <span class="badge">Phase 1</span>
+            <span class="title">Registration</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Register <em>(email, password)</em></div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/register</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Create user · hashed password · <strong>email_verified = false</strong></div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Store activation token (opaque, short-lived, single-use)</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:3;--to:5">
+              <div class="label">Send activation email (link + token)</div>
+              <div class="bar mail"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status created">201</span> Created — no session tokens yet</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:3">
+              <div class="label">“Check your email to activate your account”</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <!-- ACTIVATE -->
+          <div class="phase activate">
+            <span class="badge">Phase 2</span>
+            <span class="title">Email activation</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:5">
+              <div class="label">Open activation link from inbox</div>
+              <div class="bar mail"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Open <code>/activate?token=…</code></div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/activate</code> { token }</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Validate token · set <strong>email_verified = true</strong> · invalidate token</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Activated — optional auto-login tokens</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="note ok">If auto-login: API creates refresh token → returns access JWT + Set-Cookie refresh · else prompt to log in</div>
+
+          <!-- LOGIN -->
+          <div class="phase login">
+            <span class="badge">Phase 3</span>
+            <span class="title">Login</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Submit credentials</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/login</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Verify password hash · check email_verified</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> access JWT + <code>Set-Cookie: refresh</code></div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="note">If unverified → <span class="status err" style="display:inline">403</span> Email not verified · offer resend activation</div>
+
+          <!-- USAGE -->
+          <div class="phase usage">
+            <span class="badge">Phase 4</span>
+            <span class="title">Authenticated API usage</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">API call · <code>Authorization: Bearer &lt;accessJWT&gt;</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Resource JSON</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <!-- EXPIRED + REFRESH -->
+          <div class="phase refresh">
+            <span class="badge">Phase 5</span>
+            <span class="title">Expired access token → refresh</span>
+          </div>
+
+          <div class="note">Access JWT has expired</div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">API call · Bearer access JWT <em>(expired)</em></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status err">401</span> Unauthorized · <code>{ "error": "token_expired" }</code></div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/refresh</code> (HttpOnly cookie)</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Validate refresh token · rotate (revoke old, issue new)</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> new access JWT + new refresh cookie</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">Retry original request · Bearer <em>new</em> access JWT</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Resource JSON</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <!-- LOGOUT -->
+          <div class="phase logout">
+            <span class="badge">Phase 6</span>
+            <span class="title">Logout</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Logout</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/logout</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Revoke refresh token</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">204</span> Clear refresh cookie</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:3">
+              <div class="label">Drop access token from memory · redirect to login</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Solid request lines · dashed reply lines · DB actions shown as backend store ops under the API column
+    </footer>
+  </div>
+</body>
+</html>
