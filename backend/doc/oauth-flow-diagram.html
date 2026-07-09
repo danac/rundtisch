@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auth Flow — OAuth Registration &amp; Login</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface-2: #243044;
+      --border: #2d3a4f;
+      --text: #e8eef7;
+      --muted: #8b9bb4;
+      --user: #7c9cff;
+      --fe: #5ec8a0;
+      --api: #f0a05a;
+      --idp: #38bdf8;
+      --db: #67e8f9;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --err: #f87171;
+      --oauth: #818cf8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100vh;
+      padding: 2rem 1rem 4rem;
+    }
+
+    .page { max-width: 1200px; margin: 0 auto; }
+
+    header { text-align: center; margin-bottom: 2rem; }
+
+    header h1 {
+      font-size: 1.65rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 42rem;
+      margin: 0 auto;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem 1.25rem;
+      margin: 1.5rem 0 2rem;
+      padding: 0.85rem 1.25rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.5rem 0.75rem 2rem;
+      overflow-x: auto;
+    }
+
+    .actors {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, 1fr));
+      gap: 0.4rem;
+      min-width: 820px;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--surface);
+      padding-bottom: 0.75rem;
+    }
+
+    .actor {
+      text-align: center;
+      padding: 0.55rem 0.35rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.75rem;
+      border: 1px solid transparent;
+    }
+
+    .actor small {
+      display: block;
+      font-weight: 400;
+      font-size: 0.6rem;
+      opacity: 0.75;
+      margin-top: 0.15rem;
+    }
+
+    .actor.user { background: color-mix(in srgb, var(--user) 18%, transparent); color: var(--user); border-color: color-mix(in srgb, var(--user) 35%, transparent); }
+    .actor.fe   { background: color-mix(in srgb, var(--fe) 18%, transparent); color: var(--fe); border-color: color-mix(in srgb, var(--fe) 35%, transparent); }
+    .actor.api  { background: color-mix(in srgb, var(--api) 18%, transparent); color: var(--api); border-color: color-mix(in srgb, var(--api) 35%, transparent); }
+    .actor.idp  { background: color-mix(in srgb, var(--idp) 18%, transparent); color: var(--idp); border-color: color-mix(in srgb, var(--idp) 35%, transparent); }
+    .actor.db   { background: color-mix(in srgb, var(--db) 18%, transparent); color: var(--db); border-color: color-mix(in srgb, var(--db) 35%, transparent); }
+
+    .flow { position: relative; min-width: 820px; }
+
+    .lifelines {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, 1fr));
+      gap: 0.4rem;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .lifeline { display: flex; justify-content: center; }
+
+    .lifeline::after {
+      content: "";
+      width: 2px;
+      height: 100%;
+      background: repeating-linear-gradient(to bottom, #3d4f6a 0 6px, transparent 6px 12px);
+      opacity: 0.55;
+    }
+
+    .steps { position: relative; z-index: 1; }
+
+    .phase {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1rem 0 0.4rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 8px;
+      background: var(--surface-2);
+      border-left: 3px solid var(--user);
+    }
+
+    .phase:first-child { margin-top: 0.25rem; }
+
+    .phase .badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .phase .title { font-size: 0.85rem; font-weight: 600; }
+
+    .phase.start { border-color: var(--oauth); }
+    .phase.callback { border-color: var(--idp); }
+    .phase.register { border-color: var(--user); }
+    .phase.login { border-color: var(--fe); }
+    .phase.link { border-color: var(--warn); }
+    .phase.usage { border-color: var(--ok); }
+    .phase.refresh { border-color: var(--err); }
+    .phase.logout { border-color: var(--muted); }
+
+    .row {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(110px, 1fr));
+      gap: 0.4rem;
+      padding: 0.2rem 0;
+      align-items: center;
+    }
+
+    .bubble {
+      grid-column: var(--from) / var(--to);
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      padding: 0 0.25rem;
+    }
+
+    .bubble .label {
+      font-size: 0.66rem;
+      font-weight: 500;
+      padding: 0.28rem 0.5rem;
+      border-radius: 7px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      line-height: 1.35;
+    }
+
+    .bubble.reply .label {
+      border-style: dashed;
+      background: color-mix(in srgb, var(--surface-2) 80%, black);
+    }
+
+    .bubble .label code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.62rem;
+      color: var(--warn);
+    }
+
+    .bar { height: 2px; position: relative; border-radius: 1px; }
+
+    .bar::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border: 5px solid transparent;
+    }
+
+    .bubble.ltr .bar::after { right: 0; border-left-color: inherit; border-right-width: 0; }
+    .bubble.rtl .bar::after { left: 0; border-right-color: inherit; border-left-width: 0; }
+
+    .bar.user { background: var(--user); color: var(--user); }
+    .bar.fe { background: var(--fe); color: var(--fe); }
+    .bar.api { background: var(--api); color: var(--api); }
+    .bar.idp { background: var(--idp); color: var(--idp); }
+    .bar.db { background: var(--db); color: var(--db); }
+
+    .bubble.ltr .bar.user::after { border-left-color: var(--user); }
+    .bubble.ltr .bar.fe::after { border-left-color: var(--fe); }
+    .bubble.ltr .bar.api::after { border-left-color: var(--api); }
+    .bubble.ltr .bar.idp::after { border-left-color: var(--idp); }
+    .bubble.ltr .bar.db::after { border-left-color: var(--db); }
+
+    .bubble.rtl .bar {
+      background-image: repeating-linear-gradient(90deg, currentColor 0 5px, transparent 5px 9px);
+      background-color: transparent;
+    }
+
+    .bubble.rtl .bar.user::after { border-right-color: var(--user); }
+    .bubble.rtl .bar.fe::after { border-right-color: var(--fe); }
+    .bubble.rtl .bar.api::after { border-right-color: var(--api); }
+    .bubble.rtl .bar.idp::after { border-right-color: var(--idp); }
+    .bubble.rtl .bar.db::after { border-right-color: var(--db); }
+
+    .status {
+      font-weight: 700;
+      font-size: 0.6rem;
+      padding: 0.05rem 0.3rem;
+      border-radius: 4px;
+      margin-right: 0.2rem;
+    }
+
+    .status.ok { background: color-mix(in srgb, var(--ok) 25%, transparent); color: var(--ok); }
+    .status.created { background: color-mix(in srgb, var(--fe) 25%, transparent); color: var(--fe); }
+    .status.err { background: color-mix(in srgb, var(--err) 25%, transparent); color: var(--err); }
+    .status.warn { background: color-mix(in srgb, var(--warn) 25%, transparent); color: var(--warn); }
+
+    .db-action {
+      grid-column: 3 / 6;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.35rem 0.6rem;
+      margin: 0.1rem 0.25rem;
+      border-radius: 8px;
+      background: color-mix(in srgb, var(--db) 10%, var(--surface-2));
+      border: 1px solid color-mix(in srgb, var(--db) 30%, transparent);
+      font-size: 0.66rem;
+      color: var(--db);
+    }
+
+    .db-action::before { content: "↔"; font-weight: 700; opacity: 0.7; }
+
+    .note {
+      grid-column: 1 / -1;
+      margin: 0.35rem 8%;
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      text-align: center;
+      font-weight: 500;
+    }
+
+    .note.oauth {
+      background: color-mix(in srgb, var(--oauth) 14%, var(--surface-2));
+      border: 1px dashed color-mix(in srgb, var(--oauth) 50%, transparent);
+      color: #c7d2fe;
+    }
+
+    .note.warn {
+      background: color-mix(in srgb, var(--warn) 12%, var(--surface-2));
+      border: 1px dashed color-mix(in srgb, var(--warn) 45%, transparent);
+      color: #fde68a;
+    }
+
+    .note.ok {
+      background: color-mix(in srgb, var(--ok) 12%, var(--surface-2));
+      border: 1px dashed color-mix(in srgb, var(--ok) 45%, transparent);
+      color: #a7f3d0;
+    }
+
+    .note.err {
+      background: color-mix(in srgb, var(--err) 12%, var(--surface-2));
+      border: 1px dashed color-mix(in srgb, var(--err) 45%, transparent);
+      color: #fecaca;
+    }
+
+    footer {
+      margin-top: 1.75rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+    }
+
+    .card h3 {
+      font-size: 0.85rem;
+      margin-bottom: 0.5rem;
+      color: var(--fe);
+    }
+
+    .card ul {
+      list-style: none;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+
+    .card li { padding: 0.2rem 0; }
+    .card li code { color: var(--warn); font-size: 0.7rem; }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <h1>OAuth Registration &amp; Login Flow</h1>
+      <p>Authorization Code + PKCE → provider consent → server-side token exchange → JWT session with refresh token rotation</p>
+    </header>
+
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:var(--user)"></span> User</div>
+      <div class="legend-item"><span class="dot" style="background:var(--fe)"></span> Frontend</div>
+      <div class="legend-item"><span class="dot" style="background:var(--api)"></span> REST API</div>
+      <div class="legend-item"><span class="dot" style="background:var(--idp)"></span> OAuth Provider</div>
+      <div class="legend-item"><span class="dot" style="background:var(--db)"></span> Database</div>
+      <div class="legend-item"><span style="border-bottom:2px solid var(--fe);width:16px;display:inline-block"></span> Request</div>
+      <div class="legend-item"><span style="border-bottom:2px dashed var(--muted);width:16px;display:inline-block"></span> Response</div>
+      <div class="legend-item"><span style="border-bottom:2px solid var(--oauth);width:16px;display:inline-block"></span> Browser redirect</div>
+    </div>
+
+    <div class="diagram">
+      <div class="actors">
+        <div class="actor user">User<small>Browser</small></div>
+        <div class="actor fe">Frontend<small>Web app</small></div>
+        <div class="actor api">REST API<small>Backend</small></div>
+        <div class="actor idp">OAuth Provider<small>Google / GitHub</small></div>
+        <div class="actor db">Database<small>Users + OAuth</small></div>
+      </div>
+
+      <div class="flow">
+        <div class="lifelines" aria-hidden="true">
+          <div class="lifeline"></div><div class="lifeline"></div><div class="lifeline"></div>
+          <div class="lifeline"></div><div class="lifeline"></div>
+        </div>
+
+        <div class="steps">
+
+          <!-- PHASE 1 -->
+          <div class="phase start">
+            <span class="badge">Phase 1</span>
+            <span class="title">Start OAuth (shared redirect — register or login)</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">“Sign up with Google”<br><em>or “Sign in with Google”</em></div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>GET /auth/oauth/google/authorize</code><br>?intent=register|login · PKCE <code>code_challenge</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Generate <strong>state</strong> + <strong>code_verifier</strong> (PKCE) · store intent · TTL ~10m</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status created">302</span> <code>Location: accounts.google.com/o/oauth2…</code><br>client_id · state · scope=openid email</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="note oauth">Browser redirect to provider consent screen — same ceremony for register and login</div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:5">
+              <div class="label">Navigate to IdP · sign in · grant consent</div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <!-- PHASE 2 -->
+          <div class="phase callback">
+            <span class="badge">Phase 2</span>
+            <span class="title">Provider callback &amp; token exchange</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:5">
+              <div class="label"><span class="status created">302</span> <code>/auth/oauth/google/callback?code=…&amp;state=…</code></div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:4">
+              <div class="label"><code>GET /auth/oauth/google/callback</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Load + validate <strong>oauth_state</strong> (single-use) · consume state</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:3;--to:5">
+              <div class="label"><code>POST /token</code><br>code + client_secret + <strong>code_verifier</strong></div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:3;--to:5">
+              <div class="label"><span class="status ok">200</span> id_token + access_token</div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:3;--to:5">
+              <div class="label">GET /userinfo (or decode id_token)</div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:3;--to:5">
+              <div class="label">{ <strong>sub</strong>, email, <strong>email_verified</strong>, name }</div>
+              <div class="bar idp"></div>
+            </div>
+          </div>
+
+          <div class="note oauth">Branch: new <code>sub</code> → Phase 3A · known <code>sub</code> → Phase 3B · email conflict → Phase 3C</div>
+
+          <!-- PHASE 3A -->
+          <div class="phase register">
+            <span class="badge">Phase 3A</span>
+            <span class="title">OAuth registration (new user)</span>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Lookup <code>oauth_accounts</code> by (provider, sub) → <strong>not found</strong> · email not taken</div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Create user · <strong>email_verified = true</strong> (IdP) · no password · create <code>oauth_account</code></div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Create refresh token · sign access JWT</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status created">302</span> <code>/oauth/success</code><br>Set-Cookie: refresh · hand off access JWT</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:3">
+              <div class="label">Enter app (authenticated)</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="note warn">Reject if IdP <code>email_verified</code> is false → <span class="status err">403</span></div>
+
+          <!-- PHASE 3B -->
+          <div class="phase login">
+            <span class="badge">Phase 3B</span>
+            <span class="title">OAuth login (returning user)</span>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Lookup <code>oauth_accounts</code> by (provider, <strong>sub</strong>) → user_id found · load user</div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Create refresh token · sign access JWT</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">302</span> <code>/oauth/success</code> + JWT + refresh cookie</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:3">
+              <div class="label">Enter app (authenticated)</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="note warn">If <code>intent=login</code> but no linked account → <span class="status err">404</span> “No account for this provider”</div>
+
+          <!-- PHASE 3C -->
+          <div class="phase link">
+            <span class="badge">Phase 3C</span>
+            <span class="title">Email already registered — account linking</span>
+          </div>
+
+          <div class="row">
+            <div class="db-action">New <code>sub</code> but email matches existing user (e.g. password account)</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status warn">409</span> <code>{ "error": "email_exists" }</code></div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Log in with password first</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/oauth/google/link</code><br>Bearer accessJWT · { code, state }</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Verify session · exchange code · create <code>oauth_account</code> for current user</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Provider linked</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <!-- PHASE 4 -->
+          <div class="phase usage">
+            <span class="badge">Phase 4</span>
+            <span class="title">Authenticated API usage (JWT only — provider not involved)</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">API call · <code>Authorization: Bearer &lt;accessJWT&gt;</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Resource JSON</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <!-- PHASE 5 -->
+          <div class="phase refresh">
+            <span class="badge">Phase 5</span>
+            <span class="title">Expired access token → refresh</span>
+          </div>
+
+          <div class="note err">Access JWT has expired</div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">API call · Bearer <em>expired</em> accessJWT</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status err">401</span> <code>{ "error": "token_expired" }</code></div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/refresh</code> (HttpOnly cookie)</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Validate + rotate refresh token (revoke old, issue new)</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> new access JWT + new refresh cookie</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label">Retry request · Bearer <em>new</em> accessJWT</div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">200</span> Resource JSON</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="note warn">If refresh fails → clear session → redirect to login</div>
+
+          <!-- PHASE 6 -->
+          <div class="phase logout">
+            <span class="badge">Phase 6</span>
+            <span class="title">Logout (local session only)</span>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:1;--to:3">
+              <div class="label">Logout</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble request ltr" style="--from:2;--to:4">
+              <div class="label"><code>POST /auth/logout</code></div>
+              <div class="bar api"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="db-action">Revoke refresh token</div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:2;--to:4">
+              <div class="label"><span class="status ok">204</span> Clear refresh cookie</div>
+              <div class="bar fe"></div>
+            </div>
+          </div>
+
+          <div class="row">
+            <div class="bubble reply rtl" style="--from:1;--to:3">
+              <div class="label">Drop access JWT · redirect to login</div>
+              <div class="bar user"></div>
+            </div>
+          </div>
+
+          <div class="note ok">Does <strong>not</strong> sign the user out of Google/GitHub — only revokes local JWT session</div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <h3>OAuth endpoints</h3>
+        <ul>
+          <li><code>GET /auth/oauth/{provider}/authorize</code></li>
+          <li><code>GET /auth/oauth/{provider}/callback</code></li>
+          <li><code>POST /auth/oauth/{provider}/link</code></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>PKCE + state</h3>
+        <ul>
+          <li><code>code_challenge</code> on authorize</li>
+          <li><code>code_verifier</code> stored server-side</li>
+          <li><code>state</code> single-use CSRF token</li>
+          <li><code>intent</code>: register | login | link</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Stored on server</h3>
+        <ul>
+          <li><code>oauth_accounts</code> (provider + sub)</li>
+          <li>ephemeral <code>oauth_states</code></li>
+          <li>users (nullable password)</li>
+          <li>refresh token hashes</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Registration vs login</h3>
+        <ul>
+          <li>Same OAuth redirect ceremony</li>
+          <li>New <code>sub</code> → create user</li>
+          <li>Known <code>sub</code> → issue JWT</li>
+          <li>Email conflict → link flow</li>
+        </ul>
+      </div>
+    </div>
+
+    <footer>
+      Authorization Code + PKCE · OIDC userinfo · JWT session after OAuth · same refresh/logout as password auth
+    </footer>
+  </div>
+</body>
+</html>
