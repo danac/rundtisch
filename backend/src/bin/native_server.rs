@@ -1,9 +1,9 @@
 use tokio::signal;
 use backend::AppState;
-use backend::adapters::platform::NativePlatform;
+use backend::adapters::platform::native::NativePlatform;
 use backend::routes;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
     let platform = NativePlatform::new();
     let state = AppState::from_platform(&platform);
