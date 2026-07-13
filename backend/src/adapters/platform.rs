@@ -1,7 +1,5 @@
+#[cfg(feature = "cloudflare")]
 pub mod cloudflare;
-pub use cloudflare::CloudFlareWorker;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "native")]
 pub mod native;
-#[cfg(not(target_arch = "wasm32"))]
-pub use native::NativePlatform;

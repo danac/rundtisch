@@ -8,15 +8,21 @@ name = "backend"
 version = "0.1.0"
 edition = "2024"
 
-# Shared — safe for both targets
+[features]
+default = []
+native = ["dep:tokio", "axum/tokio"]
+cloudflare = ["dep:worker"]
+
+# Shared — safe for both runtimes
 [dependencies]
 axum = { version = "0.8", default-features = false, features = ["json", "http1"] }
-serde = { version = "1.0", features = ["derive"] }
+#serde = { version = "1.0", features = ["derive"] }
+#thiserror = "2.0.18"
 serde_json = "1.0"
-tower-service = "0.3"
-worker = { version = "0.8", features = ["http", "axum"] }
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "net", "signal"], optional = true }
+worker = { version = "0.8", features = ["http", "axum"], optional = true }
 
-# Native — add axum/tokio + real tokio
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-axum = { version = "0.8", default-features = false, features = ["json", "http1", "tokio"] }
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "net", "signal"] }
+[[bin]]
+name = "native_server"
+path = "src/bin/native_server.rs"
+required-features = ["native"]

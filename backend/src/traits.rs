@@ -1,15 +1,11 @@
+pub mod db;
 use std::sync::Arc;
 
-pub trait Platform: Send + Sync + 'static {
+// Platform must own its members because it is used to derive objects that stay long-lived
+// in the Axum router
+pub trait Platform: 'static {
+    // Types must be Send + Sync because AppState typically contains Arcs to them and AppState must by Send+Sync
     type SecretStore: Send + Sync;
 
     fn secrets(&self) -> Arc<Self::SecretStore>;
-}
-
-pub trait SecretStore {
-    fn get_secret_by_name(&self, name: String) -> Option<String>;
-}
-
-pub trait DatabaseExecutor {
-    
 }
