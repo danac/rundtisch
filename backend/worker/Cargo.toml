@@ -7,7 +7,8 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-backend = { path = ".." }
+backend = { path = "..", default-features = false, features = ["cloudflare"] }
 axum = { version = "0.8", default-features = false, features = ["json", "http1"] }
 worker = { version = "0.8", features = ["http", "axum"] }
 worker-macros = { version = "0.8", features = ["http"] }
+tower-service = "0.3"
