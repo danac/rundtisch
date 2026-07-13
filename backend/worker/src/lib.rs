@@ -1,9 +1,8 @@
+use backend::adapters::platform::cloudflare::CloudFlareWorker;
+use backend::{AppState, routes};
+use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
 use worker_macros::event;
-use tower_service::Service;
-use backend::adapters::platform::cloudflare::CloudFlareWorker;
-use backend::{routes, AppState};
-
 
 #[event(fetch)]
 async fn fetch(
