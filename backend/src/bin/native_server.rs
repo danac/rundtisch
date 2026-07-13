@@ -1,7 +1,7 @@
-use tokio::signal;
 use backend::AppState;
 use backend::adapters::platform::native::NativePlatform;
 use backend::routes;
+use tokio::signal;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
@@ -10,7 +10,10 @@ async fn main() {
     let router = routes::build_router(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await.unwrap();
-    println!("Starting server, listening on {}...", listener.local_addr().unwrap());
+    println!(
+        "Starting server, listening on {}...",
+        listener.local_addr().unwrap()
+    );
     axum::serve(listener, router)
         .with_graceful_shutdown(shutdown_signal())
         .await

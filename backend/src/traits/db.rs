@@ -7,7 +7,11 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub enum Dialect { Sqlite, Postgres, Mysql }
+pub enum Dialect {
+    Sqlite,
+    Postgres,
+    Mysql,
+}
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -79,8 +83,13 @@ pub trait AnyRow {
 pub trait DatabaseExecutor {
     // Prefer not to use the async keyword in the public trait definition
     // Execute a query that returns rows
-    fn fetch_one<T: FromRow>(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<T>>;
-    fn fetch_all<T: FromRow>(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<Vec<T>>>;
+    fn fetch_one<T: FromRow>(&self, sql: &str, values: &[Value])
+    -> impl Future<Output = Result<T>>;
+    fn fetch_all<T: FromRow>(
+        &self,
+        sql: &str,
+        values: &[Value],
+    ) -> impl Future<Output = Result<Vec<T>>>;
 
     // Execute a mutation, returns the number of affected rows
     fn execute(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<usize>>;

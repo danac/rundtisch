@@ -1,8 +1,7 @@
 use crate::traits::Platform;
-use crate::{routes, AppState};
 
 use std::sync::Arc;
-use worker::{Context, Env, HttpRequest};
+use worker::Env;
 
 pub struct CloudFlareWorker {
     _env: Env,
@@ -21,4 +20,3 @@ impl CloudFlareWorker {
         Self { _env: env }
     }
 }
-
