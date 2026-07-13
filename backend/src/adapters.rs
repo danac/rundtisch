@@ -1,2 +1,2 @@
-pub mod platform;
 pub mod db;
+pub mod platform;

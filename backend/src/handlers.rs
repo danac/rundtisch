@@ -1,10 +1,10 @@
 use crate::app_state::AppState;
 use crate::traits::Platform;
+use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
-use axum::Json;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 pub async fn health<P: Platform>(
     State(_): State<AppState<P>>,
