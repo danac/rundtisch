@@ -1,5 +1,6 @@
 use backend::adapters::platform::cloudflare::CloudFlareWorker;
-use backend::{AppState, routes};
+use backend::app::AppState;
+use backend::routes::build_router;
 use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
 use worker_macros::event;
@@ -13,5 +14,5 @@ async fn fetch(
     let platform = CloudFlareWorker::new(env);
     let state = AppState::from_platform(&platform);
 
-    Ok(routes::build_router(state).call(req).await?)
+    Ok(build_router(state).call(req).await?)
 }
