@@ -1,4 +1,4 @@
-use crate::app_state::AppState;
+use crate::app::AppState;
 use crate::handlers;
 use crate::traits::Platform;
 use axum::Router;
