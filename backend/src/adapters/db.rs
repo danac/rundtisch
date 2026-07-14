@@ -1,9 +1,5 @@
 #[cfg(feature = "cloudflare")]
-mod d1;
-#[cfg(feature = "cloudflare")]
-pub use d1::*;
+pub mod d1;
 
 #[cfg(feature = "native")]
-mod sqlite;
-#[cfg(feature = "native")]
-pub use sqlite::*;
+pub mod sqlite;
