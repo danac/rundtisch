@@ -5,5 +5,7 @@ pub mod adapters;
 pub mod handlers;
 pub mod routes;
 pub mod traits;
-
 pub mod app;
+pub mod queries;
+pub mod models;
+pub mod migrations;
