@@ -6,6 +6,5 @@ pub mod handlers;
 pub mod routes;
 pub mod traits;
 pub mod app;
-pub mod queries;
-pub mod models;
+pub mod auth;
 pub mod migrations;
