@@ -54,7 +54,6 @@ pub enum EmailTable {
 #[derive(Iden)]
 pub enum PasswordTable {
     Table,
-    Id,
     UserId,
     Hash,
     CreatedAt,
