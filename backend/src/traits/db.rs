@@ -1,3 +1,5 @@
+use sea_query::{TableAlterStatement, TableCreateStatement, TableDropStatement};
+
 #[derive(Debug)]
 pub enum Error {
     NotFound,
@@ -83,8 +85,7 @@ pub trait AnyRow {
 pub trait DatabaseExecutor {
     // Prefer not to use the async keyword in the public trait definition
     // Execute a query that returns rows
-    fn fetch_one<T: FromRow>(&self, sql: &str, values: &[Value])
-    -> impl Future<Output = Result<T>>;
+    fn fetch_one<T: FromRow>(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<T>>;
     fn fetch_all<T: FromRow>(
         &self,
         sql: &str,
@@ -96,4 +97,37 @@ pub trait DatabaseExecutor {
 
     // Which dialect to use when building queries
     fn dialect(&self) -> Dialect;
+}
+
+pub enum Statement {
+    CreateTable(TableCreateStatement),
+    AlterTable(TableAlterStatement),
+    DropTable(TableDropStatement),
+}
+
+impl Statement {
+    pub fn to_sql(&self, dialect: Dialect) -> String {
+        match dialect {
+            Dialect::Sqlite => self.to_sql_with(sea_query::SqliteQueryBuilder),
+            Dialect::Postgres => self.to_sql_with(sea_query::PostgresQueryBuilder),
+            Dialect::Mysql => self.to_sql_with(sea_query::MysqlQueryBuilder),
+        }
+    }
+
+    fn to_sql_with<B>(&self, builder: B) -> String
+    where
+        B: sea_query::SchemaBuilder,
+    {
+        match self {
+            Statement::CreateTable(stmt) => stmt.to_string(builder),
+            Statement::AlterTable(stmt) => stmt.to_string(builder),
+            Statement::DropTable(stmt) => stmt.to_string(builder),
+        }
+    }
+}
+
+pub trait Migration {
+    fn name(&self) -> &str;
+    fn up(&self) -> Vec<Statement>;
+    fn down(&self) -> Vec<Statement>;
 }

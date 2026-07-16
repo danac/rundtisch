@@ -1,5 +1,6 @@
 pub mod db;
 use std::sync::Arc;
+use crate::traits::db::Dialect;
 
 // Platform must own its members because it is used to derive objects that stay long-lived
 // in the Axum router
