@@ -1,5 +1,5 @@
-#[cfg(not(any(feature = "native", feature = "cloudflare")))]
-compile_error!("At least one feature must be enabled: either `native` or `cloudflare`.");
+#[cfg(not(any(feature = "native", feature = "cloudflare", feature = "tools")))]
+compile_error!("At least one feature must be enabled: either `native`, `cloudflare`, or `tools`.");
 
 pub mod adapters;
 pub mod handlers;
