@@ -1,4 +1,4 @@
-use sea_query::{TableAlterStatement, TableCreateStatement, TableDropStatement};
+use sea_query::{ForeignKeyStatement, IndexStatement, SchemaStatement};
 
 #[derive(Debug)]
 pub enum Error {
@@ -100,31 +100,33 @@ pub trait DatabaseExecutor {
     fn dialect(&self) -> Dialect;
 }
 
-#[allow(clippy::large_enum_variant)]
-pub enum Statement {
-    CreateTable(TableCreateStatement),
-    AlterTable(TableAlterStatement),
-    DropTable(TableDropStatement),
+pub type Statement = SchemaStatement;
+
+pub fn statement_to_sql(stmt: &Statement, dialect: Dialect) -> String {
+    match dialect {
+        Dialect::Sqlite => statement_to_sql_with(stmt, sea_query::SqliteQueryBuilder),
+        Dialect::Postgres => statement_to_sql_with(stmt, sea_query::PostgresQueryBuilder),
+        Dialect::Mysql => statement_to_sql_with(stmt, sea_query::MysqlQueryBuilder),
+    }
 }
 
-impl Statement {
-    pub fn to_sql(&self, dialect: Dialect) -> String {
-        match dialect {
-            Dialect::Sqlite => self.to_sql_with(sea_query::SqliteQueryBuilder),
-            Dialect::Postgres => self.to_sql_with(sea_query::PostgresQueryBuilder),
-            Dialect::Mysql => self.to_sql_with(sea_query::MysqlQueryBuilder),
-        }
-    }
-
-    fn to_sql_with<B>(&self, builder: B) -> String
-    where
-        B: sea_query::SchemaBuilder,
-    {
-        match self {
-            Statement::CreateTable(stmt) => stmt.to_string(builder),
-            Statement::AlterTable(stmt) => stmt.to_string(builder),
-            Statement::DropTable(stmt) => stmt.to_string(builder),
-        }
+fn statement_to_sql_with<B>(stmt: &Statement, builder: B) -> String
+where
+    B: sea_query::SchemaBuilder,
+{
+    match stmt {
+        SchemaStatement::TableStatement(ts) => ts.to_string(builder),
+        SchemaStatement::IndexStatement(ix) => match ix {
+            IndexStatement::Create(c) => c.to_string(builder),
+            IndexStatement::Drop(d) => d.to_string(builder),
+            _ => panic!("unsupported index statement variant"),
+        },
+        SchemaStatement::ForeignKeyStatement(fk) => match fk {
+            ForeignKeyStatement::Create(c) => c.to_string(builder),
+            ForeignKeyStatement::Drop(d) => d.to_string(builder),
+            _ => panic!("unsupported foreign key statement variant"),
+        },
+        _ => panic!("unsupported schema statement variant"),
     }
 }
 

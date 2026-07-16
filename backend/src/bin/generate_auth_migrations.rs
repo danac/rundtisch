@@ -3,12 +3,12 @@ use std::path::Path;
 use std::process;
 
 use backend::auth::migrations::all_up_migrations;
-use backend::traits::db::{Dialect, Migration, Statement};
+use backend::traits::db::{statement_to_sql, Dialect, Migration, Statement};
 
 fn migration_sql(statements: &[Statement], dialect: Dialect) -> String {
     statements
         .iter()
-        .map(|stmt| stmt.to_sql(dialect))
+        .map(|stmt| statement_to_sql(stmt, dialect))
         .collect::<Vec<_>>()
         .join(";\n\n")
 }
