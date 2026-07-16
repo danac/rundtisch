@@ -1,4 +1,4 @@
-use sea_query::{ColumnDef, ForeignKey, ForeignKeyAction, Table};
+use sea_query::{ColumnDef, ForeignKey, ForeignKeyAction, Table, TableStatement};
 use crate::traits::db::{Migration, Statement};
 use crate::auth::models::*;
 
@@ -9,7 +9,7 @@ impl Migration for AuthMigration001 {
 
     fn up(&self) -> Vec<Statement> {
         vec![
-            Statement::CreateTable(
+            Statement::TableStatement(TableStatement::Create(
                 Table::create()
                     .table(UserTable::Table)
                     .if_not_exists()
@@ -23,8 +23,8 @@ impl Migration for AuthMigration001 {
                     .col(ColumnDef::new(UserTable::LockedUntil).string().null())
                     .col(ColumnDef::new(UserTable::FailedLoginAttempts).integer().not_null().default(0))
                     .to_owned()
-            ),
-            Statement::CreateTable(
+            )),
+            Statement::TableStatement(TableStatement::Create(
                 Table::create()
                     .table(EmailTable::Table)
                     .if_not_exists()
@@ -43,8 +43,8 @@ impl Migration for AuthMigration001 {
                             .on_delete(ForeignKeyAction::Cascade)
                     )
                     .to_owned()
-            ),
-            Statement::CreateTable(
+            )),
+            Statement::TableStatement(TableStatement::Create(
                 Table::create()
                     .table(PasswordTable::Table)
                     .if_not_exists()
@@ -61,8 +61,8 @@ impl Migration for AuthMigration001 {
                             .on_delete(ForeignKeyAction::Cascade)
                     )
                     .to_owned()
-            ),
-            Statement::CreateTable(
+            )),
+            Statement::TableStatement(TableStatement::Create(
                 Table::create()
                     .table(PasswordHistoryTable::Table)
                     .if_not_exists()
@@ -80,32 +80,32 @@ impl Migration for AuthMigration001 {
                             .on_delete(ForeignKeyAction::Cascade)
                     )
                     .to_owned()
-            ),
+            )),
         ]
     }
 
     fn down(&self) -> Vec<Statement> {
         vec![
-            Statement::DropTable(
+            Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
                     .table(PasswordHistoryTable::Table)
                     .to_owned()
-            ),
-            Statement::DropTable(
+            )),
+            Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
                     .table(PasswordTable::Table)
                     .to_owned()
-            ),
-            Statement::DropTable(
+            )),
+            Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
                     .table(EmailTable::Table)
                     .to_owned()
-            ),
-            Statement::DropTable(
+            )),
+            Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
                     .table(UserTable::Table)
                     .to_owned()
-            ),
+            )),
         ]
     }
 }
@@ -113,12 +113,12 @@ impl Migration for AuthMigration001 {
 #[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
-    use crate::traits::db::Dialect;
+    use crate::traits::db::{statement_to_sql, Dialect};
     use sea_query::Iden;
 
     async fn execute_statements(pool: &sqlx::SqlitePool, statements: Vec<Statement>) {
         for stmt in statements {
-            let sql = stmt.to_sql(Dialect::Sqlite);
+            let sql = statement_to_sql(&stmt, Dialect::Sqlite);
             sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .execute(pool)
                 .await
