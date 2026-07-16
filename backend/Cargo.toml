@@ -12,6 +12,7 @@ edition = "2024"
 default = []
 native = ["dep:tokio", "axum/tokio", "dep:sqlx"]
 cloudflare = ["dep:worker"]
+tools = []
 
 # Shared — safe for both runtimes
 [dependencies]
@@ -30,3 +31,8 @@ worker = { version = "0.8", features = ["http", "axum"], optional = true }
 name = "native_server"
 path = "src/bin/native_server.rs"
 required-features = ["native"]
+
+[[bin]]
+name = "generate_auth_migrations"
+path = "src/bin/generate_auth_migrations.rs"
+required-features = ["tools"]

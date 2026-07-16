@@ -9,6 +9,7 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy)]
 pub enum Dialect {
     Sqlite,
     Postgres,
@@ -99,6 +100,7 @@ pub trait DatabaseExecutor {
     fn dialect(&self) -> Dialect;
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum Statement {
     CreateTable(TableCreateStatement),
     AlterTable(TableAlterStatement),
