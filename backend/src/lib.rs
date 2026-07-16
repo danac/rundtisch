@@ -7,4 +7,3 @@ pub mod routes;
 pub mod traits;
 pub mod app;
 pub mod auth;
-pub mod migrations;
