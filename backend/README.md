@@ -1,6 +1,6 @@
-# anikaelsa — Backend
+# Rundtisch — Backend
 
-Rust API compiled to WebAssembly and deployed as part of the [anikaelsa Cloudflare Worker](../README.md). Handles `/api/*`; all other paths are served by the React SPA from `frontend/dist/`.
+Rust API compiled to WebAssembly and deployed as part of the [Cloudflare Worker](../README.md). Handles `/api/*`; all other paths are served by the React SPA from `frontend/dist/`.
 
 Built with **Axum** on **workers-rs** — a minimal starting point with a health check. Portfolio, shop, and translation endpoints are planned to match the [frontend services layer](../frontend/README.md#connecting-a-backend).
 
