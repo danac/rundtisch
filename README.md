@@ -1,6 +1,8 @@
-# anikaelsa
+# Rundtisch (WORK IN PROGRESS)
 
-Artist portfolio site for **Anika** — watercolor birds, hand lettering, and illustrations for children.
+Platform-agnostic micro web framework with CMS features.
+
+Includes a test frontend implementing an artist portfolio site — watercolor birds, hand lettering, and illustrations for children.
 
 The repository is a **monorepo** deployed as a **single Cloudflare Worker**: a React SPA for the public site and a Rust (Axum) WASM worker for `/api/*`. See the component READMEs for implementation detail:
 
