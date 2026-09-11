@@ -2,13 +2,11 @@
 
 Platform-agnostic micro web framework with CMS features.
 
-Includes a test frontend implementing an artist portfolio site — watercolor birds, hand lettering, and illustrations for children.
-
-The repository is a **monorepo** deployed as a **single Cloudflare Worker**: a React SPA for the public site and a Rust (Axum) WASM worker for `/api/*`. See the component READMEs for implementation detail:
+The repository is a **monorepo** deployed as a **single Cloudflare Worker**: a small React SPA (landing page / API test harness) and a Rust (Axum) WASM worker for `/api/*`. See the component READMEs for implementation detail:
 
 | Document | Scope |
 |----------|-------|
-| [frontend/README.md](frontend/README.md) | React SPA — pages, UI, data layer, i18n |
+| [frontend/README.md](frontend/README.md) | React SPA — landing page, planned API playground |
 | [backend/README.md](backend/README.md) | Rust API — routes, WASM build, worker integration |
 
 ## Architecture
@@ -16,7 +14,7 @@ The repository is a **monorepo** deployed as a **single Cloudflare Worker**: a R
 ### Deployment model
 
 ```
-                    Cloudflare Worker (anikaelsa)
+                    Cloudflare Worker (rundtisch)
 ┌──────────────────────────────────────────────────────┐
 │  /api/*  ──►  Rust Axum WASM worker  (backend/)      │
 │  /*      ──►  Static SPA assets      (frontend/dist/) │
@@ -70,11 +68,9 @@ Root `npm run dev` starts both processes via `concurrently`. See [Local developm
 
 The SPA and API are separate crates/projects with their own READMEs, dependencies, and build steps. They only meet at deploy time (and in local dev via the Vite proxy). This keeps the React bundle free of Rust tooling and lets each side evolve on its own schedule.
 
-### API not wired yet
+### Frontend is a test harness
 
-The backend currently exposes only `/api/health`. The frontend still reads bundled mocks from `frontend/src/data/`. The data layer in `frontend/src/services/` is already structured for a REST backend via `VITE_API_BASE_URL` — see [frontend/README.md — Connecting a backend](frontend/README.md#connecting-a-backend).
-
-When ready, set `VITE_API_BASE_URL=/api` at frontend build time so requests go to same-origin paths like `/api/homepage`, then implement matching routes in `backend/src/lib.rs`.
+The backend currently exposes `/api/health`. The SPA is a landing-page skeleton; a button list that calls `/api/*` and displays JSON responses is planned next. In local dev, Vite proxies `/api` to Wrangler so same-origin `fetch('/api/...')` works without CORS.
 
 ### Two Wrangler configs
 
@@ -177,7 +173,7 @@ CI steps: checkout → Node.js + Rust toolchains → Cargo cache → `npm ci` + 
 
 Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **Cloudflare Workers** environment.
 
-Preview URL format: `https://pr-<PR_NUMBER>-anikaelsa.<account>.workers.dev`
+Preview URL format: `https://pr-<PR_NUMBER>-rundtisch.<account>.workers.dev`
 
 ### Manual deploy
 
@@ -186,10 +182,8 @@ npm run build --prefix frontend
 npx wrangler deploy
 ```
 
-Equivalent to `npm run deploy` from `frontend/` (which builds then calls `wrangler deploy --config ../wrangler.jsonc`).
-
 ## Related documentation
 
-- [frontend/README.md](frontend/README.md) — SPA structure, pages, services layer, i18n, async images
+- [frontend/README.md](frontend/README.md) — SPA landing page, Vite proxy, planned API playground
 - [backend/README.md](backend/README.md) — Axum routes, WASM toolchain, extending the API
 - [AGENTS.md](AGENTS.md) — Cursor Cloud agent environment notes
