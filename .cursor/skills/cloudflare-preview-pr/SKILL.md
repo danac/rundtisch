@@ -33,11 +33,11 @@ Read these from the repo when possible:
 
 | Value | Source | Example |
 |-------|--------|---------|
-| Worker name | `wrangler.jsonc` → `name` | `anikaelsa` |
+| Worker name | `wrangler.jsonc` → `name` | `rundtisch` |
 | Preview alias prefix | `.github/workflows/deploy.yml` → `--preview-alias` | `pr-<PR_NUMBER>` |
 | Account subdomain | workers.dev subdomain for this account | check deploy logs |
 
-**Example for PR #42:** `https://pr-42-anikaelsa.<account>.workers.dev`
+**Example for PR #42:** `https://pr-42-rundtisch.<account>.workers.dev`
 
 ### Confirming the URL
 

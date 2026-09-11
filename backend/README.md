@@ -2,7 +2,7 @@
 
 Rust API compiled to WebAssembly and deployed as part of the [Cloudflare Worker](../README.md). Handles `/api/*`; all other paths are served by the React SPA from `frontend/dist/`.
 
-Built with **Axum** on **workers-rs** — a minimal starting point with a health check. Portfolio, shop, and translation endpoints are planned to match the [frontend services layer](../frontend/README.md#connecting-a-backend).
+Built with **Axum** on **workers-rs** — a minimal starting point with a health check. Add routes as the API grows; the [frontend](../frontend/README.md) will gain an API playground to exercise them.
 
 ## Tech stack
 
@@ -68,7 +68,7 @@ backend/
 All Axum routes include the `/api` prefix (e.g. `/api/health`) because:
 
 1. Wrangler's `run_worker_first` matches `/api/*` before the asset handler
-2. The frontend's `VITE_API_BASE_URL=/api` composes paths like `/api/homepage`
+2. The Vite dev proxy forwards `/api` to Wrangler, so the SPA can use same-origin paths
 3. Health checks and future endpoints are clearly separated from SPA routes
 
 ### `tower-service` dependency
@@ -83,22 +83,7 @@ The `backend` crate is an `rlib` with shared handlers, routes, and platform adap
 
 | Method | Path | Handler | Response |
 |--------|------|---------|----------|
-| GET | `/api/health` | `health()` | HTTP 200 (empty body) |
-
-## Planned endpoints
-
-To match [frontend services](../frontend/README.md#expected-rest-endpoints), implement:
-
-| Method | Path | Frontend consumer |
-|--------|------|-------------------|
-| GET | `/api/homepage` | `homepageService` |
-| GET | `/api/collections` | `portfolioService` |
-| GET | `/api/collections/:slug` | `portfolioService` |
-| GET | `/api/products` | `merchService` |
-| GET | `/api/products/:id` | `merchService` |
-| GET | `/api/translations/:lng` | `translationService` |
-
-Add routes in `build_router()` inside `src/routes.rs`. Return JSON matching the TypeScript types in `frontend/src/types/`.
+| GET | `/api/health` | `health()` | JSON `{ "status": "ok", "headers": [...] }` |
 
 ## Development
 
@@ -200,18 +185,15 @@ npx wrangler deploy        # uses wrangler.jsonc at repo root
 Example:
 
 ```rust
-async fn homepage() -> impl axum::response::IntoResponse {
-    // return JSON matching frontend/src/types/homepage.ts
+async fn ping() -> impl axum::response::IntoResponse {
+    Json(json!({"pong": true}))
 }
 
-fn router() -> Router {
-    Router::new()
-        .route("/api/health", get(health))
-        .route("/api/homepage", get(homepage))
-}
+// in build_router():
+.route("/api/ping", get(ping))
 ```
 
 ## See also
 
 - [Root README](../README.md) — monorepo architecture, CI, combined dev workflow
-- [Frontend README](../frontend/README.md) — expected API contract, `VITE_API_BASE_URL`
+- [Frontend README](../frontend/README.md) — SPA landing page and Vite `/api` proxy
