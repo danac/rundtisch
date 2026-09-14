@@ -53,7 +53,7 @@ Browser (localhost:5173)
                                             └─ Rust Axum worker
 ```
 
-Root `npm run dev` starts both processes via `concurrently`. See [Local development](#local-development).
+Root `npm run dev` starts both processes via `concurrently`. Wrangler requires `demo/web/dist` to exist (`assets.directory`); `predev` creates that folder so a Vite production build is not required. See [Local development](#local-development).
 
 ### Repository layout
 
@@ -160,8 +160,8 @@ You can also run each side in a separate terminal — useful when working on onl
 # Terminal 1 — frontend
 npm run dev --prefix demo/web
 
-# Terminal 2 — Worker API (requires demo/web/dist/ for asset serving in wrangler dev)
-npm run build --prefix demo/web
+# Terminal 2 — Worker API (`assets.directory` must exist)
+mkdir -p demo/web/dist            # empty dir is enough for /api/*; SPA on :8787 needs a build
 npx wrangler dev --config wrangler.dev.jsonc --port 8787
 ```
 

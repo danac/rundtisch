@@ -155,10 +155,10 @@ npm run dev
 
 API available at http://localhost:8787/api/health (direct) or http://localhost:5173/api/health (via Vite proxy).
 
-**API Worker only** (requires a frontend build for asset serving in wrangler dev):
+**API Worker only** (`assets.directory` must exist; an empty dir is enough for `/api/*`):
 
 ```bash
-npm run build --prefix demo/web
+mkdir -p demo/web/dist
 npx wrangler dev --config wrangler.dev.jsonc --port 8787
 ```
 
