@@ -1,11 +1,30 @@
-use sea_query::{ForeignKeyStatement, IndexStatement, SchemaStatement};
+use sea_query::{
+    DeleteStatement, ForeignKeyStatement, IndexStatement, InsertStatement, QueryStatementWriter,
+    SchemaStatement, SelectStatement, UpdateStatement,
+};
+#[cfg(any(feature = "native", feature = "cloudflare"))]
+use sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     NotFound,
+    Conflict,
     TypeMismatch,
     Backend(String),
 }
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Error::NotFound => write!(f, "not found"),
+            Error::Conflict => write!(f, "conflict"),
+            Error::TypeMismatch => write!(f, "type mismatch"),
+            Error::Backend(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -18,7 +37,7 @@ pub enum Dialect {
 
 #[derive(Debug, Clone)]
 pub enum Value {
-    Int(i32),
+    Int(i64),
     Float(f32),
     Text(String),
     Bool(bool),
@@ -43,11 +62,21 @@ macro_rules! try_from_impl_for_value {
 }
 
 try_from_impl_for_value! {
-    Int   => i32,
+    Int   => i64,
     Float => f32,
     Text  => String,
     Bool  => bool,
     Bytes => Vec<u8>,
+}
+
+impl TryFrom<Value> for i32 {
+    type Error = Error;
+    fn try_from(value: Value) -> Result<i32> {
+        match value {
+            Value::Int(x) => i32::try_from(x).map_err(|_| Error::TypeMismatch),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
 }
 
 impl Value {
@@ -61,6 +90,61 @@ impl Value {
             v => v.to().map(Some),
         }
     }
+}
+
+impl TryFrom<sea_query::Value> for Value {
+    type Error = Error;
+
+    fn try_from(value: sea_query::Value) -> Result<Value> {
+        match value {
+            sea_query::Value::Bool(None)
+            | sea_query::Value::TinyInt(None)
+            | sea_query::Value::SmallInt(None)
+            | sea_query::Value::Int(None)
+            | sea_query::Value::BigInt(None)
+            | sea_query::Value::TinyUnsigned(None)
+            | sea_query::Value::SmallUnsigned(None)
+            | sea_query::Value::Unsigned(None)
+            | sea_query::Value::BigUnsigned(None)
+            | sea_query::Value::Float(None)
+            | sea_query::Value::Double(None)
+            | sea_query::Value::String(None)
+            | sea_query::Value::Char(None)
+            | sea_query::Value::Bytes(None) => Ok(Value::Null),
+            sea_query::Value::Bool(Some(v)) => Ok(Value::Bool(v)),
+            sea_query::Value::TinyInt(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::SmallInt(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::Int(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::BigInt(Some(v)) => Ok(Value::Int(v)),
+            sea_query::Value::TinyUnsigned(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::SmallUnsigned(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::Unsigned(Some(v)) => Ok(Value::Int(i64::from(v))),
+            sea_query::Value::BigUnsigned(Some(v)) => i64::try_from(v)
+                .map(Value::Int)
+                .map_err(|_| Error::TypeMismatch),
+            sea_query::Value::Float(Some(v)) => Ok(Value::Float(v)),
+            sea_query::Value::Double(Some(v)) => Ok(Value::Float(v as f32)),
+            sea_query::Value::String(Some(v)) => Ok(Value::Text(v)),
+            sea_query::Value::Char(Some(v)) => Ok(Value::Text(v.to_string())),
+            sea_query::Value::Bytes(Some(v)) => Ok(Value::Bytes(v)),
+            sea_query::Value::Enum(sea_query::OptionEnum::None(_)) => Ok(Value::Null),
+            sea_query::Value::Enum(sea_query::OptionEnum::Some(v)) => {
+                Ok(Value::Text(v.value.into_owned()))
+            }
+        }
+    }
+}
+
+/// INSERT / UPDATE / DELETE SeaQuery statements. Adapters render these; callers do not.
+pub trait ExecutableStatement: QueryStatementWriter {}
+
+impl ExecutableStatement for InsertStatement {}
+impl ExecutableStatement for UpdateStatement {}
+impl ExecutableStatement for DeleteStatement {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExecuteResult {
+    pub rows_affected: u64,
 }
 
 // Trait for mapping a row back to a struct, used by the database executor trait, must be implemented by the models like this
@@ -82,22 +166,46 @@ pub trait AnyRow {
     fn get(&self, col: &str) -> Result<Value>;
 }
 
-// Must be implemented by the database adapter
+/// Database port. Callers pass SeaQuery statements; adapters render SQL for their engine.
+///
+/// Futures are not `Send` so Cloudflare D1 can implement this trait.
 pub trait DatabaseExecutor {
-    // Prefer not to use the async keyword in the public trait definition
-    // Execute a query that returns rows
-    fn fetch_one<T: FromRow>(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<T>>;
-    fn fetch_all<T: FromRow>(
+    fn fetch_one<T: FromRow>(&self, stmt: &SelectStatement) -> impl Future<Output = Result<T>>;
+
+    fn fetch_optional<T: FromRow>(
         &self,
-        sql: &str,
-        values: &[Value],
-    ) -> impl Future<Output = Result<Vec<T>>>;
+        stmt: &SelectStatement,
+    ) -> impl Future<Output = Result<Option<T>>>;
 
-    // Execute a mutation, returns the number of affected rows
-    fn execute(&self, sql: &str, values: &[Value]) -> impl Future<Output = Result<usize>>;
+    fn fetch_all<T: FromRow>(&self, stmt: &SelectStatement)
+    -> impl Future<Output = Result<Vec<T>>>;
 
-    // Which dialect to use when building queries
-    fn dialect(&self) -> Dialect;
+    /// INSERT into an autoincrement table. Always returns the generated primary key.
+    fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>>;
+
+    /// UPDATE / DELETE / INSERT where the primary key is already known.
+    fn execute(
+        &self,
+        stmt: &impl ExecutableStatement,
+    ) -> impl Future<Output = Result<ExecuteResult>>;
+}
+
+#[cfg(any(feature = "native", feature = "cloudflare"))]
+pub(crate) fn render_sql(
+    stmt: &impl QueryStatementWriter,
+    dialect: Dialect,
+) -> Result<(String, Vec<Value>)> {
+    let (sql, values) = match dialect {
+        Dialect::Sqlite => stmt.build(SqliteQueryBuilder),
+        Dialect::Postgres => stmt.build(PostgresQueryBuilder),
+        Dialect::Mysql => stmt.build(MysqlQueryBuilder),
+    };
+    let values = values
+        .0
+        .into_iter()
+        .map(Value::try_from)
+        .collect::<Result<Vec<_>>>()?;
+    Ok((sql, values))
 }
 
 pub type Statement = SchemaStatement;

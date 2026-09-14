@@ -24,7 +24,7 @@ Application crates define routes and handlers only. They stay generic over `P: P
 |---------|---------|
 | *(none)* | Traits, `AppState`, auth models/migrations |
 | `native` | Tokio server, SQLite adapter |
-| `cloudflare` | workers-rs fetch helper, D1 adapter (stub) |
+| `cloudflare` | workers-rs fetch helper, D1 adapter |
 
 Default features are empty so a WASM build does not pull Tokio.
 
