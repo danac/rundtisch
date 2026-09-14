@@ -4,30 +4,6 @@ use sea_query::{
     SqliteQueryBuilder, UpdateStatement,
 };
 
-/// Run `f` with the SeaQuery builder for `dialect`.
-///
-/// Both DML (`QueryBuilder`) and DDL (`SchemaBuilder`) builders are the same
-/// concrete types per dialect, so this is the single place that maps
-/// [`Dialect`] → builder.
-macro_rules! with_dialect_builder {
-    ($dialect:expr, |$builder:ident| $body:expr) => {
-        match $dialect {
-            Dialect::Sqlite => {
-                let $builder = SqliteQueryBuilder;
-                $body
-            }
-            Dialect::Postgres => {
-                let $builder = PostgresQueryBuilder;
-                $body
-            }
-            Dialect::Mysql => {
-                let $builder = MysqlQueryBuilder;
-                $body
-            }
-        }
-    };
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     NotFound,
@@ -219,7 +195,11 @@ pub(crate) fn query_to_sql(
     stmt: &impl QueryStatementWriter,
     dialect: Dialect,
 ) -> Result<(String, Vec<Value>)> {
-    let (sql, values) = with_dialect_builder!(dialect, |builder| stmt.build(builder));
+    let (sql, values) = match dialect {
+        Dialect::Sqlite => stmt.build(SqliteQueryBuilder),
+        Dialect::Postgres => stmt.build(PostgresQueryBuilder),
+        Dialect::Mysql => stmt.build(MysqlQueryBuilder),
+    };
     let values = values
         .0
         .into_iter()
@@ -234,7 +214,11 @@ pub type Statement = SchemaStatement;
 ///
 /// Schema SQL has no bind parameters.
 pub fn schema_to_sql(stmt: &Statement, dialect: Dialect) -> String {
-    with_dialect_builder!(dialect, |builder| schema_to_sql_with(stmt, builder))
+    match dialect {
+        Dialect::Sqlite => schema_to_sql_with(stmt, SqliteQueryBuilder),
+        Dialect::Postgres => schema_to_sql_with(stmt, PostgresQueryBuilder),
+        Dialect::Mysql => schema_to_sql_with(stmt, MysqlQueryBuilder),
+    }
 }
 
 fn schema_to_sql_with(stmt: &Statement, builder: impl sea_query::SchemaBuilder) -> String {
