@@ -1,0 +1,15 @@
+[package]
+name = "rundtisch-demo-worker"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+axum.workspace = true
+rundtisch = { path = "../../../crates/rundtisch", default-features = false, features = ["cloudflare"] }
+rundtisch-demo = { path = "..", default-features = false, features = ["cloudflare"] }
+worker.workspace = true
+worker-macros.workspace = true

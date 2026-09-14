@@ -1,0 +1,21 @@
+[package]
+name = "rundtisch-demo"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = []
+native = ["rundtisch/native", "dep:tokio"]
+cloudflare = ["rundtisch/cloudflare"]
+
+[dependencies]
+axum.workspace = true
+rundtisch = { path = "../../crates/rundtisch", default-features = false }
+serde_json.workspace = true
+tokio = { workspace = true, optional = true }
+
+[[bin]]
+name = "native"
+path = "src/bin/native.rs"
+required-features = ["native"]

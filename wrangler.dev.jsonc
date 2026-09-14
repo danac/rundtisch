@@ -1,14 +1,14 @@
 {
   "name": "rundtisch",
-  "main": "./backend/worker/build/index.js",
+  "main": "./demo/api/worker/build/index.js",
   "compatibility_date": "2026-07-01",
   "workers_dev": true,
   "build": {
-    "command": "cd backend/worker && cargo install -q worker-build@^0.8 && worker-build --dev",
-    "watch_dir": ["backend/src", "backend/worker/src"]
+    "command": "cd demo/api/worker && cargo install -q worker-build@^0.8 && worker-build --dev",
+    "watch_dir": ["crates/rundtisch/src", "demo/api/src", "demo/api/worker/src"]
   },
   "assets": {
-    "directory": "./frontend/dist",
+    "directory": "./demo/web/dist",
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   }

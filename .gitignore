@@ -1,18 +1,18 @@
 # Dependencies
 node_modules/
 
-# Frontend (Vite) — frontend/
-frontend/dist/
-frontend/dist-ssr/
-frontend/public/locales/
+# Frontend (Vite) — demo/web/
+demo/web/dist/
+demo/web/dist-ssr/
+demo/web/public/locales/
 *.tsbuildinfo
 
-# Rust / Cloudflare Workers backend — backend/
-backend/target/
-backend/worker/build/
-backend/pkg/
+# Rust workspace
+target/
+demo/api/worker/build/
+demo/api/worker/pkg/
 
-# Wrangler local dev state (repo root + backend/)
+# Wrangler local dev state
 .wrangler/
 
 # Local overrides
