@@ -213,9 +213,9 @@ pub trait DatabaseExecutor {
     ) -> impl Future<Output = Result<ExecuteResult>>;
 }
 
-/// Render a DML statement (`SELECT` / `INSERT` / `UPDATE` / `DELETE`) to SQL + bind values.
+/// Render a DML query (`SELECT` / `INSERT` / `UPDATE` / `DELETE`) to SQL + bind values.
 #[cfg(any(feature = "native", feature = "cloudflare"))]
-pub(crate) fn render_sql(
+pub(crate) fn query_to_sql(
     stmt: &impl QueryStatementWriter,
     dialect: Dialect,
 ) -> Result<(String, Vec<Value>)> {
@@ -230,12 +230,14 @@ pub(crate) fn render_sql(
 
 pub type Statement = SchemaStatement;
 
-/// Render a DDL / schema statement to SQL (no bind parameters).
-pub fn statement_to_sql(stmt: &Statement, dialect: Dialect) -> String {
-    with_dialect_builder!(dialect, |builder| schema_statement_to_sql(stmt, builder))
+/// Render a DDL / schema statement (`CREATE` / `DROP` table, index, FK) to SQL.
+///
+/// Schema SQL has no bind parameters.
+pub fn schema_to_sql(stmt: &Statement, dialect: Dialect) -> String {
+    with_dialect_builder!(dialect, |builder| schema_to_sql_with(stmt, builder))
 }
 
-fn schema_statement_to_sql(stmt: &Statement, builder: impl sea_query::SchemaBuilder) -> String {
+fn schema_to_sql_with(stmt: &Statement, builder: impl sea_query::SchemaBuilder) -> String {
     match stmt {
         SchemaStatement::TableStatement(ts) => ts.to_string(builder),
         SchemaStatement::IndexStatement(ix) => match ix {

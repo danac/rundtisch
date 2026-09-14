@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::traits::db::{
     AnyRow, DatabaseExecutor, Dialect, Error, ExecutableStatement, ExecuteResult, FromRow, Result,
-    Value, render_sql,
+    Value, query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
 use serde_json::Value as JsonValue;
@@ -19,7 +19,7 @@ impl D1Executor {
     }
 
     fn sqlite_sql(stmt: &impl sea_query::QueryStatementWriter) -> Result<(String, Vec<Value>)> {
-        render_sql(stmt, Dialect::Sqlite)
+        query_to_sql(stmt, Dialect::Sqlite)
     }
 
     fn prepare(&self, sql: &str, values: &[Value]) -> Result<worker::D1PreparedStatement> {

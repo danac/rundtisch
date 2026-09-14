@@ -1,6 +1,6 @@
 use crate::traits::db::{
     AnyRow, DatabaseExecutor, Dialect, Error, ExecutableStatement, ExecuteResult, FromRow, Result,
-    Value, render_sql,
+    Value, query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
 use sqlx::query::Query;
@@ -17,7 +17,7 @@ impl SqliteExecutor {
     }
 
     fn sqlite_sql(stmt: &impl sea_query::QueryStatementWriter) -> Result<(String, Vec<Value>)> {
-        render_sql(stmt, Dialect::Sqlite)
+        query_to_sql(stmt, Dialect::Sqlite)
     }
 
     /// Build a sqlx query with all values bound. Borrows from `sql` and `values` to avoid cloning
