@@ -19,7 +19,7 @@ Application code (routes and handlers) depends on `rundtisch` and stays the same
 | Target | Entry | Helper |
 |--------|-------|--------|
 | Native container | `demo/api/src/bin/native.rs` | `rundtisch::runtime::native::serve(router)` |
-| Cloudflare Worker | `demo/api/worker` cdylib | `rundtisch::runtime::cloudflare::handle_fetch(req, env, build_router)` |
+| Cloudflare Worker | `demo/worker` cdylib | `rundtisch::runtime::cloudflare::handle_fetch(req, env, build_router)` |
 
 ### Deployment model (demo)
 
@@ -33,10 +33,10 @@ Application code (routes and handlers) depends on `rundtisch` and stays the same
 
 | Path | Handler | Built from |
 |------|---------|------------|
-| `/api/*` | Rust Axum worker (WASM) | `demo/api/worker` via `worker-build` |
+| `/api/*` | Rust Axum worker (WASM) | `demo/worker` via `worker-build` |
 | `/*` | Static SPA + SPA fallback | `demo/web/dist/` |
 
-Wrangler config at the repo root ties both together. The worker script (`demo/api/worker/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
+Wrangler config at the repo root ties both together. The worker script (`demo/worker/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
 
 The same demo API can run as a native binary (`cargo run -p rundtisch-demo --features native --bin native`) with no route/handler changes.
 
@@ -64,8 +64,8 @@ Root `npm run dev` starts both processes via `concurrently`. See [Local developm
 │   └── rundtisch/             # published lib (Platform, db, auth, runtime)
 ├── demo/
 │   ├── api/                   # demo app crate: routes + handlers
-│   │   ├── src/bin/native.rs  # native container entry
-│   │   └── worker/            # cdylib for wrangler / worker-build
+│   │   └── src/bin/native.rs  # native container entry
+│   ├── worker/                # cdylib for wrangler / worker-build
 │   └── web/                   # React SPA
 ├── wrangler.jsonc             # demo Worker (assets + /api/*)
 ├── wrangler.dev.jsonc
@@ -78,7 +78,7 @@ Root `npm run dev` starts both processes via `concurrently`. See [Local developm
 
 **Why split:** `rundtisch` is the reusable layer (platform trait, database adapters, auth, `serve` / `handle_fetch`). The demo is a small website used to debug that layer: a few Axum routes and the current landing page. Other projects can depend on the lib without taking demo routes.
 
-**How:** A root Cargo workspace with `crates/rundtisch` (publishable) and `demo/api` + `demo/api/worker` (`publish = false`). Feature flags `native` and `cloudflare` stay on the lib; the demo crate forwards them.
+**How:** A root Cargo workspace with `crates/rundtisch` (publishable) and `demo/api` + `demo/worker` (`publish = false`). Feature flags `native` and `cloudflare` stay on the lib; the demo crate forwards them.
 
 ### Single Worker, two artifacts
 
@@ -185,12 +185,12 @@ cargo check -p rundtisch-demo --features native
 ### Worker (WASM)
 
 ```bash
-cd demo/api/worker
+cd demo/worker
 cargo install -q worker-build@^0.8
 worker-build --release    # or omit --release for debug
 ```
 
-Output: `demo/api/worker/build/index.js` + `index_bg.wasm` (gitignored; regenerated on every deploy).
+Output: `demo/worker/build/index.js` + `index_bg.wasm` (gitignored; regenerated on every deploy).
 
 Wrangler runs the Worker build automatically via `build.command` in `wrangler.jsonc` — you do not need a separate WASM build step before `wrangler deploy`.
 

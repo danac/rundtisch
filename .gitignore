@@ -9,8 +9,8 @@ demo/web/public/locales/
 
 # Rust workspace
 target/
-demo/api/worker/build/
-demo/api/worker/pkg/
+demo/worker/build/
+demo/worker/pkg/
 
 # Wrangler local dev state
 .wrangler/

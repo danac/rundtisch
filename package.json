@@ -1,4 +1,5 @@
 {
+  "name": "rundtisch",
   "private": true,
   "scripts": {
     "dev": "concurrently -n fe,api -c blue,green \"npm run dev --prefix demo/web\" \"wrangler dev --config wrangler.dev.jsonc --port 8787\""

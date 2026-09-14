@@ -62,7 +62,7 @@ async fn fetch(
 }
 ```
 
-`worker-build` must run against the cdylib crate (see `demo/api/worker` in this repo).
+`worker-build` must run against the cdylib crate (see `demo/worker` in this repo).
 
 ## Development
 
