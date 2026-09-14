@@ -26,7 +26,7 @@ jobs:
           node-version: "24"
           check-latest: true
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: demo/web/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -37,22 +37,25 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config
 
       - name: Cache Cargo registry and build
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            backend/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
+      - name: Test rundtisch (native)
+        run: cargo test -p rundtisch --features native
+
       - name: Install dependencies
-        working-directory: frontend
+        working-directory: demo/web
         run: npm ci
 
       - name: Build frontend
-        working-directory: frontend
+        working-directory: demo/web
         run: npm run build
 
       - name: Deploy to production
