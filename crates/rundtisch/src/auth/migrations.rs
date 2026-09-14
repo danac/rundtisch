@@ -1,4 +1,4 @@
-use crate::db::Migration;
+use crate::traits::db::Migration;
 
 pub mod auth_migration_001;
 

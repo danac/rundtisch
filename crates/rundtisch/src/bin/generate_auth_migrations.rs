@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process;
 
 use rundtisch::auth::migrations::all_up_migrations;
-use rundtisch::db::{statement_to_sql, Dialect, Migration, Statement};
+use rundtisch::traits::db::{statement_to_sql, Dialect, Migration, Statement};
 
 fn migration_sql(statements: &[Statement], dialect: Dialect) -> String {
     statements

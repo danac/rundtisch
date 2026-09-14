@@ -1,31 +1,7 @@
-use crate::platform::Platform;
+use crate::adapters::platform::cloudflare::CloudflarePlatform;
 use axum::Router;
-use std::sync::Arc;
 use tower_service::Service;
 use worker::{Env, HttpRequest};
-
-pub struct CloudflarePlatform {
-    env: Env,
-}
-
-pub struct CloudflareSecrets;
-
-impl Platform for CloudflarePlatform {
-    type SecretStore = CloudflareSecrets;
-    fn secrets(&self) -> Arc<Self::SecretStore> {
-        Arc::new(CloudflareSecrets)
-    }
-}
-
-impl CloudflarePlatform {
-    pub fn new(env: Env) -> Self {
-        Self { env }
-    }
-
-    pub fn env(&self) -> &Env {
-        &self.env
-    }
-}
 
 /// Construct the platform from the Worker `env`, build a router, and dispatch `req`.
 ///

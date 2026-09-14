@@ -1,4 +1,5 @@
-use rundtisch::runtime::native::{NativePlatform, serve};
+use rundtisch::adapters::platform::native::NativePlatform;
+use rundtisch::runtime::native::serve;
 use rundtisch::AppState;
 use rundtisch_demo::build_router;
 

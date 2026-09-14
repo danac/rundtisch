@@ -8,11 +8,13 @@ This crate is the reusable core of the [rundtisch](https://github.com/danac/rund
 
 | Module | Role |
 |--------|------|
-| `platform` | `Platform` trait and `AppState<P>` |
-| `db` | Database traits (`DatabaseExecutor`, `FromRow`, migrations) plus SQLite / D1 adapters |
+| `traits` | `Platform` and database traits (`DatabaseExecutor`, `FromRow`, migrations) |
+| `app` | `AppState<P>` |
+| `adapters::db` | SQLite / D1 adapters |
+| `adapters::platform` | `NativePlatform`, `CloudflarePlatform` |
 | `auth` | Auth models and schema migrations (WIP) |
-| `runtime::native` | `NativePlatform` and `serve(router)` |
-| `runtime::cloudflare` | `CloudflarePlatform` and `handle_fetch(req, env, build)` |
+| `runtime::native` | `serve(router)` |
+| `runtime::cloudflare` | `handle_fetch(req, env, build)` |
 
 Application crates define routes and handlers only. They stay generic over `P: Platform`.
 
@@ -29,7 +31,8 @@ Default features are empty so a WASM build does not pull Tokio.
 ## Native
 
 ```rust
-use rundtisch::runtime::native::{NativePlatform, serve};
+use rundtisch::adapters::platform::native::NativePlatform;
+use rundtisch::runtime::native::serve;
 use rundtisch::AppState;
 
 #[tokio::main]

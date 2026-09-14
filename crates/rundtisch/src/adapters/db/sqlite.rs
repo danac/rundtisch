@@ -1,4 +1,4 @@
-use crate::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
+use crate::traits::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
 use sqlx::{Row, TypeInfo, ValueRef, Sqlite, query::Query, sqlite::{SqliteArguments, SqliteRow}};
 
 pub struct SqliteExecutor {

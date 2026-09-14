@@ -1,5 +1,5 @@
 use sea_query::{ColumnDef, ForeignKey, ForeignKeyAction, Table, TableStatement};
-use crate::db::{Migration, Statement};
+use crate::traits::db::{Migration, Statement};
 use crate::auth::models::*;
 
 pub struct AuthMigration001;
@@ -113,7 +113,7 @@ impl Migration for AuthMigration001 {
 #[cfg(all(test, feature = "native"))]
 mod tests {
     use super::*;
-    use crate::db::{statement_to_sql, Dialect};
+    use crate::traits::db::{statement_to_sql, Dialect};
     use sea_query::Iden;
 
     async fn execute_statements(pool: &sqlx::SqlitePool, statements: Vec<Statement>) {

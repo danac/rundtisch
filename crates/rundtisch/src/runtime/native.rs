@@ -1,25 +1,5 @@
-use crate::platform::Platform;
 use axum::Router;
-use std::sync::Arc;
 use tokio::signal;
-
-#[derive(Default)]
-pub struct NativePlatform;
-
-pub struct EnvironmentVariableSecrets;
-
-impl Platform for NativePlatform {
-    type SecretStore = EnvironmentVariableSecrets;
-    fn secrets(&self) -> Arc<Self::SecretStore> {
-        Arc::new(EnvironmentVariableSecrets)
-    }
-}
-
-impl NativePlatform {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 /// Bind `0.0.0.0:8080` and serve `router` until Ctrl+C or SIGTERM.
 ///

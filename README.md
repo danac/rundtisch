@@ -6,7 +6,7 @@ The repository is a **Cargo workspace** plus a **demo website** deployed as a **
 
 | Document | Scope |
 |----------|-------|
-| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — `Platform`, `AppState`, db, auth, native/Cloudflare runtimes |
+| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth, native/Cloudflare runtimes |
 | [demo/web/README.md](demo/web/README.md) | React SPA — landing page, planned API playground |
 | [demo/api/README.md](demo/api/README.md) | Demo Axum app — a few `/api/*` routes on top of `rundtisch` |
 
@@ -61,7 +61,7 @@ Root `npm run dev` starts both processes via `concurrently`. Wrangler requires `
 .
 ├── Cargo.toml                 # workspace
 ├── crates/
-│   └── rundtisch/             # published lib (Platform, db, auth, runtime)
+│   └── rundtisch/             # published lib (traits, adapters, auth, runtime)
 ├── demo/
 │   ├── api/                   # demo app crate: routes + handlers
 │   │   └── src/bin/native.rs  # native container entry
