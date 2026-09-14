@@ -1,9 +1,32 @@
 use sea_query::{
-    DeleteStatement, ForeignKeyStatement, IndexStatement, InsertStatement, QueryStatementWriter,
-    SchemaStatement, SelectStatement, UpdateStatement,
+    DeleteStatement, ForeignKeyStatement, IndexStatement, InsertStatement, MysqlQueryBuilder,
+    PostgresQueryBuilder, QueryStatementWriter, SchemaStatement, SelectStatement,
+    SqliteQueryBuilder, UpdateStatement,
 };
-#[cfg(any(feature = "native", feature = "cloudflare"))]
-use sea_query::{MysqlQueryBuilder, PostgresQueryBuilder, SqliteQueryBuilder};
+
+/// Run `f` with the SeaQuery builder for `dialect`.
+///
+/// Both DML (`QueryBuilder`) and DDL (`SchemaBuilder`) builders are the same
+/// concrete types per dialect, so this is the single place that maps
+/// [`Dialect`] → builder.
+macro_rules! with_dialect_builder {
+    ($dialect:expr, |$builder:ident| $body:expr) => {
+        match $dialect {
+            Dialect::Sqlite => {
+                let $builder = SqliteQueryBuilder;
+                $body
+            }
+            Dialect::Postgres => {
+                let $builder = PostgresQueryBuilder;
+                $body
+            }
+            Dialect::Mysql => {
+                let $builder = MysqlQueryBuilder;
+                $body
+            }
+        }
+    };
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -190,16 +213,13 @@ pub trait DatabaseExecutor {
     ) -> impl Future<Output = Result<ExecuteResult>>;
 }
 
+/// Render a DML statement (`SELECT` / `INSERT` / `UPDATE` / `DELETE`) to SQL + bind values.
 #[cfg(any(feature = "native", feature = "cloudflare"))]
 pub(crate) fn render_sql(
     stmt: &impl QueryStatementWriter,
     dialect: Dialect,
 ) -> Result<(String, Vec<Value>)> {
-    let (sql, values) = match dialect {
-        Dialect::Sqlite => stmt.build(SqliteQueryBuilder),
-        Dialect::Postgres => stmt.build(PostgresQueryBuilder),
-        Dialect::Mysql => stmt.build(MysqlQueryBuilder),
-    };
+    let (sql, values) = with_dialect_builder!(dialect, |builder| stmt.build(builder));
     let values = values
         .0
         .into_iter()
@@ -210,18 +230,12 @@ pub(crate) fn render_sql(
 
 pub type Statement = SchemaStatement;
 
+/// Render a DDL / schema statement to SQL (no bind parameters).
 pub fn statement_to_sql(stmt: &Statement, dialect: Dialect) -> String {
-    match dialect {
-        Dialect::Sqlite => statement_to_sql_with(stmt, sea_query::SqliteQueryBuilder),
-        Dialect::Postgres => statement_to_sql_with(stmt, sea_query::PostgresQueryBuilder),
-        Dialect::Mysql => statement_to_sql_with(stmt, sea_query::MysqlQueryBuilder),
-    }
+    with_dialect_builder!(dialect, |builder| schema_statement_to_sql(stmt, builder))
 }
 
-fn statement_to_sql_with<B>(stmt: &Statement, builder: B) -> String
-where
-    B: sea_query::SchemaBuilder,
-{
+fn schema_statement_to_sql(stmt: &Statement, builder: impl sea_query::SchemaBuilder) -> String {
     match stmt {
         SchemaStatement::TableStatement(ts) => ts.to_string(builder),
         SchemaStatement::IndexStatement(ix) => match ix {
