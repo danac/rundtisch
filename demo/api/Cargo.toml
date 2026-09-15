@@ -19,3 +19,7 @@ tokio = { workspace = true, optional = true }
 name = "native"
 path = "src/bin/native.rs"
 required-features = ["native"]
+
+[[bin]]
+name = "generate_auth_migrations"
+path = "src/bin/generate_auth_migrations.rs"
