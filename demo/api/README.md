@@ -64,7 +64,8 @@ demo/
       lib.rs
       routes.rs
       handlers.rs
-      bin/native.rs    # NativePlatform + serve(router)
+      bin/native.rs                      # NativePlatform + serve(router)
+      bin/generate_auth_migrations.rs    # dump auth schema SQL per dialect
   worker/              # sibling cdylib entry (#[event(fetch)])
     Cargo.toml
     src/lib.rs
@@ -124,6 +125,12 @@ sudo apt-get install libssl-dev pkg-config   # required by worker-build
 # from repo root
 cargo check -p rundtisch-demo --features native
 cargo test -p rundtisch --features native
+```
+
+### Auth migration SQL
+
+```bash
+cargo run -p rundtisch-demo --bin generate_auth_migrations -- /tmp/auth-migrations
 ```
 
 ### Native server
