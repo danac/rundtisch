@@ -22,7 +22,3 @@ time.workspace = true
 tokio = { workspace = true, optional = true }
 tower-service = { workspace = true, optional = true }
 worker = { workspace = true, optional = true }
-
-[[bin]]
-name = "generate_auth_migrations"
-path = "src/bin/generate_auth_migrations.rs"

@@ -73,7 +73,6 @@ From the repository root:
 
 ```bash
 cargo test -p rundtisch --features native
-cargo run -p rundtisch --bin generate_auth_migrations -- /tmp/auth-migrations
 ```
 
 ## See also
