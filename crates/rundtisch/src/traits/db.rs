@@ -223,17 +223,11 @@ pub fn schema_to_sql(stmt: &Statement, dialect: Dialect) -> String {
 
 fn schema_to_sql_with(stmt: &Statement, builder: impl sea_query::SchemaBuilder) -> String {
     match stmt {
-        SchemaStatement::TableStatement(ts) => ts.to_string(builder),
-        SchemaStatement::IndexStatement(ix) => match ix {
-            IndexStatement::Create(c) => c.to_string(builder),
-            IndexStatement::Drop(d) => d.to_string(builder),
-            _ => panic!("unsupported index statement variant"),
-        },
-        SchemaStatement::ForeignKeyStatement(fk) => match fk {
-            ForeignKeyStatement::Create(c) => c.to_string(builder),
-            ForeignKeyStatement::Drop(d) => d.to_string(builder),
-            _ => panic!("unsupported foreign key statement variant"),
-        },
+        SchemaStatement::TableStatement(ts) => ts.build(builder),
+        SchemaStatement::IndexStatement(IndexStatement::Create(s)) => s.build(builder),
+        SchemaStatement::IndexStatement(IndexStatement::Drop(s)) => s.build(builder),
+        SchemaStatement::ForeignKeyStatement(ForeignKeyStatement::Create(s)) => s.build(builder),
+        SchemaStatement::ForeignKeyStatement(ForeignKeyStatement::Drop(s)) => s.build(builder),
         _ => panic!("unsupported schema statement variant"),
     }
 }
