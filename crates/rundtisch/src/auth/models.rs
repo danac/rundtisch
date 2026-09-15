@@ -37,23 +37,6 @@ pub enum UserTable {
 // }
 
 #[derive(Iden)]
-pub enum EmailVerificationTable {
-    #[iden = "email_verifications"]
-    Table,
-    Id,
-    UserId,
-    TokenHash,
-    ExpiresAt,
-}
-
-// struct EmailVerification {
-//     id: i64,
-//     user_id: i64,
-//     token_hash: String,
-//     expires_at: DateTime,
-// }
-
-#[derive(Iden)]
 pub enum RefreshTokenTable {
     #[iden = "refresh_tokens"]
     Table,

@@ -26,25 +26,6 @@ impl Migration for AuthMigration001 {
             )),
             Statement::TableStatement(TableStatement::Create(
                 Table::create()
-                    .table(EmailVerificationTable::Table)
-                    .if_not_exists()
-                    .col(ColumnDef::new(EmailVerificationTable::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(EmailVerificationTable::UserId).integer().not_null())
-                    .col(ColumnDef::new(EmailVerificationTable::TokenHash).string().not_null().unique_key())
-                    .col(ColumnDef::new(EmailVerificationTable::ExpiresAt).string().not_null())
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_email_verification_user_id")
-                            .from_tbl(EmailVerificationTable::Table)
-                            .from_col(EmailVerificationTable::UserId)
-                            .to_tbl(UserTable::Table)
-                            .to_col(UserTable::Id)
-                            .on_delete(ForeignKeyAction::Cascade)
-                    )
-                    .to_owned()
-            )),
-            Statement::TableStatement(TableStatement::Create(
-                Table::create()
                     .table(RefreshTokenTable::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(RefreshTokenTable::Id).integer().not_null().auto_increment().primary_key())
@@ -71,11 +52,6 @@ impl Migration for AuthMigration001 {
             Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
                     .table(RefreshTokenTable::Table)
-                    .to_owned()
-            )),
-            Statement::TableStatement(TableStatement::Drop(
-                Table::drop()
-                    .table(EmailVerificationTable::Table)
                     .to_owned()
             )),
             Statement::TableStatement(TableStatement::Drop(
@@ -115,7 +91,6 @@ mod tests {
     fn auth_table_names() -> Vec<String> {
         vec![
             UserTable::Table.to_string(),
-            EmailVerificationTable::Table.to_string(),
             RefreshTokenTable::Table.to_string(),
         ]
     }
