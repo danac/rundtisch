@@ -6,79 +6,68 @@ type DateTime = time::OffsetDateTime;
 
 enum Role {
     User,
-    Admin
+    Admin,
 }
 
 #[derive(Iden)]
 pub enum UserTable {
+    #[iden = "users"]
     Table,
     Id,
-    Role,
+    Email,
     Alias,
+    Role,
+    PasswordHash,
+    EmailVerifiedAt,
     CreatedAt,
     UpdatedAt,
-    DeletedAt,
     LastLoginAt,
-    LockedUntil,
-    FailedLoginAttempts
 }
 
 // struct User {
 //     id: i64,
-//     created_at: DateTime,
-//     role: Role,
+//     email: EmailAddress,
 //     alias: String,
-//     last_login_at: Option<DateTime>,
-//     locked_until: Option<DateTime>,
-//     failed_login_attempts: i32,
-//     deleted_at: Option<DateTime>,
-//     updated_at: DateTime
-// }
-
-#[derive(Iden)]
-pub enum EmailTable {
-    Table,
-    Id,
-    EmailAddress,
-    IsPrimary,
-    UserId,
-    VerifiedAt,
-}
-
-// struct Email {
-//     id: i64,
-//     email_address: EmailAddress,
-//     is_primary: bool,
-//     user_id: i64,
-//     verified_at: Option<DateTime>
-// }
-
-#[derive(Iden)]
-pub enum PasswordTable {
-    Table,
-    UserId,
-    Hash,
-    CreatedAt,
-}
-
-// struct Password {
-//     user_id: i64,
-//     hash: String,
+//     role: Role,
+//     password_hash: Option<String>,
+//     email_verified_at: Option<DateTime>,
 //     created_at: DateTime,
+//     updated_at: DateTime,
+//     last_login_at: Option<DateTime>,
 // }
 
 #[derive(Iden)]
-pub enum PasswordHistoryTable {
+pub enum EmailVerificationTable {
+    #[iden = "email_verifications"]
     Table,
     Id,
     UserId,
-    Hash,
-    CreatedAt,
+    TokenHash,
+    ExpiresAt,
 }
 
-// struct PasswordHistory {
+// struct EmailVerification {
 //     id: i64,
 //     user_id: i64,
-//     hash: String,
-//     created_at: DateTime
+//     token_hash: String,
+//     expires_at: DateTime,
+// }
+
+#[derive(Iden)]
+pub enum RefreshTokenTable {
+    #[iden = "refresh_tokens"]
+    Table,
+    Id,
+    UserId,
+    TokenHash,
+    ExpiresAt,
+    Revoked,
+}
+
+// struct RefreshToken {
+//     id: i64,
+//     user_id: i64,
+//     token_hash: String,
+//     expires_at: DateTime,
+//     revoked: bool,
 // }
