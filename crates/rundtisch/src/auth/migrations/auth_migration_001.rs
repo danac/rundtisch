@@ -5,7 +5,7 @@ use crate::auth::models::*;
 pub struct AuthMigration001;
 
 impl Migration for AuthMigration001 {
-    fn name(&self) -> &str { "auth_001_create_user_email_password_tables" }
+    fn name(&self) -> &str { "auth_001_create_users_and_token_tables" }
 
     fn up(&self) -> Vec<Statement> {
         vec![
@@ -14,30 +14,29 @@ impl Migration for AuthMigration001 {
                     .table(UserTable::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(UserTable::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(UserTable::Role).string().not_null())
+                    .col(ColumnDef::new(UserTable::Email).string().not_null().unique_key())
                     .col(ColumnDef::new(UserTable::Alias).string().not_null())
+                    .col(ColumnDef::new(UserTable::Role).string().not_null())
+                    .col(ColumnDef::new(UserTable::PasswordHash).string().null())
+                    .col(ColumnDef::new(UserTable::EmailVerifiedAt).string().null())
                     .col(ColumnDef::new(UserTable::CreatedAt).string().not_null())
                     .col(ColumnDef::new(UserTable::UpdatedAt).string().not_null())
-                    .col(ColumnDef::new(UserTable::DeletedAt).string().null())
                     .col(ColumnDef::new(UserTable::LastLoginAt).string().null())
-                    .col(ColumnDef::new(UserTable::LockedUntil).string().null())
-                    .col(ColumnDef::new(UserTable::FailedLoginAttempts).integer().not_null().default(0))
                     .to_owned()
             )),
             Statement::TableStatement(TableStatement::Create(
                 Table::create()
-                    .table(EmailTable::Table)
+                    .table(EmailVerificationTable::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(EmailTable::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(EmailTable::EmailAddress).string().not_null().unique_key())
-                    .col(ColumnDef::new(EmailTable::IsPrimary).boolean().not_null())
-                    .col(ColumnDef::new(EmailTable::UserId).integer().not_null())
-                    .col(ColumnDef::new(EmailTable::VerifiedAt).string().null())
+                    .col(ColumnDef::new(EmailVerificationTable::Id).integer().not_null().auto_increment().primary_key())
+                    .col(ColumnDef::new(EmailVerificationTable::UserId).integer().not_null())
+                    .col(ColumnDef::new(EmailVerificationTable::TokenHash).string().not_null().unique_key())
+                    .col(ColumnDef::new(EmailVerificationTable::ExpiresAt).string().not_null())
                     .foreign_key(
                         ForeignKey::create()
-                            .name("fk_email_user_id")
-                            .from_tbl(EmailTable::Table)
-                            .from_col(EmailTable::UserId)
+                            .name("fk_email_verification_user_id")
+                            .from_tbl(EmailVerificationTable::Table)
+                            .from_col(EmailVerificationTable::UserId)
                             .to_tbl(UserTable::Table)
                             .to_col(UserTable::Id)
                             .on_delete(ForeignKeyAction::Cascade)
@@ -46,35 +45,18 @@ impl Migration for AuthMigration001 {
             )),
             Statement::TableStatement(TableStatement::Create(
                 Table::create()
-                    .table(PasswordTable::Table)
+                    .table(RefreshTokenTable::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(PasswordTable::UserId).integer().not_null().primary_key())
-                    .col(ColumnDef::new(PasswordTable::Hash).string().not_null())
-                    .col(ColumnDef::new(PasswordTable::CreatedAt).string().not_null())
+                    .col(ColumnDef::new(RefreshTokenTable::Id).integer().not_null().auto_increment().primary_key())
+                    .col(ColumnDef::new(RefreshTokenTable::UserId).integer().not_null())
+                    .col(ColumnDef::new(RefreshTokenTable::TokenHash).string().not_null().unique_key())
+                    .col(ColumnDef::new(RefreshTokenTable::ExpiresAt).string().not_null())
+                    .col(ColumnDef::new(RefreshTokenTable::Revoked).boolean().not_null().default(false))
                     .foreign_key(
                         ForeignKey::create()
-                            .name("fk_password_user_id")
-                            .from_tbl(PasswordTable::Table)
-                            .from_col(PasswordTable::UserId)
-                            .to_tbl(UserTable::Table)
-                            .to_col(UserTable::Id)
-                            .on_delete(ForeignKeyAction::Cascade)
-                    )
-                    .to_owned()
-            )),
-            Statement::TableStatement(TableStatement::Create(
-                Table::create()
-                    .table(PasswordHistoryTable::Table)
-                    .if_not_exists()
-                    .col(ColumnDef::new(PasswordHistoryTable::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(PasswordHistoryTable::UserId).integer().not_null())
-                    .col(ColumnDef::new(PasswordHistoryTable::Hash).string().not_null())
-                    .col(ColumnDef::new(PasswordHistoryTable::CreatedAt).string().not_null())
-                    .foreign_key(
-                        ForeignKey::create()
-                            .name("fk_password_history_user_id")
-                            .from_tbl(PasswordHistoryTable::Table)
-                            .from_col(PasswordHistoryTable::UserId)
+                            .name("fk_refresh_token_user_id")
+                            .from_tbl(RefreshTokenTable::Table)
+                            .from_col(RefreshTokenTable::UserId)
                             .to_tbl(UserTable::Table)
                             .to_col(UserTable::Id)
                             .on_delete(ForeignKeyAction::Cascade)
@@ -88,17 +70,12 @@ impl Migration for AuthMigration001 {
         vec![
             Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
-                    .table(PasswordHistoryTable::Table)
+                    .table(RefreshTokenTable::Table)
                     .to_owned()
             )),
             Statement::TableStatement(TableStatement::Drop(
                 Table::drop()
-                    .table(PasswordTable::Table)
-                    .to_owned()
-            )),
-            Statement::TableStatement(TableStatement::Drop(
-                Table::drop()
-                    .table(EmailTable::Table)
+                    .table(EmailVerificationTable::Table)
                     .to_owned()
             )),
             Statement::TableStatement(TableStatement::Drop(
@@ -138,9 +115,8 @@ mod tests {
     fn auth_table_names() -> Vec<String> {
         vec![
             UserTable::Table.to_string(),
-            EmailTable::Table.to_string(),
-            PasswordTable::Table.to_string(),
-            PasswordHistoryTable::Table.to_string(),
+            EmailVerificationTable::Table.to_string(),
+            RefreshTokenTable::Table.to_string(),
         ]
     }
 
