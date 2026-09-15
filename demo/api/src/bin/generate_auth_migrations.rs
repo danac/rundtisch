@@ -3,12 +3,12 @@ use std::path::Path;
 use std::process;
 
 use rundtisch::auth::migrations::all_up_migrations;
-use rundtisch::traits::db::{statement_to_sql, Dialect, Migration, Statement};
+use rundtisch::traits::db::{Dialect, Migration, Statement, schema_to_sql};
 
 fn migration_sql(statements: &[Statement], dialect: Dialect) -> String {
     statements
         .iter()
-        .map(|stmt| statement_to_sql(stmt, dialect))
+        .map(|stmt| schema_to_sql(stmt, dialect))
         .collect::<Vec<_>>()
         .join(";\n\n")
 }
