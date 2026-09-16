@@ -1,0 +1,24 @@
+{
+  "name": "rundtisch",
+  "main": "./worker/build/index.js",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "build": {
+    "command": "cargo install -q worker-build@^0.8 && worker-build --dev",
+    "cwd": "worker",
+    "watch_dir": ["../crates/rundtisch/src", "api/src", "worker/src"]
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "D1_BINDING",
+      "database_name": "rundtisch",
+      // Local namespace id; wrangler dev uses a SQLite file under .wrangler/ rather than the remote D1.
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ]
+}

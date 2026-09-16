@@ -1,0 +1,12 @@
+{
+  "name": "rundtisch",
+  "private": true,
+  "scripts": {
+    "predev": "mkdir -p web/dist",
+    "dev": "concurrently -n fe,api -c blue,green \"npm run dev --prefix web\" \"wrangler dev --config wrangler.dev.jsonc --port 8787\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.3",
+    "wrangler": "^4.107.0"
+  }
+}
