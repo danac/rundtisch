@@ -6,7 +6,7 @@ publish = false
 
 [features]
 default = []
-native = ["rundtisch/native", "dep:tokio"]
+native = ["rundtisch/native", "dep:tokio", "axum/tokio"]
 cloudflare = ["rundtisch/cloudflare"]
 
 [dependencies]

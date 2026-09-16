@@ -1071,13 +1071,11 @@ dependencies = [
 name = "rundtisch"
 version = "0.1.0"
 dependencies = [
- "axum",
  "email_address",
  "sea-query",
  "sqlx",
  "time",
  "tokio",
- "tower-service",
  "worker",
 ]
 
@@ -1098,6 +1096,7 @@ dependencies = [
  "axum",
  "rundtisch",
  "rundtisch-demo",
+ "tower-service",
  "worker",
  "worker-macros",
 ]
