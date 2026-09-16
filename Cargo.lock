@@ -1074,6 +1074,7 @@ dependencies = [
  "axum",
  "email_address",
  "sea-query",
+ "serde_json",
  "sqlx",
  "time",
  "tokio",
