@@ -8,7 +8,7 @@ This crate is the reusable core of the [rundtisch](https://github.com/danac/rund
 
 | Module | Role |
 |--------|------|
-| `traits` | `Platform` and database traits (`DatabaseExecutor`, `FromRow`, migrations) |
+| `traits` | `Platform` and database traits (`DatabaseExecutor`, `DbRecord`, migrations) |
 | `app` | `AppState<P>` |
 | `adapters::db` | SQLite / D1 adapters |
 | `adapters::platform` | `NativePlatform`, `CloudflarePlatform` |
@@ -27,6 +27,8 @@ Application crates define routes and handlers only. They stay generic over `P: P
 | `cloudflare` | workers-rs fetch helper, D1 adapter |
 
 Default features are empty so a WASM build does not pull Tokio.
+
+Row types are `#[derive(Serialize, Deserialize)]` structs (`DbRecord`). The same model is used on SQLite and D1; adapters coerce cells from the requested field type (see `traits::db::DbRecord`).
 
 ## Native
 

@@ -3,6 +3,8 @@ use sea_query::{
     PostgresQueryBuilder, QueryStatementWriter, SchemaStatement, SelectStatement,
     SqliteQueryBuilder, UpdateStatement,
 };
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
@@ -25,6 +27,20 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+impl serde::de::Error for Error {
+    fn custom<T: std::fmt::Display>(msg: T) -> Self {
+        Error::Backend(msg.to_string())
+    }
+
+    fn invalid_type(_unexp: serde::de::Unexpected, _exp: &dyn serde::de::Expected) -> Self {
+        Error::TypeMismatch
+    }
+
+    fn invalid_value(_unexp: serde::de::Unexpected, _exp: &dyn serde::de::Expected) -> Self {
+        Error::TypeMismatch
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy)]
@@ -34,6 +50,10 @@ pub enum Dialect {
     Mysql,
 }
 
+/// Bind value produced when adapters render SeaQuery DML.
+///
+/// Row decoding no longer uses this enum. Fetch maps directly into a
+/// [`DbRecord`] with knowledge of the requested Rust type.
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
@@ -42,74 +62,6 @@ pub enum Value {
     Bool(bool),
     Bytes(Vec<u8>),
     Null,
-}
-
-macro_rules! try_from_impl_for_value {
-    ($($variant:ident => $ty:ty),* $(,)?) => {
-        $(
-            impl TryFrom<Value> for $ty {
-                type Error = Error;
-                fn try_from(value: Value) -> Result<$ty> {
-                    match value {
-                        Value::$variant(x) => Ok(x),
-                        _ => Err(Error::TypeMismatch),
-                    }
-                }
-            }
-        )*
-    };
-}
-
-try_from_impl_for_value! {
-    Int   => i64,
-    Text  => String,
-    Bool  => bool,
-    Bytes => Vec<u8>,
-}
-
-impl TryFrom<Value> for i32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<i32> {
-        match value {
-            Value::Int(x) => i32::try_from(x).map_err(|_| Error::TypeMismatch),
-            _ => Err(Error::TypeMismatch),
-        }
-    }
-}
-
-impl TryFrom<Value> for f32 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<f32> {
-        match value {
-            Value::Float(x) => Ok(x as f32),
-            Value::Int(x) => Ok(x as f32),
-            _ => Err(Error::TypeMismatch),
-        }
-    }
-}
-
-impl TryFrom<Value> for f64 {
-    type Error = Error;
-    fn try_from(value: Value) -> Result<f64> {
-        match value {
-            Value::Float(x) => Ok(x),
-            Value::Int(x) => Ok(x as f64),
-            _ => Err(Error::TypeMismatch),
-        }
-    }
-}
-
-impl Value {
-    pub fn to<T: TryFrom<Value, Error = Error>>(self) -> Result<T> {
-        T::try_from(self)
-    }
-
-    pub fn to_opt<T: TryFrom<Value, Error = Error>>(self) -> Result<Option<T>> {
-        match self {
-            Value::Null => Ok(None),
-            v => v.to().map(Some),
-        }
-    }
 }
 
 impl TryFrom<sea_query::Value> for Value {
@@ -167,38 +119,61 @@ pub struct ExecuteResult {
     pub rows_affected: u64,
 }
 
-// Trait for mapping a row back to a struct, used by the database executor trait, must be implemented by the models like this
-// impl FromRow for User {
-//     fn from_row(row: &impl AnyRow) -> Result<Self> {
-//         Ok(Self {
-//             id:    row.get("id")?.to()?,
-//             email: row.get("email")?.to()?,
-//             nick:  row.get("nick")?.to_opt()?,   // Option<String>
-//         })
-//     }
-// }
-pub trait FromRow: Sized {
-    fn from_row(row: &impl AnyRow) -> Result<Self>;
-}
+/// A model that can be stored in SQLite and D1 with the same field behavior.
+///
+/// Derive both traits:
+///
+/// ```ignore
+/// #[derive(Serialize, Deserialize)]
+/// struct User {
+///     id: i64,
+///     email: String,
+///     nick: Option<String>,
+/// }
+/// ```
+///
+/// Field names must match selected column names (or use `#[serde(rename)]`).
+///
+/// Adapters decode **from the requested Rust type**, not from SQLite storage
+/// class / JS typeof, so the same struct works on both backends:
+///
+/// | Field type | SQLite | D1 |
+/// |---|---|---|
+/// | `i64` / `i32` | INTEGER, or REAL with a 0 fractional part | JS number that is an integer |
+/// | `f64` / `f32` | REAL or INTEGER | any JS number |
+/// | `bool` | BOOLEAN, or INTEGER `0`/`1` | JS boolean, or number `0`/`1` |
+/// | `String` | TEXT | JS string |
+/// | `Vec<u8>` | BLOB | `ArrayBuffer`, `Uint8Array`, or number array |
+/// | `Option<T>` | NULL | `null` / `undefined` |
+/// | unit enum | TEXT | JS string |
+///
+/// Documented adapter differences that do **not** change a given model's
+/// behavior when the schema matches the field types above:
+///
+/// - D1 integers travel as JS numbers. Values outside `Number.MAX_SAFE_INTEGER`
+///   (`2^53 - 1`) cannot round-trip. SQLite INTEGER is a full `i64`.
+/// - D1 has no separate INTEGER vs REAL at rest; both are JS `Number`.
+///   Requested `f64` vs `i64` still selects the conversion.
+pub trait DbRecord: Serialize + DeserializeOwned {}
 
-// Must be implemented by the database adapter for the row result type, used by the models
-pub trait AnyRow {
-    fn get(&self, col: &str) -> Result<Value>;
-}
+impl<T: Serialize + DeserializeOwned> DbRecord for T {}
 
 /// Database port. Callers pass SeaQuery statements; adapters render SQL for their engine.
 ///
-/// Futures are not `Send` so Cloudflare D1 can implement this trait.
+/// Fetch deserializes each row into `T: `[`DbRecord`]. Futures are not `Send`
+/// so Cloudflare D1 can implement this trait.
 pub trait DatabaseExecutor {
-    fn fetch_one<T: FromRow>(&self, stmt: &SelectStatement) -> impl Future<Output = Result<T>>;
+    fn fetch_one<T: DbRecord>(&self, stmt: &SelectStatement) -> impl Future<Output = Result<T>>;
 
-    fn fetch_optional<T: FromRow>(
+    fn fetch_optional<T: DbRecord>(
         &self,
         stmt: &SelectStatement,
     ) -> impl Future<Output = Result<Option<T>>>;
 
-    fn fetch_all<T: FromRow>(&self, stmt: &SelectStatement)
-    -> impl Future<Output = Result<Vec<T>>>;
+    fn fetch_all<T: DbRecord>(
+        &self,
+        stmt: &SelectStatement,
+    ) -> impl Future<Output = Result<Vec<T>>>;
 
     /// INSERT into an autoincrement table. Always returns the generated primary key.
     fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>>;
