@@ -1,13 +1,13 @@
-use std::collections::HashMap;
-
 use crate::traits::db::{
     AnyRow, DatabaseExecutor, Dialect, Error, ExecutableStatement, ExecuteResult, FromRow, Result,
     Value, query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
-use serde_json::Value as JsonValue;
 use worker::D1Database;
+use worker::js_sys::{Array, ArrayBuffer, Number, Object, Reflect, Uint8Array};
+use worker::wasm_bindgen::JsCast;
 use worker::wasm_bindgen::JsValue;
+use worker::wasm_bindgen_futures::JsFuture;
 
 pub struct D1Executor {
     db: D1Database,
@@ -26,6 +26,29 @@ impl D1Executor {
         let js_values: Vec<JsValue> = values.iter().map(value_to_js).collect();
         self.db.prepare(sql).bind(&js_values).map_err(map_d1)
     }
+
+    async fn first_row(&self, sql: &str, values: &[Value]) -> Result<Option<Object>> {
+        let stmt = self.prepare(sql, values)?;
+        let js = JsFuture::from(stmt.inner().first(None).map_err(map_js)?)
+            .await
+            .map_err(map_js)?;
+        if js.is_null() || js.is_undefined() {
+            Ok(None)
+        } else {
+            js.dyn_into::<Object>()
+                .map(Some)
+                .map_err(|_| Error::TypeMismatch)
+        }
+    }
+
+    async fn all_rows(&self, sql: &str, values: &[Value]) -> Result<Vec<Object>> {
+        let stmt = self.prepare(sql, values)?;
+        let js = JsFuture::from(stmt.inner().all().map_err(map_js)?)
+            .await
+            .map_err(map_js)?;
+        let result = js.dyn_into::<Object>().map_err(|_| Error::TypeMismatch)?;
+        d1_result_rows(&result)
+    }
 }
 
 fn value_to_js(value: &Value) -> JsValue {
@@ -35,12 +58,16 @@ fn value_to_js(value: &Value) -> JsValue {
         Value::Text(v) => JsValue::from_str(v),
         Value::Int(v) => JsValue::from_f64(*v as f64),
         Value::Float(v) => JsValue::from_f64(f64::from(*v)),
-        Value::Bytes(v) => worker::js_sys::Uint8Array::from(v.as_slice()).into(),
+        Value::Bytes(v) => Uint8Array::from(v.as_slice()).into(),
     }
 }
 
 fn map_d1(err: worker::Error) -> Error {
     map_d1_message(&err.to_string())
+}
+
+fn map_js(err: JsValue) -> Error {
+    map_d1(err.into())
 }
 
 fn map_d1_message(msg: &str) -> Error {
@@ -54,51 +81,90 @@ fn map_d1_message(msg: &str) -> Error {
     }
 }
 
-fn json_to_value(value: &JsonValue) -> Result<Value> {
-    match value {
-        JsonValue::Null => Ok(Value::Null),
-        JsonValue::Bool(v) => Ok(Value::Bool(*v)),
-        JsonValue::String(v) => Ok(Value::Text(v.clone())),
-        JsonValue::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Ok(Value::Int(i))
-            } else if let Some(u) = n.as_u64() {
-                i64::try_from(u)
-                    .map(Value::Int)
-                    .map_err(|_| Error::TypeMismatch)
-            } else if let Some(f) = n.as_f64() {
-                if f.fract() == 0.0 && f >= i64::MIN as f64 && f <= i64::MAX as f64 {
-                    Ok(Value::Int(f as i64))
-                } else {
-                    Ok(Value::Float(f as f32))
-                }
-            } else {
-                Err(Error::TypeMismatch)
-            }
-        }
-        JsonValue::Array(items) => {
-            let bytes = items
-                .iter()
-                .map(|item| {
-                    item.as_u64()
-                        .and_then(|b| u8::try_from(b).ok())
-                        .ok_or(Error::TypeMismatch)
-                })
-                .collect::<Result<Vec<u8>>>()?;
-            Ok(Value::Bytes(bytes))
-        }
-        JsonValue::Object(_) => Err(Error::TypeMismatch),
+fn d1_result_rows(result: &Object) -> Result<Vec<Object>> {
+    let success = Reflect::get(result, &JsValue::from_str("success")).map_err(map_js)?;
+    if success.as_bool() != Some(true) {
+        let msg = Reflect::get(result, &JsValue::from_str("error"))
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "d1 query failed".into());
+        return Err(map_d1_message(&msg));
     }
+    let results = Reflect::get(result, &JsValue::from_str("results")).map_err(map_js)?;
+    if results.is_null() || results.is_undefined() {
+        return Ok(Vec::new());
+    }
+    let rows = Array::from(&results);
+    let mut out = Vec::with_capacity(rows.length() as usize);
+    for value in rows.iter() {
+        out.push(
+            value
+                .dyn_into::<Object>()
+                .map_err(|_| Error::TypeMismatch)?,
+        );
+    }
+    Ok(out)
 }
 
-struct D1AnyRow<'a>(&'a HashMap<String, JsonValue>);
+/// Map a D1 cell from the original JS value (not JSON).
+///
+/// D1's binding types: null, boolean (rare on read), string, number, ArrayBuffer /
+/// Uint8Array, or a number array for BLOBs. INTEGER and REAL both come back as JS
+/// numbers; `Number.isInteger` is the only distinction available.
+fn js_to_value(value: &JsValue) -> Result<Value> {
+    if value.is_null() || value.is_undefined() {
+        return Ok(Value::Null);
+    }
+    if let Some(v) = value.as_bool() {
+        return Ok(Value::Bool(v));
+    }
+    if let Some(v) = value.as_string() {
+        return Ok(Value::Text(v));
+    }
+    if Number::is_integer(value) {
+        let n = value.as_f64().ok_or(Error::TypeMismatch)?;
+        if n < i64::MIN as f64 || n > i64::MAX as f64 {
+            return Err(Error::TypeMismatch);
+        }
+        return Ok(Value::Int(n as i64));
+    }
+    if let Some(n) = value.as_f64() {
+        return Ok(Value::Float(n as f32));
+    }
+    if let Some(buf) = value.dyn_ref::<ArrayBuffer>() {
+        return Ok(Value::Bytes(Uint8Array::new(buf).to_vec()));
+    }
+    if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
+        return Ok(Value::Bytes(bytes.to_vec()));
+    }
+    if Array::is_array(value) {
+        return array_to_bytes(&Array::from(value));
+    }
+    Err(Error::TypeMismatch)
+}
+
+fn array_to_bytes(items: &Array) -> Result<Value> {
+    let mut bytes = Vec::with_capacity(items.length() as usize);
+    for item in items.iter() {
+        let n = item.as_f64().ok_or(Error::TypeMismatch)?;
+        if n.fract() != 0.0 || !(0.0..=255.0).contains(&n) {
+            return Err(Error::TypeMismatch);
+        }
+        bytes.push(n as u8);
+    }
+    Ok(Value::Bytes(bytes))
+}
+
+struct D1AnyRow<'a>(&'a Object);
 
 impl AnyRow for D1AnyRow<'_> {
     fn get(&self, col: &str) -> Result<Value> {
-        match self.0.get(col) {
-            None => Err(Error::Backend(format!("missing column: {col}"))),
-            Some(value) => json_to_value(value),
+        let key = JsValue::from_str(col);
+        if !Reflect::has(self.0.as_ref(), &key).map_err(map_js)? {
+            return Err(Error::Backend(format!("missing column: {col}")));
         }
+        let value = Reflect::get(self.0.as_ref(), &key).map_err(map_js)?;
+        js_to_value(&value)
     }
 }
 
@@ -112,12 +178,7 @@ impl DatabaseExecutor for D1Executor {
 
     async fn fetch_optional<T: FromRow>(&self, stmt: &SelectStatement) -> Result<Option<T>> {
         let (sql, values) = Self::sqlite_sql(stmt)?;
-        let row = self
-            .prepare(&sql, &values)?
-            .first::<HashMap<String, JsonValue>>(None)
-            .await
-            .map_err(map_d1)?;
-        match row {
+        match self.first_row(&sql, &values).await? {
             Some(row) => T::from_row(&D1AnyRow(&row)).map(Some),
             None => Ok(None),
         }
@@ -125,14 +186,11 @@ impl DatabaseExecutor for D1Executor {
 
     async fn fetch_all<T: FromRow>(&self, stmt: &SelectStatement) -> Result<Vec<T>> {
         let (sql, values) = Self::sqlite_sql(stmt)?;
-        let result = self.prepare(&sql, &values)?.all().await.map_err(map_d1)?;
-        if !result.success() {
-            return Err(map_d1_message(
-                &result.error().unwrap_or_else(|| "d1 query failed".into()),
-            ));
-        }
-        let rows: Vec<HashMap<String, JsonValue>> = result.results().map_err(map_d1)?;
-        rows.iter().map(|row| T::from_row(&D1AnyRow(row))).collect()
+        self.all_rows(&sql, &values)
+            .await?
+            .iter()
+            .map(|row| T::from_row(&D1AnyRow(row)))
+            .collect()
     }
 
     async fn insert(&self, stmt: &InsertStatement) -> Result<i64> {
