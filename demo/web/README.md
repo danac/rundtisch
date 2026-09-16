@@ -21,9 +21,9 @@ Landing page only — wordmark **rundtisch** on a paper/ink canvas with concentr
 From the repository root (recommended — also starts the Wrangler API):
 
 ```bash
-npm install                          # root: concurrently + wrangler
+npm install --prefix demo            # concurrently + wrangler
 npm install --prefix demo/web
-npm run dev                          # Vite :5173 + Wrangler :8787
+npm run dev --prefix demo            # Vite :5173 + Wrangler :8787
 ```
 
 Frontend only:
@@ -41,5 +41,5 @@ In local dev, Vite proxies `/api` to `http://localhost:8787` (see `vite.config.t
 
 ## See also
 
-- [Root README](../../README.md) — monorepo architecture and combined `npm run dev`
+- [Root README](../../README.md) — monorepo architecture and combined `npm run dev --prefix demo`
 - [Demo API README](../api/README.md) — Axum routes and WASM build
