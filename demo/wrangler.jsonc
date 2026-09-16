@@ -5,7 +5,7 @@
   "workers_dev": true,
   "preview_urls": true,
   "build": {
-    "command": "cargo install -q worker-build@^0.8 && worker-build --release",
+    "command": "cargo install -q \"worker-build@^0.8\" && worker-build --release",
     "cwd": "worker",
     "watch_dir": ["../crates/rundtisch/src", "api/src", "worker/src"]
   },

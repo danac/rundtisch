@@ -4,7 +4,7 @@
   "compatibility_date": "2026-07-01",
   "workers_dev": true,
   "build": {
-    "command": "cargo install -q worker-build@^0.8 && worker-build --dev",
+    "command": "cargo install -q \"worker-build@^0.8\" && worker-build --dev",
     "cwd": "worker",
     "watch_dir": ["../crates/rundtisch/src", "api/src", "worker/src"]
   },
