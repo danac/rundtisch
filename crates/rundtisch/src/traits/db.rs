@@ -37,7 +37,7 @@ pub enum Dialect {
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
-    Float(f32),
+    Float(f64),
     Text(String),
     Bool(bool),
     Bytes(Vec<u8>),
@@ -62,7 +62,6 @@ macro_rules! try_from_impl_for_value {
 
 try_from_impl_for_value! {
     Int   => i64,
-    Float => f32,
     Text  => String,
     Bool  => bool,
     Bytes => Vec<u8>,
@@ -73,6 +72,28 @@ impl TryFrom<Value> for i32 {
     fn try_from(value: Value) -> Result<i32> {
         match value {
             Value::Int(x) => i32::try_from(x).map_err(|_| Error::TypeMismatch),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+impl TryFrom<Value> for f32 {
+    type Error = Error;
+    fn try_from(value: Value) -> Result<f32> {
+        match value {
+            Value::Float(x) => Ok(x as f32),
+            Value::Int(x) => Ok(x as f32),
+            _ => Err(Error::TypeMismatch),
+        }
+    }
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = Error;
+    fn try_from(value: Value) -> Result<f64> {
+        match value {
+            Value::Float(x) => Ok(x),
+            Value::Int(x) => Ok(x as f64),
             _ => Err(Error::TypeMismatch),
         }
     }
@@ -121,8 +142,8 @@ impl TryFrom<sea_query::Value> for Value {
             sea_query::Value::BigUnsigned(Some(v)) => i64::try_from(v)
                 .map(Value::Int)
                 .map_err(|_| Error::TypeMismatch),
-            sea_query::Value::Float(Some(v)) => Ok(Value::Float(v)),
-            sea_query::Value::Double(Some(v)) => Ok(Value::Float(v as f32)),
+            sea_query::Value::Float(Some(v)) => Ok(Value::Float(f64::from(v))),
+            sea_query::Value::Double(Some(v)) => Ok(Value::Float(v)),
             sea_query::Value::String(Some(v)) => Ok(Value::Text(v)),
             sea_query::Value::Char(Some(v)) => Ok(Value::Text(v.to_string())),
             sea_query::Value::Bytes(Some(v)) => Ok(Value::Bytes(v)),

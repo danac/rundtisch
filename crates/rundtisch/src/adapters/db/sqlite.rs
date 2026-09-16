@@ -79,7 +79,7 @@ impl AnyRow for SqliteAnyRow<'_> {
                     .0
                     .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
-                Ok(Value::Float(v as f32))
+                Ok(Value::Float(v))
             }
             "TEXT" | "VARCHAR" => {
                 let v: String = self

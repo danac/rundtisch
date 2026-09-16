@@ -57,7 +57,7 @@ fn value_to_js(value: &Value) -> JsValue {
         Value::Bool(v) => JsValue::from_bool(*v),
         Value::Text(v) => JsValue::from_str(v),
         Value::Int(v) => JsValue::from_f64(*v as f64),
-        Value::Float(v) => JsValue::from_f64(f64::from(*v)),
+        Value::Float(v) => JsValue::from_f64(*v),
         Value::Bytes(v) => Uint8Array::from(v.as_slice()).into(),
     }
 }
@@ -129,7 +129,7 @@ fn js_to_value(value: &JsValue) -> Result<Value> {
         return Ok(Value::Int(n as i64));
     }
     if let Some(n) = value.as_f64() {
-        return Ok(Value::Float(n as f32));
+        return Ok(Value::Float(n));
     }
     if let Some(buf) = value.dyn_ref::<ArrayBuffer>() {
         return Ok(Value::Bytes(Uint8Array::new(buf).to_vec()));
