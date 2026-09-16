@@ -22,7 +22,7 @@ Application crates define routes, handlers, and HTTP serving. They stay generic 
 |---------|---------|
 | *(none)* | Traits, `AppState`, auth models/migrations |
 | `native` | SQLite adapter |
-| `cloudflare` | Workers `Env` platform, D1 adapter (stub) |
+| `cloudflare` | Workers `Env` platform, D1 executor stub |
 
 Default features are empty so a WASM build does not pull Tokio.
 
@@ -34,7 +34,7 @@ use rundtisch::AppState;
 
 #[tokio::main]
 async fn main() {
-    let platform = NativePlatform::new();
+    let platform = NativePlatform::new("rundtisch.sqlite").await;
     let state = AppState::from_platform(&platform);
     serve(build_router(state)).await; // application-owned
 }
@@ -57,7 +57,7 @@ async fn fetch(
     env: Env,
     _ctx: Context,
 ) -> worker::Result<axum::http::Response<axum::body::Body>> {
-    let platform = CloudflarePlatform::new(env);
+    let platform = CloudflarePlatform::new(env, "D1_BINDING");
     let mut router = build_router(AppState::from_platform(&platform));
     Ok(router.call(req).await?)
 }

@@ -1,10 +1,12 @@
 use axum::Router;
-use rundtisch::adapters::platform::cloudflare::CloudflarePlatform;
 use rundtisch::AppState;
+use rundtisch::adapters::platform::cloudflare::CloudflarePlatform;
 use rundtisch_demo::build_router;
 use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
 use worker_macros::event;
+
+const D1_BINDING: &str = "D1_BINDING";
 
 #[event(fetch)]
 async fn fetch(
@@ -26,7 +28,7 @@ async fn handle_fetch(
     env: Env,
     build: impl FnOnce(&CloudflarePlatform) -> Router,
 ) -> worker::Result<axum::http::Response<axum::body::Body>> {
-    let platform = CloudflarePlatform::new(env);
+    let platform = CloudflarePlatform::new(env, D1_BINDING);
     let mut router = build(&platform);
     Ok(router.call(req).await?)
 }
