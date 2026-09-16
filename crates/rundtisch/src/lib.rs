@@ -3,7 +3,6 @@
 pub mod adapters;
 pub mod app;
 pub mod auth;
-pub mod runtime;
 pub mod traits;
 
 pub use app::AppState;

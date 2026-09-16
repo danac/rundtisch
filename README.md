@@ -6,7 +6,7 @@ The repository is a **Cargo workspace** plus a **demo website** deployed as a **
 
 | Document | Scope |
 |----------|-------|
-| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth, native/Cloudflare runtimes |
+| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth |
 | [demo/web/README.md](demo/web/README.md) | React SPA — landing page, planned API playground |
 | [demo/api/README.md](demo/api/README.md) | Demo Axum app — a few `/api/*` routes on top of `rundtisch` |
 
@@ -14,12 +14,12 @@ The repository is a **Cargo workspace** plus a **demo website** deployed as a **
 
 ### Crate split
 
-Application code (routes and handlers) depends on `rundtisch` and stays the same for both deployments. Runtime crates call one helper:
+Application code (routes and handlers) depends on `rundtisch` and stays the same for both deployments. Each target owns its HTTP entry:
 
 | Target | Entry | Helper |
 |--------|-------|--------|
-| Native container | `demo/api/src/bin/native.rs` | `rundtisch::runtime::native::serve(router)` |
-| Cloudflare Worker | `demo/worker` cdylib | `rundtisch::runtime::cloudflare::handle_fetch(req, env, build_router)` |
+| Native container | `demo/api/src/bin/native.rs` | `serve(router)` |
+| Cloudflare Worker | `demo/worker` cdylib | `handle_fetch(req, env, build_router)` |
 
 ### Deployment model (demo)
 
@@ -61,7 +61,7 @@ Browser (localhost:5173)
 .
 ├── Cargo.toml                 # workspace
 ├── crates/
-│   └── rundtisch/             # published lib (traits, adapters, auth, runtime)
+│   └── rundtisch/             # published lib (traits, adapters, auth)
 └── demo/
     ├── api/                   # demo app crate: routes + handlers
     │   └── src/bin/native.rs  # native container entry
@@ -76,7 +76,7 @@ Browser (localhost:5173)
 
 ### Library vs demo
 
-**Why split:** `rundtisch` is the reusable layer (platform trait, database adapters, auth, `serve` / `handle_fetch`). The demo is a small website used to debug that layer: a few Axum routes and the current landing page. Other projects can depend on the lib without taking demo routes.
+**Why split:** `rundtisch` is the reusable layer (platform trait, database adapters, auth). The demo is a small website used to debug that layer: a few Axum routes, native/`fetch` HTTP entry points, and the current landing page. Other projects can depend on the lib without taking demo routes or serving glue.
 
 **How:** A root Cargo workspace with `crates/rundtisch` (publishable) and `demo/api` + `demo/worker` (`publish = false`). Feature flags `native` and `cloudflare` stay on the lib; the demo crate forwards them.
 
@@ -222,7 +222,7 @@ npx wrangler deploy --config demo/wrangler.jsonc
 
 ## Related documentation
 
-- [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API, features, native vs Cloudflare runtime
+- [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API, features, native vs Cloudflare adapters
 - [demo/web/README.md](demo/web/README.md) — SPA landing page, Vite proxy, planned API playground
 - [demo/api/README.md](demo/api/README.md) — demo routes, WASM toolchain, extending the API
 - [AGENTS.md](AGENTS.md) — Cursor Cloud agent environment notes

@@ -11,5 +11,6 @@ crate-type = ["cdylib"]
 axum.workspace = true
 rundtisch = { path = "../../crates/rundtisch", default-features = false, features = ["cloudflare"] }
 rundtisch-demo = { path = "../api", default-features = false, features = ["cloudflare"] }
+tower-service.workspace = true
 worker.workspace = true
 worker-macros.workspace = true
