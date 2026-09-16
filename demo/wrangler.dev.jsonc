@@ -17,8 +17,7 @@
     {
       "binding": "D1_BINDING",
       "database_name": "rundtisch",
-      // Local namespace id; wrangler dev uses a SQLite file under .wrangler/ rather than the remote D1.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "7a42bb48-9d85-4bce-985f-e2899c2e555e"
     }
   ]
 }

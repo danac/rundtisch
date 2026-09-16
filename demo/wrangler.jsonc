@@ -18,8 +18,7 @@
     {
       "binding": "D1_BINDING",
       "database_name": "rundtisch",
-      // Replace with the UUID from `npx wrangler d1 create rundtisch` / `npx wrangler d1 list` before a remote deploy.
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "7a42bb48-9d85-4bce-985f-e2899c2e555e"
     }
   ]
 }
