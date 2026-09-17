@@ -5,17 +5,20 @@ edition.workspace = true
 publish = false
 
 [features]
-default = []
+default = ["native"]
+native = ["rundtisch/sqlite", "dep:tokio", "axum/http1", "axum/tokio"]
+cloudflare = ["rundtisch/d1"]
 
 [dependencies]
 rundtisch = { path = "../../crates/rundtisch", default-features = false }
 serde_json = "1.0"
-axum = { version = "0.8", default-features = false, features = ["tokio", "json", "http1"]}
-tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "net", "signal"] }
+axum = { version = "0.8", default-features = false, features = ["json"]}
+tokio = { version = "1.52", features = ["macros", "rt-multi-thread", "net", "signal"], optional = true }
 
 [[bin]]
 name = "native"
 path = "src/bin/native.rs"
+required-features = ["native"]
 
 [[bin]]
 name = "generate_auth_migrations"

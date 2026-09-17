@@ -9,9 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rundtisch = { path = "../../crates/rundtisch", default-features = false }
-rundtisch-demo = { path = "../api", default-features = false}
+rundtisch-demo = { path = "../api", default-features = false, features = ["cloudflare"]}
 tower-service = "0.3"
+axum = { version = "0.8", default-features = false}
 worker-macros = { version = "0.8", features = ["http"] }
-axum = "0.8.9"
-worker = "0.8.5"
+worker = { version = "0.8.5", features = ["http"] }
 

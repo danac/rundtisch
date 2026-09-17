@@ -1,5 +1,6 @@
 mod handlers;
 mod routes;
-pub mod platform;
+#[cfg(feature = "native")]
+pub mod native_platform;
 
 pub use routes::build_router;
