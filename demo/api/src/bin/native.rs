@@ -1,6 +1,6 @@
 use axum::Router;
 use rundtisch::AppState;
-use rundtisch::adapters::platform::native::NativePlatform;
+use rundtisch_demo::platform::NativePlatform;
 use rundtisch_demo::build_router;
 use tokio::signal;
 

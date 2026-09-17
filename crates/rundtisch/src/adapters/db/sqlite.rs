@@ -1,3 +1,4 @@
+use std::path::Path;
 use crate::traits::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
 use sqlx::{
     Row, Sqlite, TypeInfo, ValueRef,
@@ -10,7 +11,13 @@ pub struct SqliteExecutor {
 }
 
 impl SqliteExecutor {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
+    pub async fn new(database_path: impl AsRef<Path>) -> Self {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(database_path)
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options)
+            .await
+            .expect("failed to open SQLite database");
         Self { pool }
     }
 

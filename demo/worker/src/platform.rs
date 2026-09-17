@@ -1,5 +1,5 @@
-use crate::adapters::db::d1::D1Executor;
-use crate::traits::Platform;
+use rundtisch::adapters::db::d1::D1Executor;
+use rundtisch::traits::Platform;
 use std::sync::Arc;
 use worker::Env;
 
@@ -34,9 +34,5 @@ impl CloudflarePlatform {
             env,
             db: Arc::new(D1Executor::new(db)),
         }
-    }
-
-    pub fn env(&self) -> &Env {
-        &self.env
     }
 }

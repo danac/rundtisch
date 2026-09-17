@@ -1,5 +1,5 @@
-use crate::adapters::db::sqlite::SqliteExecutor;
-use crate::traits::Platform;
+use rundtisch::adapters::db::sqlite::SqliteExecutor;
+use rundtisch::traits::Platform;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -26,14 +26,8 @@ impl Platform for NativePlatform {
 impl NativePlatform {
     /// Open (or create) the SQLite database at `database_path` and panic on failure.
     pub async fn new(database_path: impl AsRef<Path>) -> Self {
-        let options = sqlx::sqlite::SqliteConnectOptions::new()
-            .filename(database_path)
-            .create_if_missing(true);
-        let pool = sqlx::SqlitePool::connect_with(options)
-            .await
-            .expect("failed to open SQLite database");
         Self {
-            db: Arc::new(SqliteExecutor::new(pool)),
+            db: Arc::new(SqliteExecutor::new(database_path).await),
         }
     }
 }
