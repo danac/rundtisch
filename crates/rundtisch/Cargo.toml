@@ -15,8 +15,12 @@ sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
 [dependencies]
 sea-query.workspace = true
 serde = { workspace = true, features = ["derive", "alloc"] }
+email_address.workspace = true
 sqlx = { workspace = true, optional = true }
 worker = { workspace = true, optional = true }
+time = { workspace = true, features = ["formatting", "parsing", "serde"] }
+axum = { workspace = true, features = ["json"] }
+serde_json.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

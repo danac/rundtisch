@@ -1,9 +1,12 @@
 #![allow(dead_code, unused_imports)]
 
 use sea_query::Iden;
-// use email_address::EmailAddress;
-// type DateTime = time::OffsetDateTime;
+use email_address::EmailAddress;
+use serde::{Deserialize, Serialize};
 
+type DateTime = time::OffsetDateTime;
+
+#[derive(Serialize, Deserialize)]
 enum Role {
     User,
     Admin,
@@ -11,7 +14,7 @@ enum Role {
 
 #[derive(Iden)]
 pub enum UserTable {
-    #[iden = "users"]
+    #[iden = "auth_users"]
     Table,
     Id,
     Email,
@@ -24,21 +27,31 @@ pub enum UserTable {
     LastLoginAt,
 }
 
-// struct User {
-//     id: i64,
-//     email: EmailAddress,
-//     alias: String,
-//     role: Role,
-//     password_hash: Option<String>,
-//     email_verified_at: Option<DateTime>,
-//     created_at: DateTime,
-//     updated_at: DateTime,
-//     last_login_at: Option<DateTime>,
-// }
+struct NewUser {
+    email: EmailAddress,
+    alias: String,
+    role: Role,
+    password_hash: String,
+    created_at: DateTime,
+    updated_at: DateTime,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct User {
+    id: i64,
+    email: EmailAddress,
+    alias: String,
+    role: Role,
+    password_hash: Option<String>,
+    email_verified_at: Option<DateTime>,
+    created_at: DateTime,
+    updated_at: DateTime,
+    last_login_at: Option<DateTime>,
+}
 
 #[derive(Iden)]
 pub enum RefreshTokenTable {
-    #[iden = "refresh_tokens"]
+    #[iden = "auth_refresh_tokens"]
     Table,
     Id,
     UserId,
