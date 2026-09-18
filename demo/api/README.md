@@ -1,6 +1,6 @@
 # Rundtisch — Demo API
 
-Small Axum app that exercises [`rundtisch`](../../crates/rundtisch/README.md). Handlers and routes only; native serving and the Cloudflare fetch entry live in the library runtime modules.
+Small Axum app that exercises [`rundtisch`](../../crates/rundtisch/README.md). Handlers and routes live here; native serving is in `src/bin/native.rs` and the Cloudflare fetch entry is in [`demo/worker`](../worker/src/lib.rs).
 
 Handles `/api/*` for the [demo website](../../README.md). All other paths are served by the React SPA from `demo/web/dist/`.
 
@@ -10,7 +10,7 @@ Handles `/api/*` for the [demo website](../../README.md). All other paths are se
 |-----------|---------|------|
 | Rust | stable | Source language |
 | Axum | 0.8 | HTTP router and handlers |
-| rundtisch | path | Platform trait, `AppState`, `serve` / `handle_fetch` |
+| rundtisch | path | Platform trait, `AppState`, adapters |
 | workers-rs | 0.8 | Cloudflare Workers runtime bindings (worker crate) |
 | worker-build | 0.8 | Compiles Rust → WASM + JS shim |
 
@@ -34,7 +34,7 @@ index_bg.wasm                    ← compiled rundtisch-demo-worker crate
 #[event(fetch)] in demo/worker/src/lib.rs
     │
     ▼
-rundtisch::runtime::cloudflare::handle_fetch
+handle_fetch in demo/worker/src/lib.rs
     │
     ▼
 Axum Router → handler (this crate)
@@ -48,7 +48,7 @@ The same router runs natively:
 cargo run -p rundtisch-demo --features native --bin native
     │
     ▼
-rundtisch::runtime::native::serve
+serve in demo/api/src/bin/native.rs
     │
     ▼
 Axum Router → handler (this crate)
@@ -79,7 +79,7 @@ demo/
 
 **Why:** Demo routes (`/api/health`, later playground endpoints) are not part of the published framework. Keeping them in `rundtisch-demo` means other projects depend on `rundtisch` without inheriting demo handlers.
 
-**How:** This crate depends on `rundtisch` with feature flags `native` / `cloudflare` forwarded to the lib. The native binary and the worker cdylib are thin wrappers around `runtime::native::serve` and `runtime::cloudflare::handle_fetch`.
+**How:** This crate depends on `rundtisch` with feature flags `native` / `cloudflare` forwarded to the lib. The native binary owns `serve`; the worker cdylib owns `handle_fetch`.
 
 ### Axum on Cloudflare Workers
 
@@ -137,8 +137,11 @@ cargo run -p rundtisch-demo --bin generate_auth_migrations -- /tmp/auth-migratio
 
 ```bash
 cargo run -p rundtisch-demo --features native --bin native
+# optional: SQLITE_PATH=/tmp/rundtisch.sqlite cargo run -p rundtisch-demo --features native --bin native
 curl -i http://localhost:8080/api/health
 ```
+
+The native binary opens SQLite at `SQLITE_PATH`, or `rundtisch.sqlite` in the working directory if that variable is unset.
 
 ### Build WASM locally
 
@@ -222,5 +225,5 @@ async fn ping() -> impl axum::response::IntoResponse {
 ## See also
 
 - [Root README](../../README.md) — monorepo architecture, CI, combined dev workflow
-- [rundtisch crate](../../crates/rundtisch/README.md) — `Platform`, runtimes, db/auth
+- [rundtisch crate](../../crates/rundtisch/README.md) — `Platform`, adapters, db/auth
 - [Frontend README](../web/README.md) — SPA landing page and Vite `/api` proxy

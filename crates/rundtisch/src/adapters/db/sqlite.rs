@@ -1,11 +1,26 @@
+use std::path::Path;
 use crate::traits::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
-use sqlx::{Row, TypeInfo, ValueRef, Sqlite, query::Query, sqlite::{SqliteArguments, SqliteRow}};
+use sqlx::{
+    Row, Sqlite, TypeInfo, ValueRef,
+    query::Query,
+    sqlite::{SqliteArguments, SqliteRow},
+};
 
 pub struct SqliteExecutor {
     pool: sqlx::SqlitePool,
 }
 
 impl SqliteExecutor {
+    pub async fn new(database_path: impl AsRef<Path>) -> Self {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(database_path)
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options)
+            .await
+            .expect("failed to open SQLite database");
+        Self { pool }
+    }
+
     /// Build a sqlx query with all values bound. Borrows from `sql` and `values` to avoid cloning
     /// the values passed by reference.
     fn build(&self, sql: &str, values: &[Value]) -> Query<'_, Sqlite, SqliteArguments> {
@@ -31,7 +46,8 @@ impl<'a> AnyRow for SqliteAnyRow<'a> {
     fn get(&self, col: &str) -> Result<Value> {
         // Grab the raw value so we can inspect NULL and type info without
         // guessing through a chain of `try_get::<T, _>` fallbacks.
-        let raw = self.0
+        let raw = self
+            .0
             .try_get_raw(col)
             .map_err(|e| Error::Backend(e.to_string()))?;
 
@@ -46,27 +62,37 @@ impl<'a> AnyRow for SqliteAnyRow<'a> {
         let type_info = raw.type_info();
         match type_info.name() {
             "INTEGER" | "INT" | "BIGINT" | "INT8" => {
-                let v: i64 = self.0.try_get(col)
+                let v: i64 = self
+                    .0
+                    .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
                 Ok(Value::Int(v as i32))
             }
             "REAL" | "FLOAT" | "DOUBLE" => {
-                let v: f64 = self.0.try_get(col)
+                let v: f64 = self
+                    .0
+                    .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
                 Ok(Value::Float(v as f32))
             }
             "TEXT" | "VARCHAR" => {
-                let v: String = self.0.try_get(col)
+                let v: String = self
+                    .0
+                    .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
                 Ok(Value::Text(v))
             }
             "BLOB" => {
-                let v: Vec<u8> = self.0.try_get(col)
+                let v: Vec<u8> = self
+                    .0
+                    .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
                 Ok(Value::Bytes(v))
             }
             "BOOLEAN" => {
-                let v: bool = self.0.try_get(col)
+                let v: bool = self
+                    .0
+                    .try_get(col)
                     .map_err(|e| Error::Backend(e.to_string()))?;
                 Ok(Value::Bool(v))
             }
@@ -94,9 +120,7 @@ impl DatabaseExecutor for SqliteExecutor {
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::Backend(e.to_string()))?;
-        rows.iter()
-            .map(|r| T::from_row(&SqliteAnyRow(r)))
-            .collect()
+        rows.iter().map(|r| T::from_row(&SqliteAnyRow(r))).collect()
     }
 
     async fn execute(&self, sql: &str, values: &[Value]) -> Result<usize> {

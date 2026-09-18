@@ -13,18 +13,16 @@ This crate is the reusable core of the [rundtisch](https://github.com/danac/rund
 | `adapters::db` | SQLite / D1 adapters |
 | `adapters::platform` | `NativePlatform`, `CloudflarePlatform` |
 | `auth` | Auth models and schema migrations (WIP) |
-| `runtime::native` | `serve(router)` |
-| `runtime::cloudflare` | `handle_fetch(req, env, build)` |
 
-Application crates define routes and handlers only. They stay generic over `P: Platform`.
+Application crates define routes, handlers, and HTTP serving. They stay generic over `P: Platform`. Native `serve` lives in `demo/api/src/bin/native.rs`; the Workers `fetch` entry lives in `demo/worker`.
 
 ## Features
 
 | Feature | Enables |
 |---------|---------|
 | *(none)* | Traits, `AppState`, auth models/migrations |
-| `native` | Tokio server, SQLite adapter |
-| `cloudflare` | workers-rs fetch helper, D1 adapter (stub) |
+| `native` | SQLite adapter |
+| `cloudflare` | Workers `Env` platform, D1 executor stub |
 
 Default features are empty so a WASM build does not pull Tokio.
 
@@ -32,23 +30,24 @@ Default features are empty so a WASM build does not pull Tokio.
 
 ```rust
 use rundtisch::adapters::platform::native::NativePlatform;
-use rundtisch::runtime::native::serve;
 use rundtisch::AppState;
 
 #[tokio::main]
 async fn main() {
-    let platform = NativePlatform::new();
+    let platform = NativePlatform::new("rundtisch.sqlite").await;
     let state = AppState::from_platform(&platform);
-    serve(build_router(state)).await;
+    serve(build_router(state)).await; // application-owned
 }
 ```
 
 ## Cloudflare Workers
 
-Keep a thin `cdylib` with `#[event(fetch)]` and delegate to the crate:
+Keep a thin `cdylib` with `#[event(fetch)]`. Construct `CloudflarePlatform` from the Worker `env` and dispatch through your Axum router:
 
 ```rust
-use rundtisch::runtime::cloudflare::handle_fetch;
+use rundtisch::adapters::platform::cloudflare::CloudflarePlatform;
+use rundtisch::AppState;
+use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
 use worker_macros::event;
 
@@ -58,10 +57,9 @@ async fn fetch(
     env: Env,
     _ctx: Context,
 ) -> worker::Result<axum::http::Response<axum::body::Body>> {
-    handle_fetch(req, env, |platform| {
-        build_router(rundtisch::AppState::from_platform(platform))
-    })
-    .await
+    let platform = CloudflarePlatform::new(env, "D1_BINDING");
+    let mut router = build_router(AppState::from_platform(&platform));
+    Ok(router.call(req).await?)
 }
 ```
 
