@@ -1,10 +1,11 @@
+use crate::adapters::db::row_de::{self, RowCells};
 use crate::traits::db::{
-    AnyRow, DatabaseExecutor, Dialect, Error, ExecutableStatement, ExecuteResult, FromRow, Result,
-    Value, query_to_sql,
+    DatabaseExecutor, DbRecord, Dialect, Error, ExecutableStatement, ExecuteResult, Result, Value,
+    query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
 use worker::D1Database;
-use worker::js_sys::{Array, ArrayBuffer, Number, Object, Reflect, Uint8Array};
+use worker::js_sys::{Array, ArrayBuffer, Object, Reflect, Uint8Array};
 use worker::wasm_bindgen::JsCast;
 use worker::wasm_bindgen::JsValue;
 use worker::wasm_bindgen_futures::JsFuture;
@@ -106,44 +107,7 @@ fn d1_result_rows(result: &Object) -> Result<Vec<Object>> {
     Ok(out)
 }
 
-/// Map a D1 cell from the original JS value (not JSON).
-///
-/// D1's binding types: null, boolean (rare on read), string, number, ArrayBuffer /
-/// Uint8Array, or a number array for BLOBs. INTEGER and REAL both come back as JS
-/// numbers; `Number.isInteger` is the only distinction available.
-fn js_to_value(value: &JsValue) -> Result<Value> {
-    if value.is_null() || value.is_undefined() {
-        return Ok(Value::Null);
-    }
-    if let Some(v) = value.as_bool() {
-        return Ok(Value::Bool(v));
-    }
-    if let Some(v) = value.as_string() {
-        return Ok(Value::Text(v));
-    }
-    if Number::is_integer(value) {
-        let n = value.as_f64().ok_or(Error::TypeMismatch)?;
-        if n < i64::MIN as f64 || n > i64::MAX as f64 {
-            return Err(Error::TypeMismatch);
-        }
-        return Ok(Value::Int(n as i64));
-    }
-    if let Some(n) = value.as_f64() {
-        return Ok(Value::Float(n));
-    }
-    if let Some(buf) = value.dyn_ref::<ArrayBuffer>() {
-        return Ok(Value::Bytes(Uint8Array::new(buf).to_vec()));
-    }
-    if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
-        return Ok(Value::Bytes(bytes.to_vec()));
-    }
-    if Array::is_array(value) {
-        return array_to_bytes(&Array::from(value));
-    }
-    Err(Error::TypeMismatch)
-}
-
-fn array_to_bytes(items: &Array) -> Result<Value> {
+fn array_to_bytes(items: &Array) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(items.length() as usize);
     for item in items.iter() {
         let n = item.as_f64().ok_or(Error::TypeMismatch)?;
@@ -152,44 +116,89 @@ fn array_to_bytes(items: &Array) -> Result<Value> {
         }
         bytes.push(n as u8);
     }
-    Ok(Value::Bytes(bytes))
+    Ok(bytes)
 }
 
-struct D1AnyRow<'a>(&'a Object);
+struct D1Cells<'a>(&'a Object);
 
-impl AnyRow for D1AnyRow<'_> {
-    fn get(&self, col: &str) -> Result<Value> {
+impl D1Cells<'_> {
+    fn get(&self, col: &str) -> Result<JsValue> {
         let key = JsValue::from_str(col);
         if !Reflect::has(self.0.as_ref(), &key).map_err(map_js)? {
             return Err(Error::Backend(format!("missing column: {col}")));
         }
-        let value = Reflect::get(self.0.as_ref(), &key).map_err(map_js)?;
-        js_to_value(&value)
+        Reflect::get(self.0.as_ref(), &key).map_err(map_js)
+    }
+}
+
+impl RowCells for D1Cells<'_> {
+    fn is_null(&self, col: &str) -> Result<bool> {
+        let value = self.get(col)?;
+        Ok(value.is_null() || value.is_undefined())
+    }
+
+    fn get_bool(&self, col: &str) -> Result<bool> {
+        let value = self.get(col)?;
+        if let Some(v) = value.as_bool() {
+            return Ok(v);
+        }
+        if let Some(n) = value.as_f64() {
+            return row_de::i64_as_bool(row_de::integer_valued_f64(n)?);
+        }
+        Err(Error::TypeMismatch)
+    }
+
+    fn get_i64(&self, col: &str) -> Result<i64> {
+        let value = self.get(col)?;
+        let n = value.as_f64().ok_or(Error::TypeMismatch)?;
+        row_de::integer_valued_f64(n)
+    }
+
+    fn get_f64(&self, col: &str) -> Result<f64> {
+        self.get(col)?.as_f64().ok_or(Error::TypeMismatch)
+    }
+
+    fn get_string(&self, col: &str) -> Result<String> {
+        self.get(col)?.as_string().ok_or(Error::TypeMismatch)
+    }
+
+    fn get_bytes(&self, col: &str) -> Result<Vec<u8>> {
+        let value = self.get(col)?;
+        if let Some(buf) = value.dyn_ref::<ArrayBuffer>() {
+            return Ok(Uint8Array::new(buf).to_vec());
+        }
+        if let Some(bytes) = value.dyn_ref::<Uint8Array>() {
+            return Ok(bytes.to_vec());
+        }
+        if Array::is_array(&value) {
+            return array_to_bytes(&Array::from(&value));
+        }
+        Err(Error::TypeMismatch)
     }
 }
 
 impl DatabaseExecutor for D1Executor {
-    async fn fetch_one<T: FromRow>(&self, stmt: &SelectStatement) -> Result<T> {
+    async fn fetch_one<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<T> {
         match self.fetch_optional(stmt).await? {
             Some(row) => Ok(row),
             None => Err(Error::NotFound),
         }
     }
 
-    async fn fetch_optional<T: FromRow>(&self, stmt: &SelectStatement) -> Result<Option<T>> {
+    async fn fetch_optional<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Option<T>> {
         let (sql, values) = Self::sqlite_sql(stmt)?;
         match self.first_row(&sql, &values).await? {
-            Some(row) => T::from_row(&D1AnyRow(&row)).map(Some),
+            Some(row) => row_de::from_row(&D1Cells(&row)).map(Some),
             None => Ok(None),
         }
     }
 
-    async fn fetch_all<T: FromRow>(&self, stmt: &SelectStatement) -> Result<Vec<T>> {
+    async fn fetch_all<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Vec<T>> {
         let (sql, values) = Self::sqlite_sql(stmt)?;
         self.all_rows(&sql, &values)
             .await?
             .iter()
-            .map(|row| T::from_row(&D1AnyRow(row)))
+            .map(|row| row_de::from_row(&D1Cells(row)))
             .collect()
     }
 
