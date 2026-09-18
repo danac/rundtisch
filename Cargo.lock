@@ -880,6 +880,7 @@ dependencies = [
 name = "rundtisch"
 version = "0.1.0"
 dependencies = [
+ "email_address",
  "sea-query",
  "sqlx",
  "tokio",
