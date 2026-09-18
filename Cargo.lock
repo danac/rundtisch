@@ -881,6 +881,7 @@ name = "rundtisch"
 version = "0.1.0"
 dependencies = [
  "sea-query",
+ "serde",
  "sqlx",
  "tokio",
  "worker",

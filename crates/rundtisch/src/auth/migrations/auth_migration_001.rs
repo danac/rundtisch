@@ -66,12 +66,12 @@ impl Migration for AuthMigration001 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::db::{statement_to_sql, Dialect};
+    use crate::traits::db::{schema_to_sql, Dialect};
     use sea_query::Iden;
 
     async fn execute_statements(pool: &sqlx::SqlitePool, statements: Vec<Statement>) {
         for stmt in statements {
-            let sql = statement_to_sql(&stmt, Dialect::Sqlite);
+            let sql = schema_to_sql(&stmt, Dialect::Sqlite);
             sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .execute(pool)
                 .await
