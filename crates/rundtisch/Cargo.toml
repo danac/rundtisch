@@ -19,3 +19,4 @@ worker = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
+sqlx = { workspace = true, features = ["sqlite", "runtime-tokio"]}

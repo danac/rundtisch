@@ -48,7 +48,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Test rundtisch (native)
-        run: cargo test -p rundtisch --features native
+        run: cargo test -p rundtisch
 
       - name: Install dependencies
         working-directory: demo/web
