@@ -2,22 +2,20 @@
 name = "rundtisch"
 version.workspace = true
 edition.workspace = true
-description = "Thin platform-agnostic layer for Axum apps on Cloudflare Workers and native containers"
+description = "Micro web framework with hexagonal architecture"
 repository = "https://github.com/danac/rundtisch"
 readme = "README.md"
 publish = false
 
 [features]
 default = []
-native = ["dep:sqlx"]
-cloudflare = ["dep:worker"]
+d1 = ["worker/d1"]
+sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
 
 [dependencies]
-email_address.workspace = true
 sea-query.workspace = true
 sqlx = { workspace = true, optional = true }
-time.workspace = true
 worker = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio.workspace = true
+tokio = { workspace = true, features = ["macros", "rt"] }

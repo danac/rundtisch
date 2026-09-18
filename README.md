@@ -151,6 +151,7 @@ curl http://localhost:5173/api/health   # via Vite proxy → HTTP 200
 
 ```bash
 cargo run -p rundtisch-demo --features native --bin native
+# optional: SQLITE_PATH=/tmp/rundtisch.sqlite …
 curl http://localhost:8080/api/health
 ```
 

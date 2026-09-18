@@ -137,8 +137,11 @@ cargo run -p rundtisch-demo --bin generate_auth_migrations -- /tmp/auth-migratio
 
 ```bash
 cargo run -p rundtisch-demo --features native --bin native
+# optional: SQLITE_PATH=/tmp/rundtisch.sqlite cargo run -p rundtisch-demo --features native --bin native
 curl -i http://localhost:8080/api/health
 ```
+
+The native binary opens SQLite at `SQLITE_PATH`, or `rundtisch.sqlite` in the working directory if that variable is unset.
 
 ### Build WASM locally
 

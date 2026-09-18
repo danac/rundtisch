@@ -63,7 +63,7 @@ impl Migration for AuthMigration001 {
     }
 }
 
-#[cfg(all(test, feature = "native"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::traits::db::{statement_to_sql, Dialect};

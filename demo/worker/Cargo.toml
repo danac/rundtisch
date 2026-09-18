@@ -8,9 +8,9 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-axum.workspace = true
-rundtisch = { path = "../../crates/rundtisch", default-features = false, features = ["cloudflare"] }
+rundtisch = { path = "../../crates/rundtisch", default-features = false }
 rundtisch-demo = { path = "../api", default-features = false, features = ["cloudflare"] }
 tower-service.workspace = true
-worker.workspace = true
-worker-macros.workspace = true
+axum.workspace = true
+worker-macros = { workspace = true, features = ["http"] }
+worker = { workspace = true, features = ["http"] }

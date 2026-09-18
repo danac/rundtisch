@@ -51,8 +51,8 @@ fn run() -> io::Result<()> {
 
     let dialects = [
         ("sqlite", Dialect::Sqlite),
-        ("postgres", Dialect::Postgres),
-        ("mysql", Dialect::Mysql),
+        // ("postgres", Dialect::Postgres),
+        // ("mysql", Dialect::Mysql),
     ];
 
     for (name, dialect) in dialects {

@@ -7,6 +7,11 @@ demo/web/dist-ssr/
 demo/web/public/locales/
 *.tsbuildinfo
 
+# Local SQLite (native demo)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # Rust workspace
 target/
 demo/worker/build/

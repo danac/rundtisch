@@ -1,5 +1,5 @@
-#[cfg(feature = "cloudflare")]
+#[cfg(feature = "d1")]
 pub mod d1;
 
-#[cfg(feature = "native")]
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
