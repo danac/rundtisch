@@ -7,20 +7,34 @@ use sea_query::{InsertStatement, SelectStatement};
 use sqlx::query::Query;
 use sqlx::sqlite::{SqliteArguments, SqliteRow};
 use sqlx::{Row, Sqlite, TypeInfo, ValueRef};
+use std::path::Path;
+use crate::traits::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
+use sqlx::{
+    Row, Sqlite, TypeInfo, ValueRef,
+    query::Query,
+    sqlite::{SqliteArguments, SqliteRow},
+};
 
 pub struct SqliteExecutor {
     pool: sqlx::SqlitePool,
 }
 
 impl SqliteExecutor {
-    pub fn new(pool: sqlx::SqlitePool) -> Self {
+ 
+    pub async fn new(database_path: impl AsRef<Path>) -> Self {
+        let options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(database_path)
+            .create_if_missing(true);
+        let pool = sqlx::SqlitePool::connect_with(options)
+            .await
+            .expect("failed to open SQLite database");
         Self { pool }
     }
 
     fn sqlite_sql(stmt: &impl sea_query::QueryStatementWriter) -> Result<(String, Vec<Value>)> {
         query_to_sql(stmt, Dialect::Sqlite)
     }
-
+  
     /// Build a sqlx query with all values bound. Borrows from `sql` and `values` to avoid cloning
     /// the values passed by reference.
     fn bind<'q>(&self, sql: &'q str, values: &'q [Value]) -> Query<'q, Sqlite, SqliteArguments> {

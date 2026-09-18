@@ -1,0 +1,24 @@
+{
+  "name": "rundtisch",
+  "main": "./worker/build/index.js",
+  "compatibility_date": "2026-07-01",
+  "workers_dev": true,
+  "preview_urls": true,
+  "build": {
+    "command": "cargo install -q \"worker-build@^0.8\" && worker-build --release",
+    "cwd": "worker",
+    "watch_dir": ["../crates/rundtisch/src", "api/src", "worker/src"]
+  },
+  "assets": {
+    "directory": "./web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "D1_BINDING",
+      "database_name": "rundtisch",
+      "database_id": "7a42bb48-9d85-4bce-985f-e2899c2e555e"
+    }
+  ]
+}

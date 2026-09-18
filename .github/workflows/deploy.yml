@@ -48,7 +48,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Test rundtisch (native)
-        run: cargo test -p rundtisch --features native
+        run: cargo test -p rundtisch
 
       - name: Install dependencies
         working-directory: demo/web
@@ -65,6 +65,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: demo
 
       - name: Deploy preview
         if: github.event_name == 'pull_request'
@@ -73,4 +74,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: demo
           command: versions upload --preview-alias pr-${{ github.event.pull_request.number }} --message "Preview for PR #${{ github.event.pull_request.number }}"

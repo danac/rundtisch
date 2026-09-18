@@ -6,7 +6,7 @@ The repository is a **Cargo workspace** plus a **demo website** deployed as a **
 
 | Document | Scope |
 |----------|-------|
-| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth, native/Cloudflare runtimes |
+| [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth |
 | [demo/web/README.md](demo/web/README.md) | React SPA — landing page, planned API playground |
 | [demo/api/README.md](demo/api/README.md) | Demo Axum app — a few `/api/*` routes on top of `rundtisch` |
 
@@ -14,12 +14,12 @@ The repository is a **Cargo workspace** plus a **demo website** deployed as a **
 
 ### Crate split
 
-Application code (routes and handlers) depends on `rundtisch` and stays the same for both deployments. Runtime crates call one helper:
+Application code (routes and handlers) depends on `rundtisch` and stays the same for both deployments. Each target owns its HTTP entry:
 
 | Target | Entry | Helper |
 |--------|-------|--------|
-| Native container | `demo/api/src/bin/native.rs` | `rundtisch::runtime::native::serve(router)` |
-| Cloudflare Worker | `demo/worker` cdylib | `rundtisch::runtime::cloudflare::handle_fetch(req, env, build_router)` |
+| Native container | `demo/api/src/bin/native.rs` | `serve(router)` |
+| Cloudflare Worker | `demo/worker` cdylib | `handle_fetch(req, env, build_router)` |
 
 ### Deployment model (demo)
 
@@ -36,7 +36,7 @@ Application code (routes and handlers) depends on `rundtisch` and stays the same
 | `/api/*` | Rust Axum worker (WASM) | `demo/worker` via `worker-build` |
 | `/*` | Static SPA + SPA fallback | `demo/web/dist/` |
 
-Wrangler config at the repo root ties both together. The worker script (`demo/worker/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
+Wrangler config in `demo/` ties both together. The worker script (`demo/worker/build/index.js`) runs first for `/api/*`; all other requests are served from the Vite build output with `not_found_handling: "single-page-application"`.
 
 The same demo API can run as a native binary (`cargo run -p rundtisch-demo --features native --bin native`) with no route/handler changes.
 
@@ -53,7 +53,7 @@ Browser (localhost:5173)
                                             └─ Rust Axum worker
 ```
 
-Root `npm run dev` starts both processes via `concurrently`. Wrangler requires `demo/web/dist` to exist (`assets.directory`); `predev` creates that folder so a Vite production build is not required. See [Local development](#local-development).
+`npm run dev --prefix demo` starts both processes via `concurrently`. Wrangler requires `demo/web/dist` to exist (`assets.directory`); `predev` creates that folder so a Vite production build is not required. See [Local development](#local-development).
 
 ### Repository layout
 
@@ -61,22 +61,22 @@ Root `npm run dev` starts both processes via `concurrently`. Wrangler requires `
 .
 ├── Cargo.toml                 # workspace
 ├── crates/
-│   └── rundtisch/             # published lib (traits, adapters, auth, runtime)
-├── demo/
-│   ├── api/                   # demo app crate: routes + handlers
-│   │   └── src/bin/native.rs  # native container entry
-│   ├── worker/                # cdylib for wrangler / worker-build
-│   └── web/                   # React SPA
-├── wrangler.jsonc             # demo Worker (assets + /api/*)
-├── wrangler.dev.jsonc
-└── package.json
+│   └── rundtisch/             # published lib (traits, adapters, auth)
+└── demo/
+    ├── api/                   # demo app crate: routes + handlers
+    │   └── src/bin/native.rs  # native container entry
+    ├── worker/                # cdylib for wrangler / worker-build
+    ├── web/                   # React SPA
+    ├── wrangler.jsonc         # demo Worker (assets + /api/*)
+    ├── wrangler.dev.jsonc
+    └── package.json           # concurrently + wrangler; `npm run dev`
 ```
 
 ## Design decisions
 
 ### Library vs demo
 
-**Why split:** `rundtisch` is the reusable layer (platform trait, database adapters, auth, `serve` / `handle_fetch`). The demo is a small website used to debug that layer: a few Axum routes and the current landing page. Other projects can depend on the lib without taking demo routes.
+**Why split:** `rundtisch` is the reusable layer (platform trait, database adapters, auth). The demo is a small website used to debug that layer: a few Axum routes, native/`fetch` HTTP entry points, and the current landing page. Other projects can depend on the lib without taking demo routes or serving glue.
 
 **How:** A root Cargo workspace with `crates/rundtisch` (publishable) and `demo/api` + `demo/worker` (`publish = false`). Feature flags `native` and `cloudflare` stay on the lib; the demo crate forwards them.
 
@@ -84,7 +84,7 @@ Root `npm run dev` starts both processes via `concurrently`. Wrangler requires `
 
 **Why:** One Cloudflare Worker keeps deployment, DNS, and preview URLs simple. Static assets and the API share the same origin, so the browser never needs CORS configuration once the frontend calls the API.
 
-**How:** `wrangler.jsonc` sets `main` to the WASM worker shim and `assets.directory` to `demo/web/dist/`. `run_worker_first: ["/api/*"]` ensures API routes hit Rust before the asset handler.
+**How:** `demo/wrangler.jsonc` sets `main` to the WASM worker shim and `assets.directory` to `web/dist/` (the Vite output at `demo/web/dist/`). `run_worker_first: ["/api/*"]` ensures API routes hit Rust before the asset handler. The Worker is bound to D1 as `D1_BINDING` (`database_name`: `rundtisch`).
 
 ### Frontend and API developed independently
 
@@ -98,21 +98,21 @@ The demo API currently exposes `/api/health`. The SPA is a landing-page skeleton
 
 | Config | WASM build | Used by |
 |--------|------------|---------|
-| `wrangler.jsonc` | `worker-build --release` | CI, manual production deploy |
-| `wrangler.dev.jsonc` | `worker-build` (debug, faster) | `npm run dev`, local `wrangler dev` |
+| `demo/wrangler.jsonc` | `worker-build --release` | CI, manual production deploy |
+| `demo/wrangler.dev.jsonc` | `worker-build` (debug, faster) | `npm run dev --prefix demo`, local `wrangler dev` |
 
 Release builds are slower but smaller and faster at runtime; debug builds shorten the edit-compile loop during API work.
 
-### Root `package.json`
+### Demo `package.json`
 
-Cloud-agent and local dev environments run `npm install` at the repo root. The root `package.json` installs `concurrently` and `wrangler` and defines `npm run dev`. Frontend dependencies remain in `demo/web/package.json`.
+Cloud-agent and local dev environments run `npm install --prefix demo`. `demo/package.json` installs `concurrently` and `wrangler` and defines `npm run dev`. Frontend dependencies remain in `demo/web/package.json`.
 
 ## Local development
 
 ### First-time setup
 
 ```bash
-npm install                          # root: concurrently + wrangler
+npm install --prefix demo            # concurrently + wrangler
 npm install --prefix demo/web        # frontend dependencies
 rustup target add wasm32-unknown-unknown
 ```
@@ -128,8 +128,10 @@ sudo apt-get install libssl-dev pkg-config
 From the repository root:
 
 ```bash
-npm run dev
+npm run dev --prefix demo
 ```
+
+Or `cd demo && npm run dev`.
 
 | Process | Label | URL | Role |
 |---------|-------|-----|------|
@@ -149,6 +151,7 @@ curl http://localhost:5173/api/health   # via Vite proxy → HTTP 200
 
 ```bash
 cargo run -p rundtisch-demo --features native --bin native
+# optional: SQLITE_PATH=/tmp/rundtisch.sqlite …
 curl http://localhost:8080/api/health
 ```
 
@@ -162,7 +165,7 @@ npm run dev --prefix demo/web
 
 # Terminal 2 — Worker API (`assets.directory` must exist)
 mkdir -p demo/web/dist            # empty dir is enough for /api/*; SPA on :8787 needs a build
-npx wrangler dev --config wrangler.dev.jsonc --port 8787
+npx wrangler dev --config demo/wrangler.dev.jsonc --port 8787
 ```
 
 ## Build
@@ -192,7 +195,7 @@ worker-build --release    # or omit --release for debug
 
 Output: `demo/worker/build/index.js` + `index_bg.wasm` (gitignored; regenerated on every deploy).
 
-Wrangler runs the Worker build automatically via `build.command` in `wrangler.jsonc` — you do not need a separate WASM build step before `wrangler deploy`.
+Wrangler runs the Worker build automatically via `build.command` in `demo/wrangler.jsonc` — you do not need a separate WASM build step before `wrangler deploy`.
 
 ## Deployment
 
@@ -215,12 +218,12 @@ Preview URL format: `https://pr-<PR_NUMBER>-rundtisch.<account>.workers.dev`
 
 ```bash
 npm run build --prefix demo/web
-npx wrangler deploy
+npx wrangler deploy --config demo/wrangler.jsonc
 ```
 
 ## Related documentation
 
-- [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API, features, native vs Cloudflare runtime
+- [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API, features, native vs Cloudflare adapters
 - [demo/web/README.md](demo/web/README.md) — SPA landing page, Vite proxy, planned API playground
 - [demo/api/README.md](demo/api/README.md) — demo routes, WASM toolchain, extending the API
 - [AGENTS.md](AGENTS.md) — Cursor Cloud agent environment notes

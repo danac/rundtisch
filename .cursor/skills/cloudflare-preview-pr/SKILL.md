@@ -33,7 +33,7 @@ Read these from the repo when possible:
 
 | Value | Source | Example |
 |-------|--------|---------|
-| Worker name | `wrangler.jsonc` → `name` | `rundtisch` |
+| Worker name | `demo/wrangler.jsonc` → `name` | `rundtisch` |
 | Preview alias prefix | `.github/workflows/deploy.yml` → `--preview-alias` | `pr-<PR_NUMBER>` |
 | Account subdomain | workers.dev subdomain for this account | check deploy logs |
 
