@@ -14,7 +14,7 @@ sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
 
 [dependencies]
 sea-query.workspace = true
-serde = { workspace = true, features = ["derive"] }
+serde = { workspace = true, features = ["derive", "alloc"] }
 sqlx = { workspace = true, optional = true }
 worker = { workspace = true, optional = true }
 
