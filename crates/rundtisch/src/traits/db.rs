@@ -186,7 +186,6 @@ pub trait DatabaseExecutor {
 }
 
 /// Render a DML query (`SELECT` / `INSERT` / `UPDATE` / `DELETE`) to SQL + bind values.
-#[cfg(any(feature = "native", feature = "cloudflare"))]
 pub(crate) fn query_to_sql(
     stmt: &impl QueryStatementWriter,
     dialect: Dialect,

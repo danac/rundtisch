@@ -4,11 +4,7 @@ use crate::traits::db::{
     query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
-use sqlx::query::Query;
-use sqlx::sqlite::{SqliteArguments, SqliteRow};
-use sqlx::{Row, Sqlite, TypeInfo, ValueRef};
 use std::path::Path;
-use crate::traits::db::{AnyRow, DatabaseExecutor, Dialect, Error, FromRow, Result, Value};
 use sqlx::{
     Row, Sqlite, TypeInfo, ValueRef,
     query::Query,
@@ -28,6 +24,10 @@ impl SqliteExecutor {
         let pool = sqlx::SqlitePool::connect_with(options)
             .await
             .expect("failed to open SQLite database");
+        Self { pool }
+    }
+
+    fn from_pool(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 
@@ -272,7 +272,7 @@ mod tests {
         .execute(&pool)
         .await
         .expect("create typed table");
-        SqliteExecutor::new(pool)
+        SqliteExecutor::from_pool(pool)
     }
 
     fn select_item(id: i64) -> SelectStatement {
