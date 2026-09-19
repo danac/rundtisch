@@ -72,7 +72,8 @@ Browser (localhost:5173)
 │   ├── wrangler.dev.jsonc
 │   └── package.json           # concurrently + wrangler; `npm run dev`
 └── crockis/
-    └── web/                   # photo library SPA (frontend first)
+    ├── web/                   # photo library SPA (frontend first)
+    └── wrangler.jsonc         # Cloudflare Worker crockis (static SPA)
 ```
 
 ## Design decisions
@@ -217,7 +218,23 @@ Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **Clou
 
 Preview URL format: `https://pr-<PR_NUMBER>-rundtisch.<account>.workers.dev`
 
-### Manual deploy
+### Crockis (manual only)
+
+Workflow: `.github/workflows/deploy-crockis.yml`
+
+| Trigger | Action |
+|---------|--------|
+| **workflow_dispatch** only | Build `crockis/web` → `wrangler deploy` to Worker `crockis` |
+
+This workflow does **not** run on pushes to `main` or on pull requests. There is no Rust/WASM build; the Worker serves the Vite SPA from `crockis/web/dist/` (`crockis/wrangler.jsonc`).
+
+```bash
+npm install --prefix crockis/web
+npm run build --prefix crockis/web
+npx wrangler deploy --config crockis/wrangler.jsonc
+```
+
+### Manual deploy (demo)
 
 ```bash
 npm run build --prefix demo/web
