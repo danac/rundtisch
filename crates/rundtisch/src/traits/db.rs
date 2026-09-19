@@ -108,7 +108,7 @@ impl TryFrom<sea_query::Value> for Value {
 }
 
 /// INSERT / UPDATE / DELETE SeaQuery statements. Adapters render these; callers do not.
-pub trait ExecutableStatement: QueryStatementWriter {}
+pub trait ExecutableStatement: QueryStatementWriter + Send + Sync {}
 
 impl ExecutableStatement for InsertStatement {}
 impl ExecutableStatement for UpdateStatement {}
