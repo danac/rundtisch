@@ -6,6 +6,7 @@ use crate::traits::db::{
 use sea_query::{InsertStatement, SelectStatement};
 use worker::D1Database;
 use worker::js_sys::{Array, ArrayBuffer, Object, Reflect, Uint8Array};
+use worker::send::SendFuture;
 use worker::wasm_bindgen::JsCast;
 use worker::wasm_bindgen::JsValue;
 use worker::wasm_bindgen_futures::JsFuture;
@@ -178,47 +179,69 @@ impl RowCells for D1Cells<'_> {
 }
 
 impl DatabaseExecutor for D1Executor {
-    async fn fetch_one<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<T> {
-        match self.fetch_optional(stmt).await? {
-            Some(row) => Ok(row),
-            None => Err(Error::NotFound),
-        }
+    fn fetch_one<T: DbRecord>(
+        &self,
+        stmt: SelectStatement,
+    ) -> impl Future<Output = Result<T>> + Send {
+        SendFuture::new(async move {
+            match self.fetch_optional(stmt).await? {
+                Some(row) => Ok(row),
+                None => Err(Error::NotFound),
+            }
+        })
     }
 
-    async fn fetch_optional<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Option<T>> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
-        match self.first_row(&sql, &values).await? {
-            Some(row) => row_de::from_row(&D1Cells(&row)).map(Some),
-            None => Ok(None),
-        }
+    fn fetch_optional<T: DbRecord>(
+        &self,
+        stmt: SelectStatement,
+    ) -> impl Future<Output = Result<Option<T>>> + Send {
+        SendFuture::new(async move {
+            let (sql, values) = Self::sqlite_sql(&stmt)?;
+            match self.first_row(&sql, &values).await? {
+                Some(row) => row_de::from_row(&D1Cells(&row)).map(Some),
+                None => Ok(None),
+            }
+        })
     }
 
-    async fn fetch_all<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Vec<T>> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
-        self.all_rows(&sql, &values)
-            .await?
-            .iter()
-            .map(|row| row_de::from_row(&D1Cells(row)))
-            .collect()
+    fn fetch_all<T: DbRecord>(
+        &self,
+        stmt: SelectStatement,
+    ) -> impl Future<Output = Result<Vec<T>>> + Send {
+        SendFuture::new(async move {
+            let (sql, values) = Self::sqlite_sql(&stmt)?;
+            self.all_rows(&sql, &values)
+                .await?
+                .iter()
+                .map(|row| row_de::from_row(&D1Cells(row)))
+                .collect()
+        })
     }
 
-    async fn insert(&self, stmt: &InsertStatement) -> Result<i64> {
-        let result = self.run(stmt).await?;
-        result
-            .meta()
-            .map_err(map_d1)?
-            .and_then(|meta| meta.last_row_id)
-            .ok_or_else(|| Error::Backend("insert did not return a row id".into()))
+    fn insert(&self, stmt: InsertStatement) -> impl Future<Output = Result<i64>> + Send {
+        SendFuture::new(async move {
+            let result = self.run(&stmt).await?;
+            result
+                .meta()
+                .map_err(map_d1)?
+                .and_then(|meta| meta.last_row_id)
+                .ok_or_else(|| Error::Backend("insert did not return a row id".into()))
+        })
     }
 
-    async fn execute(&self, stmt: &impl ExecutableStatement) -> Result<ExecuteResult> {
-        let result = self.run(stmt).await?;
-        let rows_affected = result
-            .meta()
-            .map_err(map_d1)?
-            .and_then(|meta| meta.changes.or(meta.rows_written))
-            .unwrap_or(0) as u64;
-        Ok(ExecuteResult { rows_affected })
+    fn execute(
+        &self,
+        stmt: impl ExecutableStatement,
+    ) -> impl Future<Output = Result<ExecuteResult>> + Send {
+        SendFuture::new(async move {
+            let result = self.run(&stmt).await?;
+            let rows_affected = result
+                .meta()
+                .map_err(map_d1)?
+                .and_then(|meta| meta.changes.or(meta.rows_written))
+                .unwrap_or(0) as u64;
+            Ok(ExecuteResult { rows_affected })
+        })
     }
 }
 
