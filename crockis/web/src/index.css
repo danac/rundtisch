@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "react-photo-album/rows.css";
+@import "yet-another-react-lightbox/styles.css";
+
+@theme {
+  --color-void: #050505;
+  --color-ink: #f4f1ea;
+  --color-mist: #9c9890;
+  --color-line: #2a2a2a;
+  --font-display: "Josefin Sans", ui-sans-serif, sans-serif;
+  --font-body: "Outfit", ui-sans-serif, sans-serif;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+.photo-mosaic img {
+  transition: transform 0.8s ease;
+}
+
+.photo-mosaic a:hover img,
+.photo-mosaic button:hover img {
+  transform: scale(1.035);
+}
+
+.yarl__root {
+  --yarl__color_backdrop: rgba(0, 0, 0, 0.94);
+}

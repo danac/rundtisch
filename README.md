@@ -2,13 +2,14 @@
 
 Platform-agnostic micro web framework with CMS features.
 
-The repository is a **Cargo workspace** plus a **demo website** deployed as a **single Cloudflare Worker**: a small React SPA (landing page / API test harness) and a Rust (Axum) WASM worker for `/api/*`. The reusable framework lives in `crates/rundtisch` (to be published on crates.io). See the component READMEs for implementation detail:
+The repository is a **Cargo workspace** plus two frontends: a **demo website** deployed as a **single Cloudflare Worker** (React SPA + Rust Axum WASM worker for `/api/*`) and **Crockis**, a photo-library SPA that will later sit on the same `rundtisch` crate. The reusable framework lives in `crates/rundtisch` (to be published on crates.io). See the component READMEs for implementation detail:
 
 | Document | Scope |
 |----------|-------|
 | [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — traits, adapters, auth |
 | [demo/web/README.md](demo/web/README.md) | React SPA — landing page, planned API playground |
 | [demo/api/README.md](demo/api/README.md) | Demo Axum app — a few `/api/*` routes on top of `rundtisch` |
+| [crockis/web/README.md](crockis/web/README.md) | Crockis SPA — collections, photo mosaic, login (frontend only) |
 
 ## Architecture
 
@@ -62,14 +63,16 @@ Browser (localhost:5173)
 ├── Cargo.toml                 # workspace
 ├── crates/
 │   └── rundtisch/             # published lib (traits, adapters, auth)
-└── demo/
-    ├── api/                   # demo app crate: routes + handlers
-    │   └── src/bin/native.rs  # native container entry
-    ├── worker/                # cdylib for wrangler / worker-build
-    ├── web/                   # React SPA
-    ├── wrangler.jsonc         # demo Worker (assets + /api/*)
-    ├── wrangler.dev.jsonc
-    └── package.json           # concurrently + wrangler; `npm run dev`
+├── demo/
+│   ├── api/                   # demo app crate: routes + handlers
+│   │   └── src/bin/native.rs  # native container entry
+│   ├── worker/                # cdylib for wrangler / worker-build
+│   ├── web/                   # React SPA
+│   ├── wrangler.jsonc         # demo Worker (assets + /api/*)
+│   ├── wrangler.dev.jsonc
+│   └── package.json           # concurrently + wrangler; `npm run dev`
+└── crockis/
+    └── web/                   # photo library SPA (frontend first)
 ```
 
 ## Design decisions
@@ -226,4 +229,5 @@ npx wrangler deploy --config demo/wrangler.jsonc
 - [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API, features, native vs Cloudflare adapters
 - [demo/web/README.md](demo/web/README.md) — SPA landing page, Vite proxy, planned API playground
 - [demo/api/README.md](demo/api/README.md) — demo routes, WASM toolchain, extending the API
+- [crockis/web/README.md](crockis/web/README.md) — Crockis photo library SPA
 - [AGENTS.md](AGENTS.md) — Cursor Cloud agent environment notes
