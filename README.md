@@ -218,15 +218,19 @@ Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **Clou
 
 Preview URL format: `https://pr-<PR_NUMBER>-rundtisch.<account>.workers.dev`
 
-### Crockis (manual only)
+### Crockis
 
 Workflow: `.github/workflows/deploy-crockis.yml`
 
 | Trigger | Action |
 |---------|--------|
-| **workflow_dispatch** only | Build `crockis/web` → `wrangler deploy` to Worker `crockis` |
+| Push to `main` | Build `crockis/web` → `wrangler deploy` to Worker `crockis` |
+| Pull request to `main` | Build frontend → preview alias `pr-<N>` |
+| **workflow_dispatch** | Same as production deploy |
 
-This workflow does **not** run on pushes to `main` or on pull requests. There is no Rust/WASM build; the Worker serves the Vite SPA from `crockis/web/dist/` (`crockis/wrangler.jsonc`).
+There is no Rust/WASM build; the Worker serves the Vite SPA from `crockis/web/dist/` (`crockis/wrangler.jsonc`).
+
+Preview URL format: `https://pr-<PR_NUMBER>-crockis.<account>.workers.dev`
 
 ```bash
 npm install --prefix crockis/web

@@ -25,14 +25,12 @@ Dev server: http://localhost:5174 (5173 is reserved for the rundtisch demo).
 
 ## Deploy
 
-The Cloudflare Worker is named `crockis` and serves `web/dist/` as a single-page app (no Rust/WASM worker). GitHub Actions workflow **Deploy Crockis** (`.github/workflows/deploy-crockis.yml`) is **manual only** (`workflow_dispatch`) — it does not run on pushes to `main` or on pull requests.
+The Cloudflare Worker is named `crockis` and serves `web/dist/` as a single-page app (no Rust/WASM worker). GitHub Actions workflow **Deploy Crockis** (`.github/workflows/deploy-crockis.yml`) runs on pushes to `main`, pull requests to `main` (preview alias `pr-<N>`), and manual `workflow_dispatch`.
 
 ```bash
 # local
 npm install --prefix crockis
 npm run deploy --prefix crockis
-
-# or from the Actions tab: Run workflow → Deploy Crockis
 ```
 
 See [web/README.md](web/README.md) for the SPA stack and API contract.

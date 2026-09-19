@@ -57,4 +57,4 @@ npm run preview --prefix crockis/web
 
 In local dev, Vite proxies `/api` to `http://localhost:8787` (same convention as the rundtisch demo).
 
-Production deploy is the assets-only Cloudflare Worker `crockis` (`../wrangler.jsonc`). GitHub Actions **Deploy Crockis** is manual (`workflow_dispatch`) only.
+Production deploy is the assets-only Cloudflare Worker `crockis` (`../wrangler.jsonc`). GitHub Actions **Deploy Crockis** runs on `main`, pull requests (preview alias `pr-<N>`), and `workflow_dispatch`.
