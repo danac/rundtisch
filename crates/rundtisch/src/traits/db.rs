@@ -160,29 +160,34 @@ impl<T: Serialize + DeserializeOwned> DbRecord for T {}
 
 /// Database port. Callers pass SeaQuery statements; adapters render SQL for their engine.
 ///
-/// Fetch deserializes each row into `T: `[`DbRecord`]. Futures are not `Send`
-/// so Cloudflare D1 can implement this trait.
+/// Fetch deserializes each row into `T: `[`DbRecord`]. Returned futures are `Send` so
+/// Axum handlers can await them. Enable sea-query's `thread-safe` feature so statements
+/// (which contain `Value`) are `Send`. The D1 adapter wraps JS futures in
+/// `worker::send::SendFuture`.
 pub trait DatabaseExecutor {
-    fn fetch_one<T: DbRecord>(&self, stmt: &SelectStatement) -> impl Future<Output = Result<T>>;
+    fn fetch_one<T: DbRecord>(
+        &self,
+        stmt: &SelectStatement,
+    ) -> impl Future<Output = Result<T>> + Send;
 
     fn fetch_optional<T: DbRecord>(
         &self,
         stmt: &SelectStatement,
-    ) -> impl Future<Output = Result<Option<T>>>;
+    ) -> impl Future<Output = Result<Option<T>>> + Send;
 
     fn fetch_all<T: DbRecord>(
         &self,
         stmt: &SelectStatement,
-    ) -> impl Future<Output = Result<Vec<T>>>;
+    ) -> impl Future<Output = Result<Vec<T>>> + Send;
 
     /// INSERT into an autoincrement table. Always returns the generated primary key.
-    fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>>;
+    fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>> + Send;
 
     /// UPDATE / DELETE / INSERT where the primary key is already known.
     fn execute(
         &self,
         stmt: &impl ExecutableStatement,
-    ) -> impl Future<Output = Result<ExecuteResult>>;
+    ) -> impl Future<Output = Result<ExecuteResult>> + Send;
 }
 
 /// Render a DML query (`SELECT` / `INSERT` / `UPDATE` / `DELETE`) to SQL + bind values.
