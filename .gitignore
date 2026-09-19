@@ -5,7 +5,8 @@ node_modules/
 demo/web/dist/
 demo/web/dist-ssr/
 demo/web/public/locales/
-crockis/web/dist/
+crockis/web/dist/*
+!crockis/web/dist/.keep
 crockis/web/dist-ssr/
 *.tsbuildinfo
 
