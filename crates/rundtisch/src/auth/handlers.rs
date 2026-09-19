@@ -15,7 +15,7 @@ impl IntoResponse for Error {
 
 pub async fn list_users<P: Platform>(State(state): State<AppState<P>>) -> impl IntoResponse {
     let query = user_list_query();
-    let result = state.database.fetch_all::<User>(&query).await;
+    let result = state.database.fetch_all::<User>(query).await;
     match result {
         Ok(users) => Json(json!({"result": users})).into_response(),
         Err(e) => e.into_response(),

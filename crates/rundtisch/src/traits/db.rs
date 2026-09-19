@@ -108,7 +108,10 @@ impl TryFrom<sea_query::Value> for Value {
 }
 
 /// INSERT / UPDATE / DELETE SeaQuery statements. Adapters render these; callers do not.
-pub trait ExecutableStatement: QueryStatementWriter + Send + Sync {}
+///
+/// `Send` is required because [`DatabaseExecutor`] takes statements by value and
+/// holds them in `Send` futures. `Sync` is not required.
+pub trait ExecutableStatement: QueryStatementWriter + Send {}
 
 impl ExecutableStatement for InsertStatement {}
 impl ExecutableStatement for UpdateStatement {}
@@ -161,32 +164,32 @@ impl<T: Serialize + DeserializeOwned> DbRecord for T {}
 /// Database port. Callers pass SeaQuery statements; adapters render SQL for their engine.
 ///
 /// Fetch deserializes each row into `T: `[`DbRecord`]. Returned futures are `Send` so
-/// Axum handlers can await them. Enable sea-query's `thread-safe` feature so statements
-/// (which contain `Value`) are `Send`. The D1 adapter wraps JS futures in
-/// `worker::send::SendFuture`.
+/// Axum handlers can await them. Statements are taken by value so they only need to
+/// be `Send` (sea-query `thread-safe`), not `Sync`. The D1 adapter wraps JS futures
+/// in `worker::send::SendFuture`.
 pub trait DatabaseExecutor {
     fn fetch_one<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<T>> + Send;
 
     fn fetch_optional<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<Option<T>>> + Send;
 
     fn fetch_all<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<Vec<T>>> + Send;
 
     /// INSERT into an autoincrement table. Always returns the generated primary key.
-    fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>> + Send;
+    fn insert(&self, stmt: InsertStatement) -> impl Future<Output = Result<i64>> + Send;
 
     /// UPDATE / DELETE / INSERT where the primary key is already known.
     fn execute(
         &self,
-        stmt: &impl ExecutableStatement,
+        stmt: impl ExecutableStatement,
     ) -> impl Future<Output = Result<ExecuteResult>> + Send;
 }
 

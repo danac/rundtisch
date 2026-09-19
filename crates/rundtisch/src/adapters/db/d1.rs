@@ -181,7 +181,7 @@ impl RowCells for D1Cells<'_> {
 impl DatabaseExecutor for D1Executor {
     fn fetch_one<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<T>> + Send {
         SendFuture::new(async move {
             match self.fetch_optional(stmt).await? {
@@ -193,10 +193,10 @@ impl DatabaseExecutor for D1Executor {
 
     fn fetch_optional<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<Option<T>>> + Send {
         SendFuture::new(async move {
-            let (sql, values) = Self::sqlite_sql(stmt)?;
+            let (sql, values) = Self::sqlite_sql(&stmt)?;
             match self.first_row(&sql, &values).await? {
                 Some(row) => row_de::from_row(&D1Cells(&row)).map(Some),
                 None => Ok(None),
@@ -206,10 +206,10 @@ impl DatabaseExecutor for D1Executor {
 
     fn fetch_all<T: DbRecord>(
         &self,
-        stmt: &SelectStatement,
+        stmt: SelectStatement,
     ) -> impl Future<Output = Result<Vec<T>>> + Send {
         SendFuture::new(async move {
-            let (sql, values) = Self::sqlite_sql(stmt)?;
+            let (sql, values) = Self::sqlite_sql(&stmt)?;
             self.all_rows(&sql, &values)
                 .await?
                 .iter()
@@ -218,9 +218,9 @@ impl DatabaseExecutor for D1Executor {
         })
     }
 
-    fn insert(&self, stmt: &InsertStatement) -> impl Future<Output = Result<i64>> + Send {
+    fn insert(&self, stmt: InsertStatement) -> impl Future<Output = Result<i64>> + Send {
         SendFuture::new(async move {
-            let result = self.run(stmt).await?;
+            let result = self.run(&stmt).await?;
             result
                 .meta()
                 .map_err(map_d1)?
@@ -231,10 +231,10 @@ impl DatabaseExecutor for D1Executor {
 
     fn execute(
         &self,
-        stmt: &impl ExecutableStatement,
+        stmt: impl ExecutableStatement,
     ) -> impl Future<Output = Result<ExecuteResult>> + Send {
         SendFuture::new(async move {
-            let result = self.run(stmt).await?;
+            let result = self.run(&stmt).await?;
             let rows_affected = result
                 .meta()
                 .map_err(map_d1)?

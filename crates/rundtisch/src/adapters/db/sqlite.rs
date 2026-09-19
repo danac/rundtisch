@@ -4,19 +4,18 @@ use crate::traits::db::{
     query_to_sql,
 };
 use sea_query::{InsertStatement, SelectStatement};
-use std::path::Path;
 use sqlx::{
     Row, Sqlite, TypeInfo, ValueRef,
     query::Query,
     sqlite::{SqliteArguments, SqliteRow},
 };
+use std::path::Path;
 
 pub struct SqliteExecutor {
     pool: sqlx::SqlitePool,
 }
 
 impl SqliteExecutor {
- 
     pub async fn new(database_path: impl AsRef<Path>) -> Self {
         let options = sqlx::sqlite::SqliteConnectOptions::new()
             .filename(database_path)
@@ -34,7 +33,7 @@ impl SqliteExecutor {
     fn sqlite_sql(stmt: &impl sea_query::QueryStatementWriter) -> Result<(String, Vec<Value>)> {
         query_to_sql(stmt, Dialect::Sqlite)
     }
-  
+
     /// Build a sqlx query with all values bound. Borrows from `sql` and `values` to avoid cloning
     /// the values passed by reference.
     fn bind<'q>(&self, sql: &'q str, values: &'q [Value]) -> Query<'q, Sqlite, SqliteArguments> {
@@ -146,8 +145,8 @@ impl RowCells for SqliteCells<'_> {
 }
 
 impl DatabaseExecutor for SqliteExecutor {
-    async fn fetch_one<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<T> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
+    async fn fetch_one<T: DbRecord>(&self, stmt: SelectStatement) -> Result<T> {
+        let (sql, values) = Self::sqlite_sql(&stmt)?;
         let row = self
             .bind(&sql, &values)
             .fetch_one(&self.pool)
@@ -156,8 +155,8 @@ impl DatabaseExecutor for SqliteExecutor {
         row_de::from_row(&SqliteCells(&row))
     }
 
-    async fn fetch_optional<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Option<T>> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
+    async fn fetch_optional<T: DbRecord>(&self, stmt: SelectStatement) -> Result<Option<T>> {
+        let (sql, values) = Self::sqlite_sql(&stmt)?;
         let row = self
             .bind(&sql, &values)
             .fetch_optional(&self.pool)
@@ -169,8 +168,8 @@ impl DatabaseExecutor for SqliteExecutor {
         }
     }
 
-    async fn fetch_all<T: DbRecord>(&self, stmt: &SelectStatement) -> Result<Vec<T>> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
+    async fn fetch_all<T: DbRecord>(&self, stmt: SelectStatement) -> Result<Vec<T>> {
+        let (sql, values) = Self::sqlite_sql(&stmt)?;
         let rows = self
             .bind(&sql, &values)
             .fetch_all(&self.pool)
@@ -181,8 +180,8 @@ impl DatabaseExecutor for SqliteExecutor {
             .collect()
     }
 
-    async fn insert(&self, stmt: &InsertStatement) -> Result<i64> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
+    async fn insert(&self, stmt: InsertStatement) -> Result<i64> {
+        let (sql, values) = Self::sqlite_sql(&stmt)?;
         let res = self
             .bind(&sql, &values)
             .execute(&self.pool)
@@ -191,8 +190,8 @@ impl DatabaseExecutor for SqliteExecutor {
         Ok(res.last_insert_rowid())
     }
 
-    async fn execute(&self, stmt: &impl ExecutableStatement) -> Result<ExecuteResult> {
-        let (sql, values) = Self::sqlite_sql(stmt)?;
+    async fn execute(&self, stmt: impl ExecutableStatement) -> Result<ExecuteResult> {
+        let (sql, values) = Self::sqlite_sql(&stmt)?;
         let res = self
             .bind(&sql, &values)
             .execute(&self.pool)
@@ -321,8 +320,8 @@ mod tests {
             ])
             .to_owned();
 
-        let id = exec.insert(&insert).await.expect("insert");
-        let row: Item = exec.fetch_one(&select_item(id)).await.expect("fetch");
+        let id = exec.insert(insert).await.expect("insert");
+        let row: Item = exec.fetch_one(select_item(id)).await.expect("fetch");
         assert_eq!(
             row,
             Item {
@@ -339,7 +338,7 @@ mod tests {
     async fn fetch_optional_none() {
         let exec = executor().await;
         let row: Option<Item> = exec
-            .fetch_optional(&select_item(99))
+            .fetch_optional(select_item(99))
             .await
             .expect("fetch_optional");
         assert_eq!(row, None);
@@ -363,8 +362,8 @@ mod tests {
                 Vec::<u8>::new().into(),
             ])
             .to_owned();
-        let id = exec.insert(&insert).await.expect("insert");
-        let row: Item = exec.fetch_one(&select_item(id)).await.expect("fetch");
+        let id = exec.insert(insert).await.expect("insert");
+        let row: Item = exec.fetch_one(select_item(id)).await.expect("fetch");
         assert_eq!(row.flag, false);
         assert_eq!(row.score, 2.5);
         assert_eq!(row.name.as_deref(), Some("n"));
@@ -389,13 +388,13 @@ mod tests {
                 vec![9u8].into(),
             ])
             .to_owned();
-        let id = exec.insert(&insert).await.expect("insert");
+        let id = exec.insert(insert).await.expect("insert");
 
-        let as_float: IdAsFloat = exec.fetch_one(&select_item(id)).await.expect("id as f64");
+        let as_float: IdAsFloat = exec.fetch_one(select_item(id)).await.expect("id as f64");
         assert_eq!(as_float.id, id as f64);
 
         let as_int: ScoreAsInt = exec
-            .fetch_one(&select_item(id))
+            .fetch_one(select_item(id))
             .await
             .expect("whole REAL as i64");
         assert_eq!(as_int.score, 4);
@@ -419,9 +418,9 @@ mod tests {
                 vec![0u8].into(),
             ])
             .to_owned();
-        let id = exec.insert(&insert).await.expect("insert");
+        let id = exec.insert(insert).await.expect("insert");
         let err = exec
-            .fetch_one::<ScoreAsInt>(&select_item(id))
+            .fetch_one::<ScoreAsInt>(select_item(id))
             .await
             .expect_err("2.5 is not an i64");
         assert_eq!(err, Error::TypeMismatch);
@@ -431,7 +430,7 @@ mod tests {
     async fn fetch_one_missing_row_is_not_found() {
         let exec = executor().await;
         let err = exec
-            .fetch_one::<Item>(&select_item(99))
+            .fetch_one::<Item>(select_item(99))
             .await
             .expect_err("missing row");
         assert_eq!(err, Error::NotFound);
@@ -445,10 +444,10 @@ mod tests {
             .columns([Alias::new("flag"), Alias::new("kind"), Alias::new("whole")])
             .values_panic([true.into(), "Admin".into(), 3.0.into()])
             .to_owned();
-        let id = exec.insert(&insert).await.expect("insert");
+        let id = exec.insert(insert).await.expect("insert");
         let rows: Vec<Typed> = exec
             .fetch_all(
-                &Query::select()
+                Query::select()
                     .columns([
                         Alias::new("id"),
                         Alias::new("flag"),
@@ -470,7 +469,7 @@ mod tests {
             }]
         );
 
-        let one: Typed = exec.fetch_one(&select_typed(id)).await.expect("fetch");
+        let one: Typed = exec.fetch_one(select_typed(id)).await.expect("fetch");
         assert_eq!(one.kind, Kind::Admin);
         assert_eq!(one.flag, true);
         assert_eq!(one.whole, 3);
@@ -485,7 +484,7 @@ mod tests {
             .expect("insert flag=2");
         let err = exec
             .fetch_one::<Item>(
-                &Query::select()
+                Query::select()
                     .columns([
                         Alias::new("id"),
                         Alias::new("score"),
