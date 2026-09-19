@@ -1,9 +1,253 @@
-use sea_query::{Asterisk, Query, SelectStatement};
-use crate::auth::models::UserTable;
+use crate::auth::models::{datetime_to_rfc3339, NewUser, UserTable};
+use sea_query::{Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement};
 
 pub fn user_list_query() -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(UserTable::Table)
         .to_owned()
+}
+
+pub fn user_insert_query(user: &NewUser) -> InsertStatement {
+    Query::insert()
+        .into_table(UserTable::Table)
+        .columns([
+            UserTable::Email,
+            UserTable::Alias,
+            UserTable::Role,
+            UserTable::PasswordHash,
+            UserTable::CreatedAt,
+            UserTable::UpdatedAt,
+        ])
+        .values_panic([
+            user.email.to_string().into(),
+            user.alias.clone().into(),
+            user.role.as_str().into(),
+            user.password_hash.clone().into(),
+            datetime_to_rfc3339(user.created_at).into(),
+            datetime_to_rfc3339(user.updated_at).into(),
+        ])
+        .to_owned()
+}
+
+pub fn user_delete_query(id: i64) -> DeleteStatement {
+    Query::delete()
+        .from_table(UserTable::Table)
+        .and_where(Expr::col(UserTable::Id).eq(id))
+        .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::auth::migrations::auth_migration_001::AuthMigration001;
+    use crate::auth::models::Role;
+    use crate::traits::db::{query_to_sql, schema_to_sql, Dialect, Error, Migration, Value};
+    use email_address::EmailAddress;
+
+    fn sample_user() -> NewUser {
+        let created = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_100).unwrap();
+        NewUser {
+            email: "alice@example.com".parse().unwrap(),
+            alias: "alice".into(),
+            role: Role::Admin,
+            password_hash: Some("hash".into()),
+            created_at: created,
+            updated_at: updated,
+        }
+    }
+
+    fn bind<'q>(
+        sql: &'q str,
+        values: &'q [Value],
+    ) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments> {
+        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
+        for v in values {
+            q = match v {
+                Value::Int(x) => q.bind(*x),
+                Value::Float(x) => q.bind(*x),
+                Value::Text(x) => q.bind(x.as_str()),
+                Value::Bool(x) => q.bind(*x),
+                Value::Bytes(x) => q.bind(x.as_slice()),
+                Value::Null => q.bind(Option::<i64>::None),
+            };
+        }
+        q
+    }
+
+    async fn migrated_pool() -> sqlx::SqlitePool {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
+            .await
+            .expect("connect to in-memory sqlite");
+        for stmt in AuthMigration001.up() {
+            let sql = schema_to_sql(&stmt, Dialect::Sqlite);
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .execute(&pool)
+                .await
+                .expect("execute migration statement");
+        }
+        pool
+    }
+
+    #[test]
+    fn user_insert_query_sql() {
+        let (sql, values) = query_to_sql(&user_insert_query(&sample_user()), Dialect::Sqlite)
+            .expect("render insert");
+        assert_eq!(
+            sql,
+            "INSERT INTO \"auth_users\" (\"email\", \"alias\", \"role\", \"password_hash\", \"created_at\", \"updated_at\") VALUES (?, ?, ?, ?, ?, ?)"
+        );
+        assert_eq!(
+            values
+                .iter()
+                .map(|v| match v {
+                    Value::Text(s) => s.as_str(),
+                    Value::Null => "NULL",
+                    _ => panic!("unexpected bind {v:?}"),
+                })
+                .collect::<Vec<_>>(),
+            [
+                "alice@example.com",
+                "alice",
+                "Admin",
+                "hash",
+                "2023-11-14T22:13:20Z",
+                "2023-11-14T22:15:00Z",
+            ]
+        );
+    }
+
+    #[test]
+    fn user_delete_query_sql() {
+        let (sql, values) =
+            query_to_sql(&user_delete_query(7), Dialect::Sqlite).expect("render delete");
+        assert_eq!(sql, "DELETE FROM \"auth_users\" WHERE \"id\" = ?");
+        match values.as_slice() {
+            [Value::Int(7)] => {}
+            other => panic!("unexpected binds: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn insert_list_delete_round_trip() {
+        let pool = migrated_pool().await;
+        let user = sample_user();
+        let (sql, values) =
+            query_to_sql(&user_insert_query(&user), Dialect::Sqlite).expect("render insert");
+        bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect("insert user");
+
+        let (sql, values) =
+            query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
+        let row = bind(&sql, &values)
+            .fetch_one(&pool)
+            .await
+            .expect("list users");
+        let email: String = sqlx::Row::try_get(&row, "email").unwrap();
+        let alias: String = sqlx::Row::try_get(&row, "alias").unwrap();
+        let role: String = sqlx::Row::try_get(&row, "role").unwrap();
+        assert_eq!(email, "alice@example.com");
+        assert_eq!(alias, "alice");
+        assert_eq!(role, "Admin");
+
+        let (sql, values) =
+            query_to_sql(&user_delete_query(1), Dialect::Sqlite).expect("render delete");
+        let deleted = bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect("delete user");
+        assert_eq!(deleted.rows_affected(), 1);
+
+        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM auth_users")
+            .fetch_one(&pool)
+            .await
+            .expect("count users");
+        assert_eq!(remaining, 0);
+    }
+
+    #[tokio::test]
+    async fn delete_missing_user_affects_no_rows() {
+        let pool = migrated_pool().await;
+        let (sql, values) =
+            query_to_sql(&user_delete_query(99), Dialect::Sqlite).expect("render delete");
+        let deleted = bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect("delete missing");
+        assert_eq!(deleted.rows_affected(), 0);
+    }
+
+    #[tokio::test]
+    async fn insert_duplicate_email_is_unique_violation() {
+        let pool = migrated_pool().await;
+        let user = sample_user();
+        let (sql, values) =
+            query_to_sql(&user_insert_query(&user), Dialect::Sqlite).expect("render insert");
+        bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect("insert first user");
+        let err = bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect_err("duplicate email");
+        assert!(err.to_string().to_ascii_lowercase().contains("unique"));
+    }
+
+    #[cfg(feature = "sqlite")]
+    #[tokio::test]
+    async fn sqlite_executor_decodes_inserted_user() {
+        use crate::adapters::db::sqlite::SqliteExecutor;
+        use crate::auth::models::User;
+        use crate::traits::db::DatabaseExecutor;
+        use time::format_description::well_known::Rfc3339;
+
+        let pool = migrated_pool().await;
+        let exec = SqliteExecutor::from_pool(pool);
+        let new_user = sample_user();
+        let id = exec
+            .insert(user_insert_query(&new_user))
+            .await
+            .expect("insert");
+        let users: Vec<User> = exec.fetch_all(user_list_query()).await.expect("list");
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].id, id);
+        assert_eq!(users[0].email, new_user.email);
+        assert_eq!(users[0].alias, new_user.alias);
+        assert_eq!(users[0].role, Role::Admin);
+        assert_eq!(users[0].password_hash.as_deref(), Some("hash"));
+        assert_eq!(users[0].email_verified_at, None);
+        assert_eq!(
+            users[0].created_at.format(&Rfc3339).unwrap(),
+            datetime_to_rfc3339(new_user.created_at)
+        );
+        assert_eq!(users[0].last_login_at, None);
+
+        let deleted = exec
+            .execute(user_delete_query(id))
+            .await
+            .expect("delete");
+        assert_eq!(deleted.rows_affected, 1);
+        let users: Vec<User> = exec.fetch_all(user_list_query()).await.expect("list empty");
+        assert!(users.is_empty());
+    }
+
+    #[test]
+    fn new_user_parses_email() {
+        let email: EmailAddress = "bob@example.com".parse().unwrap();
+        let user = NewUser::new(email.clone(), "bob", Role::User, None);
+        assert_eq!(user.email, email);
+        assert_eq!(user.alias, "bob");
+        assert_eq!(user.role, Role::User);
+        assert_eq!(user.password_hash, None);
+    }
+
+    #[test]
+    fn conflict_error_display() {
+        assert_eq!(Error::Conflict.to_string(), "conflict");
+        assert_eq!(Error::NotFound.to_string(), "not found");
+    }
 }
