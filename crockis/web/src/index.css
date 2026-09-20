@@ -26,6 +26,7 @@ body {
 }
 
 .photo-mosaic img {
+  object-fit: cover;
   transition: transform 0.8s ease;
 }
 
