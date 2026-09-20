@@ -25,14 +25,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.photo-mosaic img {
-  object-fit: cover;
-  transition: transform 0.8s ease;
+.photo-mosaic a,
+.photo-mosaic button {
+  position: relative;
 }
 
-.photo-mosaic a:hover img,
-.photo-mosaic button:hover img {
-  transform: scale(1.035);
+.photo-mosaic img {
+  object-fit: cover;
+}
+
+.photo-mosaic a::after,
+.photo-mosaic button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgb(255 255 255 / 0.14);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+
+.photo-mosaic a:hover::after,
+.photo-mosaic button:hover::after {
+  opacity: 1;
 }
 
 .yarl__root {

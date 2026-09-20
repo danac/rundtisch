@@ -27,8 +27,8 @@ export function CollectionMosaic({ collections }: CollectionMosaicProps) {
                 featured ? 'aspect-[16/10] lg:h-full lg:aspect-auto' : 'aspect-[4/3]',
               ].join(' ')}
             />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
-            <div className="absolute inset-x-0 bottom-0 p-5 md:p-6">
+            <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
+            <div className="absolute inset-x-0 bottom-0 z-10 p-5 md:p-6">
               <h2 className="font-display text-lg font-light tracking-[0.28em] uppercase md:text-xl">
                 {collection.name}
               </h2>
