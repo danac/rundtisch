@@ -52,18 +52,18 @@ export function LoginPage() {
           }}
           className="relative w-full max-w-sm"
         >
-          <p className="font-display text-center text-[12px] font-light tracking-[0.42em] uppercase text-mist">
+          <p className="font-display text-center text-[12px] font-medium tracking-[0.32em] uppercase text-mist">
             Private library
           </p>
-          <h1 className="mt-4 text-center font-display text-3xl font-light tracking-[0.28em] uppercase">
+          <h1 className="mt-4 text-center font-display text-3xl font-medium tracking-[0.22em] uppercase">
             Sign in
           </h1>
-          <p className="mt-4 text-center text-sm font-light text-mist">
+          <p className="mt-4 text-center text-sm leading-relaxed text-mist">
             Any email and password will open the placeholder library until the
             rundtisch API is connected.
           </p>
 
-          <label className="mt-12 block font-display text-[11px] tracking-[0.24em] uppercase text-mist">
+          <label className="mt-12 block font-display text-[11px] font-medium tracking-[0.2em] uppercase text-mist">
             Email
             <input
               type="email"
@@ -72,11 +72,11 @@ export function LoginPage() {
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-3 block w-full border-0 border-b border-line bg-transparent px-0 py-3 font-body text-base font-light text-ink outline-none transition-colors focus:border-ink"
+              className="auth-field"
             />
           </label>
 
-          <label className="mt-8 block font-display text-[11px] tracking-[0.24em] uppercase text-mist">
+          <label className="mt-8 block font-display text-[11px] font-medium tracking-[0.2em] uppercase text-mist">
             Password
             <input
               type="password"
@@ -85,12 +85,12 @@ export function LoginPage() {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-3 block w-full border-0 border-b border-line bg-transparent px-0 py-3 font-body text-base font-light text-ink outline-none transition-colors focus:border-ink"
+              className="auth-field"
             />
           </label>
 
           {error ? (
-            <p className="mt-6 text-center text-sm font-light text-red-300/90" role="alert">
+            <p className="mt-6 text-center text-sm text-red-300/90" role="alert">
               {error}
             </p>
           ) : null}
@@ -98,7 +98,7 @@ export function LoginPage() {
           <button
             type="submit"
             disabled={pending}
-            className="mt-12 w-full border border-ink/70 px-6 py-3 font-display text-[12px] tracking-[0.32em] uppercase transition-colors hover:bg-ink hover:text-void disabled:cursor-wait disabled:opacity-60"
+            className="mt-12 w-full border border-ink/70 px-6 py-3.5 font-display text-[12px] font-medium tracking-[0.28em] uppercase transition-colors hover:bg-ink hover:text-void disabled:cursor-wait disabled:opacity-60"
           >
             {pending ? 'Opening…' : 'Enter'}
           </button>

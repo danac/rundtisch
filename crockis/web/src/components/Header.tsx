@@ -22,16 +22,16 @@ export function Header({ title }: HeaderProps) {
         className="flex items-center gap-3 justify-self-start text-ink"
       >
         <Logo className="h-8 w-8" />
-        <span className="font-display text-[15px] font-light tracking-[0.38em] uppercase">
+        <span className="font-display text-[15px] font-medium tracking-[0.28em] uppercase">
           Crockis
         </span>
       </Link>
 
-      <p className="hidden font-display text-[13px] font-light tracking-[0.42em] uppercase text-mist sm:block">
+      <p className="hidden font-display text-[13px] font-medium tracking-[0.32em] uppercase text-mist sm:block">
         {title}
       </p>
 
-      <nav className="flex items-center justify-end gap-7 font-display text-[12px] font-light">
+      <nav className="flex items-center justify-end gap-7 font-display text-[12px] font-medium">
         {user ? (
           <>
             <NavLink to="/collections" className={navClass}>

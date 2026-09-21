@@ -29,10 +29,10 @@ export function CollectionMosaic({ collections }: CollectionMosaicProps) {
             />
             <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
             <div className="absolute inset-x-0 bottom-0 z-10 p-5 md:p-6">
-              <h2 className="font-display text-lg font-light tracking-[0.28em] uppercase md:text-xl">
+              <h2 className="font-display text-lg font-medium tracking-[0.22em] uppercase md:text-xl">
                 {collection.name}
               </h2>
-              <p className="mt-2 max-w-md font-body text-sm font-light text-ink/80">
+              <p className="mt-2 max-w-md font-body text-sm text-ink/80">
                 {collection.description}
               </p>
               <p className="mt-3 font-display text-[11px] tracking-[0.24em] uppercase text-mist">

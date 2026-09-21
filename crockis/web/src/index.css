@@ -7,8 +7,12 @@
   --color-ink: #f4f1ea;
   --color-mist: #9c9890;
   --color-line: #2a2a2a;
-  --font-display: "Josefin Sans", ui-sans-serif, sans-serif;
-  --font-body: "Outfit", ui-sans-serif, sans-serif;
+  --font-display: "Manrope", ui-sans-serif, sans-serif;
+  --font-body: "Manrope", ui-sans-serif, sans-serif;
+}
+
+html {
+  color-scheme: dark;
 }
 
 html,
@@ -22,7 +26,39 @@ body {
   background-color: var(--color-void);
   color: var(--color-ink);
   font-family: var(--font-body);
+  font-weight: 400;
   -webkit-font-smoothing: antialiased;
+}
+
+.auth-field {
+  display: block;
+  width: 100%;
+  margin-top: 0.7rem;
+  padding: 0.95rem 1rem;
+  border: 1px solid var(--color-line);
+  background-color: #0c0c0c;
+  color: var(--color-ink);
+  caret-color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.4;
+  appearance: none;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.auth-field:focus {
+  border-color: rgb(244 241 234 / 0.45);
+}
+
+.auth-field:-webkit-autofill,
+.auth-field:-webkit-autofill:hover,
+.auth-field:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--color-ink);
+  caret-color: var(--color-ink);
+  box-shadow: 0 0 0 1000px #0c0c0c inset;
+  transition: background-color 9999s ease-out;
 }
 
 .photo-mosaic a,
