@@ -26,7 +26,8 @@ impl SqliteExecutor {
         Self { pool }
     }
 
-    fn from_pool(pool: sqlx::SqlitePool) -> Self {
+    #[cfg(test)]
+    pub(crate) fn from_pool(pool: sqlx::SqlitePool) -> Self {
         Self { pool }
     }
 
