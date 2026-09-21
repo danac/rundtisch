@@ -1,5 +1,7 @@
-use crate::auth::models::{NewUser, User};
-use crate::auth::queries::{user_delete_query, user_insert_query, user_list_query};
+use crate::auth::models::{NewUser, UpdateUserAlias, User};
+use crate::auth::queries::{
+    user_delete_query, user_get_query, user_insert_query, user_list_query, user_update_alias_query,
+};
 use crate::traits::db::{DatabaseExecutor, Error};
 use crate::{AppState, Platform};
 use axum::Json;
@@ -20,6 +22,15 @@ impl IntoResponse for Error {
     }
 }
 
+fn normalize_alias(alias: String) -> Result<String, Error> {
+    let trimmed = alias.trim().to_string();
+    if trimmed.is_empty() {
+        Err(Error::TypeMismatch)
+    } else {
+        Ok(trimmed)
+    }
+}
+
 pub async fn list_users<P: Platform>(State(state): State<AppState<P>>) -> impl IntoResponse {
     let query = user_list_query();
     let result = state.database.fetch_all::<User>(query).await;
@@ -33,6 +44,10 @@ pub async fn create_user<P: Platform>(
     State(state): State<AppState<P>>,
     Json(mut new_user): Json<NewUser>,
 ) -> impl IntoResponse {
+    match normalize_alias(new_user.alias) {
+        Ok(alias) => new_user.alias = alias,
+        Err(e) => return e.into_response(),
+    }
     new_user.stamp_now();
     match state.database.insert(user_insert_query(&new_user)).await {
         Ok(id) => (
@@ -40,6 +55,32 @@ pub async fn create_user<P: Platform>(
             Json(json!({"result": User::from_new(id, new_user)})),
         )
             .into_response(),
+        Err(e) => e.into_response(),
+    }
+}
+
+pub async fn update_user<P: Platform>(
+    State(state): State<AppState<P>>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateUserAlias>,
+) -> impl IntoResponse {
+    let alias = match normalize_alias(body.alias) {
+        Ok(alias) => alias,
+        Err(e) => return e.into_response(),
+    };
+    let updated_at = time::OffsetDateTime::now_utc();
+    match state
+        .database
+        .execute(user_update_alias_query(id, &alias, updated_at))
+        .await
+    {
+        Ok(result) if result.rows_affected > 0 => {
+            match state.database.fetch_one::<User>(user_get_query(id)).await {
+                Ok(user) => Json(json!({"result": user})).into_response(),
+                Err(e) => e.into_response(),
+            }
+        }
+        Ok(_) => Error::NotFound.into_response(),
         Err(e) => e.into_response(),
     }
 }
@@ -95,7 +136,10 @@ mod tests {
         });
         axum::Router::new()
             .route("/api/auth/users", axum::routing::get(list_users).post(create_user))
-            .route("/api/auth/users/{id}", axum::routing::delete(delete_user))
+            .route(
+                "/api/auth/users/{id}",
+                axum::routing::patch(update_user).delete(delete_user),
+            )
             .with_state(state)
     }
 
@@ -167,6 +211,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn create_trims_alias_whitespace() {
+        let app = app().await;
+        let created = app
+            .oneshot(
+                Request::post("/api/auth/users")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"email":"carol@example.com","alias":"  carol  ","role":"User"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(created).await;
+        assert_eq!(status, HttpStatus::CREATED);
+        assert_eq!(json["result"]["alias"], "carol");
+    }
+
+    #[tokio::test]
+    async fn update_user_alias() {
+        let app = app().await;
+        let created = app
+            .clone()
+            .oneshot(
+                Request::post("/api/auth/users")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"email":"carol@example.com","alias":"carol","role":"User"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(created).await;
+        assert_eq!(status, HttpStatus::CREATED);
+        let id = json["result"]["id"].as_i64().unwrap();
+
+        let updated = app
+            .clone()
+            .oneshot(
+                Request::patch(format!("/api/auth/users/{id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"alias":"  carolyn  "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(updated).await;
+        assert_eq!(status, HttpStatus::OK);
+        assert_eq!(json["result"]["alias"], "carolyn");
+        assert_eq!(json["result"]["email"], "carol@example.com");
+
+        let blank = app
+            .clone()
+            .oneshot(
+                Request::patch(format!("/api/auth/users/{id}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"alias":"   "}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(blank).await;
+        assert_eq!(status, HttpStatus::BAD_REQUEST);
+        assert_eq!(json["error"], "type mismatch");
+
+        let missing = app
+            .oneshot(
+                Request::patch("/api/auth/users/999")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"alias":"ghost"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(missing).await;
+        assert_eq!(status, HttpStatus::NOT_FOUND);
+        assert_eq!(json["error"], "not found");
+    }
+
+    #[tokio::test]
     async fn create_duplicate_email_conflicts() {
         let app = app().await;
         let body = r#"{"email":"dave@example.com","alias":"dave","role":"Admin"}"#;
@@ -200,5 +325,14 @@ mod tests {
     fn role_as_str() {
         assert_eq!(Role::User.as_str(), "User");
         assert_eq!(Role::Admin.as_str(), "Admin");
+    }
+
+    #[test]
+    fn normalize_alias_trims_and_rejects_blank() {
+        assert_eq!(normalize_alias("  a  ".into()).unwrap(), "a");
+        assert!(matches!(
+            normalize_alias("   ".into()),
+            Err(Error::TypeMismatch)
+        ));
     }
 }

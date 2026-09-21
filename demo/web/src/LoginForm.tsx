@@ -8,7 +8,7 @@ export function LoginForm() {
   return (
     <form
       onSubmit={handleSubmit}
-      className="mt-10 w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[0_12px_40px_rgba(44,36,22,0.08)] backdrop-blur-[2px]"
+      className="w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[0_12px_40px_rgba(44,36,22,0.08)] backdrop-blur-[2px]"
       aria-labelledby="login-heading"
     >
       <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">

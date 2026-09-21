@@ -5,7 +5,7 @@ use crate::auth::models::*;
 pub struct AuthMigration001;
 
 impl Migration for AuthMigration001 {
-    fn name(&self) -> &str { "auth_001_create_users_and_token_tables" }
+    fn name(&self) -> &str { "001_auth_create_users_and_token_tables" }
 
     fn up(&self) -> Vec<Statement> {
         vec![

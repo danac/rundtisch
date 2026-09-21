@@ -1,10 +1,21 @@
 use crate::auth::models::{datetime_to_rfc3339, NewUser, UserTable};
-use sea_query::{Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement};
+use sea_query::{
+    Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement,
+    UpdateStatement,
+};
 
 pub fn user_list_query() -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(UserTable::Table)
+        .to_owned()
+}
+
+pub fn user_get_query(id: i64) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(UserTable::Table)
+        .and_where(Expr::col(UserTable::Id).eq(id))
         .to_owned()
 }
 
@@ -27,6 +38,24 @@ pub fn user_insert_query(user: &NewUser) -> InsertStatement {
             datetime_to_rfc3339(user.created_at).into(),
             datetime_to_rfc3339(user.updated_at).into(),
         ])
+        .to_owned()
+}
+
+pub fn user_update_alias_query(
+    id: i64,
+    alias: &str,
+    updated_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(UserTable::Table)
+        .values([
+            (UserTable::Alias, alias.into()),
+            (
+                UserTable::UpdatedAt,
+                datetime_to_rfc3339(updated_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(UserTable::Id).eq(id))
         .to_owned()
 }
 
@@ -127,6 +156,40 @@ mod tests {
             [Value::Int(7)] => {}
             other => panic!("unexpected binds: {other:?}"),
         }
+    }
+
+    #[test]
+    fn user_get_query_sql() {
+        let (sql, values) =
+            query_to_sql(&user_get_query(3), Dialect::Sqlite).expect("render get");
+        assert_eq!(sql, "SELECT * FROM \"auth_users\" WHERE \"id\" = ?");
+        match values.as_slice() {
+            [Value::Int(3)] => {}
+            other => panic!("unexpected binds: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn user_update_alias_query_sql() {
+        let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_200).unwrap();
+        let (sql, values) =
+            query_to_sql(&user_update_alias_query(5, "bob", updated), Dialect::Sqlite)
+                .expect("render update");
+        assert_eq!(
+            sql,
+            "UPDATE \"auth_users\" SET \"alias\" = ?, \"updated_at\" = ? WHERE \"id\" = ?"
+        );
+        assert_eq!(
+            values
+                .iter()
+                .map(|v| match v {
+                    Value::Text(s) => s.as_str(),
+                    Value::Int(5) => "5",
+                    other => panic!("unexpected bind {other:?}"),
+                })
+                .collect::<Vec<_>>(),
+            ["bob", "2023-11-14T22:16:40Z", "5"]
+        );
     }
 
     #[tokio::test]

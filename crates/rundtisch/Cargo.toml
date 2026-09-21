@@ -9,7 +9,7 @@ publish = false
 
 [features]
 default = []
-d1 = ["worker/d1"]
+d1 = ["worker/d1", "time/wasm-bindgen"]
 sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
 
 [dependencies]

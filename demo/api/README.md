@@ -65,7 +65,7 @@ demo/
       routes.rs
       handlers.rs
       bin/native.rs                      # NativePlatform + serve(router)
-      bin/generate_auth_migrations.rs    # dump auth schema SQL per dialect
+      bin/generate_auth_migrations.rs    # dump auth schema SQL (SQLite) into ./migrations
   worker/              # sibling cdylib entry (#[event(fetch)])
     Cargo.toml
     src/lib.rs
@@ -129,19 +129,79 @@ cargo test -p rundtisch --features native
 
 ### Auth migration SQL
 
+Writes SQLite `.sql` files into `./migrations` under the current working directory
+(creates the folder if needed). Filenames use `{NNN}_{description}.sql` with a
+three-digit zero-padded version (compatible with sqlx CLI and Wrangler D1).
+Prompts to confirm the absolute path, or accept an override path / decline.
+
 ```bash
-cargo run -p rundtisch-demo --bin generate_auth_migrations -- /tmp/auth-migrations
+cd demo
+cargo run -p rundtisch-demo --bin generate_auth_migrations
+# → Write migrations to /…/rundtisch/demo/migrations ? [Y/n/path]
+```
+
+Apply migrations manually with [sqlx-cli](https://github.com/launchbadge/sqlx/tree/main/sqlx-cli)
+(once: `cargo install sqlx-cli --no-default-features --features sqlite`).
+Point `DATABASE_URL` at the same SQLite file the native server will use
+(`sqlite://` URL; three slashes for an absolute path):
+
+```bash
+# from demo/ (so --source migrations resolves to demo/migrations)
+DATABASE_URL=sqlite:///tmp/rundtisch.sqlite sqlx migrate run --source migrations
+
+# from repo root:
+# DATABASE_URL=sqlite:rundtisch.sqlite sqlx migrate run --source demo/migrations
 ```
 
 ### Native server
 
+The native binary opens SQLite at `SQLITE_PATH`, or `rundtisch.sqlite` in the
+working directory if that variable is unset. Run migrations against that same
+file before starting the server (see above).
+
 ```bash
+# from repo root; default DB file: ./rundtisch.sqlite
 cargo run -p rundtisch-demo --features native --bin native
-# optional: SQLITE_PATH=/tmp/rundtisch.sqlite cargo run -p rundtisch-demo --features native --bin native
+
+# explicit path (must match DATABASE_URL used for sqlx migrate run)
+SQLITE_PATH=/tmp/rundtisch.sqlite cargo run -p rundtisch-demo --features native --bin native
+
 curl -i http://localhost:8080/api/health
 ```
 
-The native binary opens SQLite at `SQLITE_PATH`, or `rundtisch.sqlite` in the working directory if that variable is unset.
+### Cloudflare Worker
+
+Start the Worker (and optionally the Vite frontend) from the repo root:
+
+```bash
+# frontend HMR on :5173 + Worker on :8787 (recommended)
+npm run dev --prefix demo
+
+# Worker only (assets.directory must exist; empty dir is enough for /api/*)
+mkdir -p demo/web/dist
+npx wrangler dev --config demo/wrangler.dev.jsonc --port 8787
+```
+
+API: http://localhost:8787/api/health (direct) or http://localhost:5173/api/health (via Vite proxy).
+
+Apply D1 schema from `demo/migrations` (Wrangler’s default migrations folder next to
+the config). Generate SQL first if needed, then apply locally or remotely:
+
+```bash
+cd demo
+cargo run -p rundtisch-demo --bin generate_auth_migrations
+# → Write migrations to /…/rundtisch/demo/migrations ? [Y/n/path]
+
+# local D1 (wrangler dev / Miniflare)
+npx wrangler d1 migrations apply rundtisch --local --config wrangler.dev.jsonc
+
+# remote D1 (Cloudflare account)
+npx wrangler d1 migrations apply rundtisch --remote --config wrangler.jsonc
+```
+
+From the repo root, pass `--config demo/wrangler.dev.jsonc` or
+`demo/wrangler.jsonc` instead. The D1 database name is `rundtisch` (see
+`d1_databases` in the wrangler configs).
 
 ### Build WASM locally
 
@@ -156,21 +216,8 @@ Output: `demo/worker/build/index.js` + `demo/worker/build/index_bg.wasm`
 
 ### Run with Wrangler
 
-**Recommended** (with frontend HMR):
-
-```bash
-# from repo root
-npm run dev --prefix demo
-```
-
-API available at http://localhost:8787/api/health (direct) or http://localhost:5173/api/health (via Vite proxy).
-
-**API Worker only** (`assets.directory` must exist; an empty dir is enough for `/api/*`):
-
-```bash
-mkdir -p demo/web/dist
-npx wrangler dev --config demo/wrangler.dev.jsonc --port 8787
-```
+See [Cloudflare Worker](#cloudflare-worker) above for `npm run dev --prefix demo`,
+`npx wrangler dev`, and D1 `migrations apply` (`--local` / `--remote`).
 
 ## Build
 

@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS "auth_users" ( "id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "email" varchar NOT NULL UNIQUE, "alias" varchar NOT NULL, "role" varchar NOT NULL, "password_hash" varchar NULL, "email_verified_at" varchar NULL, "created_at" varchar NOT NULL, "updated_at" varchar NOT NULL, "last_login_at" varchar NULL );
+
+CREATE TABLE IF NOT EXISTS "auth_refresh_tokens" ( "id" integer NOT NULL PRIMARY KEY AUTOINCREMENT, "user_id" integer NOT NULL, "token_hash" varchar NOT NULL UNIQUE, "expires_at" varchar NOT NULL, "revoked" boolean NOT NULL DEFAULT FALSE, FOREIGN KEY ("user_id") REFERENCES "auth_users" ("id") ON DELETE CASCADE );

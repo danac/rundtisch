@@ -1,5 +1,5 @@
-use std::io;
-use std::path::Path;
+use std::io::{self, Write};
+use std::path::{Path, PathBuf};
 use std::process;
 
 use rundtisch::auth::migrations::all_up_migrations;
@@ -13,19 +13,50 @@ fn migration_sql(statements: &[Statement], dialect: Dialect) -> String {
         .join(";\n\n")
 }
 
-fn write_dialect_migrations(
+fn absolutize(path: PathBuf) -> io::Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(std::env::current_dir()?.join(path))
+    }
+}
+
+fn confirm_target(default: &Path) -> io::Result<Option<PathBuf>> {
+    let default_abs = absolutize(default.to_path_buf())?;
+    print!(
+        "Write migrations to {} ? [Y/n/path] ",
+        default_abs.display()
+    );
+    io::stdout().flush()?;
+
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let answer = line.trim();
+
+    if answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes")
+    {
+        return Ok(Some(default_abs));
+    }
+    if answer.eq_ignore_ascii_case("n") || answer.eq_ignore_ascii_case("no") {
+        return Ok(None);
+    }
+
+    let override_abs = absolutize(PathBuf::from(answer))?;
+    println!("Using {}", override_abs.display());
+    Ok(Some(override_abs))
+}
+
+fn write_sqlite_migrations(
     target: &Path,
-    dialect_name: &str,
-    dialect: Dialect,
     migrations: &[Box<dyn Migration>],
 ) -> io::Result<()> {
-    let dialect_dir = target.join(dialect_name);
-    std::fs::create_dir_all(&dialect_dir)?;
+    std::fs::create_dir_all(target)?;
 
     for migration in migrations {
-        let sql = migration_sql(&migration.up(), dialect);
-        let path = dialect_dir.join(format!("{}.sql", migration.name()));
-        std::fs::write(path, format!("{sql};\n"))?;
+        let sql = migration_sql(&migration.up(), Dialect::Sqlite);
+        let path = target.join(format!("{}.sql", migration.name()));
+        std::fs::write(&path, format!("{sql};\n"))?;
+        println!("wrote {}", path.display());
     }
 
     Ok(())
@@ -39,25 +70,13 @@ fn main() {
 }
 
 fn run() -> io::Result<()> {
-    let target_dir = std::env::args().nth(1).ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "usage: generate_auth_migrations <target_dir>",
-        )
-    })?;
+    let default = std::env::current_dir()?.join("migrations");
+    let Some(target) = confirm_target(&default)? else {
+        println!("aborted");
+        return Ok(());
+    };
 
-    let target = Path::new(&target_dir);
     let migrations = all_up_migrations();
-
-    let dialects = [
-        ("sqlite", Dialect::Sqlite),
-        // ("postgres", Dialect::Postgres),
-        // ("mysql", Dialect::Mysql),
-    ];
-
-    for (name, dialect) in dialects {
-        write_dialect_migrations(target, name, dialect, &migrations)?;
-    }
-
+    write_sqlite_migrations(&target, &migrations)?;
     Ok(())
 }

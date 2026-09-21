@@ -17,7 +17,7 @@ async fn main() {
 ///
 /// `router` must already have state applied (Axum `Router::with_state`).
 async fn serve(router: Router) {
-    serve_at(router, "0.0.0.0:8080").await;
+    serve_at(router, "0.0.0.0:8787").await;
 }
 
 async fn serve_at(router: Router, addr: &str) {

@@ -1,4 +1,5 @@
 import { LoginForm } from './LoginForm.tsx'
+import { UsersPanel } from './UsersPanel.tsx'
 
 function App() {
   return (
@@ -31,14 +32,21 @@ function App() {
         />
       </div>
 
-      <div className="relative z-10 flex w-full max-w-sm flex-col items-center text-center">
+      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center text-center">
         <h1 className="font-display text-5xl font-semibold tracking-tight text-ink sm:text-6xl md:text-7xl">
           rundtisch
         </h1>
         <p className="mt-4 text-lg text-ink-muted sm:text-xl">
           a round table for building on the web
         </p>
-        <LoginForm />
+        <div className="mt-10 flex w-full flex-col gap-6 lg:flex-row lg:items-start">
+          <div className="w-full lg:w-1/2">
+            <LoginForm />
+          </div>
+          <div className="w-full lg:w-1/2">
+            <UsersPanel />
+          </div>
+        </div>
       </div>
     </main>
   )
