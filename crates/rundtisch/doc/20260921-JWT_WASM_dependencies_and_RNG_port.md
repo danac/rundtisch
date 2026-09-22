@@ -76,7 +76,7 @@ There is no OS entropy on this target. Backends:
 
 **A Random port does not make a transitive `getrandom` compile.** If any JWT crate links `getrandom` on WASM, the **leaf crate** (`demo/worker` or `rundtisch` with `d1`) must still enable the matching feature (and, for 0.3.3, rustflags). Two major lines (`0.2` and `0.3`/`0.4`) can coexist; **each** needs its own feature. That is the usual Workers-rs footgun.
 
-**Recommendation:** **`jwt-compact` HMAC-only** (locked; see §0). Session tokens and password salts will use the Random port (`crypto.getRandomValues` on the Worker). **`public_id` generation** currently calls `getrandom::fill` + `uuid::Builder::from_random_bytes` (the `d1` feature enables `getrandom/wasm_js`; same `Crypto.getRandomValues` backend). Switch that to `RandomSource` when the port lands so there is one entropy path. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3. Pin **0.3.4+**.
+**Recommendation:** **`jwt-compact` HMAC-only** (locked; see §0). Session tokens and password salts will use the Random port (`crypto.getRandomValues` on the Worker). **`public_id` generation** currently calls `getrandom::fill` and sets RFC 4122 v4 bits (`uuid` without the `v4` feature — that feature does not compile on `wasm32-unknown-unknown`). The `d1` feature enables `getrandom/wasm_js` (same `Crypto.getRandomValues` backend). Switch that to `RandomSource` when the port lands so there is one entropy path. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3. Pin **0.3.4+**.
 
 ---
 
@@ -506,7 +506,7 @@ Wire as a field on `AppState` constructed in `from_platform`. Do **not** merge i
 
 | Need | Mechanism | WASM issue |
 |------|-----------|------------|
-| `public_id` UUIDv4 | 16 CSPRNG bytes → `uuid::Builder::from_random_bytes` | `getrandom` until `RandomSource`; `d1` enables `wasm_js` |
+| `public_id` UUIDv4 | 16 CSPRNG bytes, RFC 4122 version/variant bits | `getrandom` until `RandomSource`; `d1` enables `wasm_js`. Do **not** enable uuid `v4` (WASM compile_error). |
 | Session token bytes | **`RandomSource` port** | `crypto.getRandomValues` vs OS |
 | Session `token_hash` | HMAC-SHA-256(`HASH_PEPPER`, token) | Pepper from `SecretStore`; hash is cheap |
 | JWT access / activation | `jwt-compact` HS256 | Secrets from `SecretStore` |
