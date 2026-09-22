@@ -1,4 +1,4 @@
-use crate::auth::models::{datetime_to_rfc3339, NewUser, UserTable};
+use crate::auth::models::{NewUser, SessionTable, UserTable, datetime_to_rfc3339};
 use sea_query::{
     Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement,
     UpdateStatement,
@@ -53,10 +53,7 @@ pub fn user_update_alias_query(
         .table(UserTable::Table)
         .values([
             (UserTable::Alias, alias.into()),
-            (
-                UserTable::UpdatedAt,
-                datetime_to_rfc3339(updated_at).into(),
-            ),
+            (UserTable::UpdatedAt, datetime_to_rfc3339(updated_at).into()),
         ])
         .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
         .to_owned()
@@ -69,12 +66,135 @@ pub fn user_delete_query(public_id: Uuid) -> DeleteStatement {
         .to_owned()
 }
 
+pub fn user_get_by_email_query(email: &str) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(UserTable::Table)
+        .and_where(Expr::col(UserTable::Email).eq(email))
+        .to_owned()
+}
+
+pub fn user_get_by_id_query(id: i64) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(UserTable::Table)
+        .and_where(Expr::col(UserTable::Id).eq(id))
+        .to_owned()
+}
+
+pub fn user_verify_email_query(
+    public_id: Uuid,
+    email: &str,
+    verified_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(UserTable::Table)
+        .values([
+            (
+                UserTable::EmailVerifiedAt,
+                datetime_to_rfc3339(verified_at).into(),
+            ),
+            (
+                UserTable::UpdatedAt,
+                datetime_to_rfc3339(verified_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .and_where(Expr::col(UserTable::Email).eq(email))
+        .to_owned()
+}
+
+pub fn user_touch_last_login_query(
+    public_id: Uuid,
+    last_login_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(UserTable::Table)
+        .values([
+            (
+                UserTable::LastLoginAt,
+                datetime_to_rfc3339(last_login_at).into(),
+            ),
+            (
+                UserTable::UpdatedAt,
+                datetime_to_rfc3339(last_login_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .to_owned()
+}
+
+pub fn session_insert_query(
+    user_id: i64,
+    token_hash: &str,
+    created_at: time::OffsetDateTime,
+    expires_at: time::OffsetDateTime,
+    user_agent: Option<&str>,
+) -> InsertStatement {
+    Query::insert()
+        .into_table(SessionTable::Table)
+        .columns([
+            SessionTable::UserId,
+            SessionTable::TokenHash,
+            SessionTable::CreatedAt,
+            SessionTable::LastUsedAt,
+            SessionTable::ExpiresAt,
+            SessionTable::UserAgent,
+        ])
+        .values_panic([
+            user_id.into(),
+            token_hash.into(),
+            datetime_to_rfc3339(created_at).into(),
+            datetime_to_rfc3339(created_at).into(),
+            datetime_to_rfc3339(expires_at).into(),
+            user_agent.map(str::to_string).into(),
+        ])
+        .to_owned()
+}
+
+pub fn session_get_by_token_hash_query(token_hash: &str) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(SessionTable::Table)
+        .and_where(Expr::col(SessionTable::TokenHash).eq(token_hash))
+        .to_owned()
+}
+
+pub fn session_rotate_query(
+    id: i64,
+    token_hash: &str,
+    last_used_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(SessionTable::Table)
+        .values([
+            (SessionTable::TokenHash, token_hash.into()),
+            (
+                SessionTable::LastUsedAt,
+                datetime_to_rfc3339(last_used_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(SessionTable::Id).eq(id))
+        .to_owned()
+}
+
+pub fn session_revoke_query(id: i64, revoked_at: time::OffsetDateTime) -> UpdateStatement {
+    Query::update()
+        .table(SessionTable::Table)
+        .values([(
+            SessionTable::RevokedAt,
+            datetime_to_rfc3339(revoked_at).into(),
+        )])
+        .and_where(Expr::col(SessionTable::Id).eq(id))
+        .to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::auth::migrations::auth_migration_001::AuthMigration001;
     use crate::auth::models::Role;
-    use crate::traits::db::{query_to_sql, schema_to_sql, Dialect, Error, Migration, Value};
+    use crate::traits::db::{Dialect, Error, Migration, Value, query_to_sql, schema_to_sql};
     use email_address::EmailAddress;
 
     fn sample_user() -> NewUser {
@@ -180,9 +300,11 @@ mod tests {
     fn user_update_alias_query_sql() {
         let public_id = uuid::Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
         let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_200).unwrap();
-        let (sql, values) =
-            query_to_sql(&user_update_alias_query(public_id, "bob", updated), Dialect::Sqlite)
-                .expect("render update");
+        let (sql, values) = query_to_sql(
+            &user_update_alias_query(public_id, "bob", updated),
+            Dialect::Sqlite,
+        )
+        .expect("render update");
         assert_eq!(
             sql,
             "UPDATE \"auth_users\" SET \"alias\" = ?, \"updated_at\" = ? WHERE \"public_id\" = ?"
@@ -195,7 +317,11 @@ mod tests {
                     other => panic!("unexpected bind {other:?}"),
                 })
                 .collect::<Vec<_>>(),
-            ["bob", "2023-11-14T22:16:40Z", "33333333-3333-4333-8333-333333333333"]
+            [
+                "bob",
+                "2023-11-14T22:16:40Z",
+                "33333333-3333-4333-8333-333333333333"
+            ]
         );
     }
 
@@ -210,8 +336,7 @@ mod tests {
             .await
             .expect("insert user");
 
-        let (sql, values) =
-            query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
+        let (sql, values) = query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
         let row = bind(&sql, &values)
             .fetch_one(&pool)
             .await
@@ -223,8 +348,8 @@ mod tests {
         assert_eq!(alias, "alice");
         assert_eq!(role, "Admin");
 
-        let (sql, values) =
-            query_to_sql(&user_delete_query(user.public_id), Dialect::Sqlite).expect("render delete");
+        let (sql, values) = query_to_sql(&user_delete_query(user.public_id), Dialect::Sqlite)
+            .expect("render delete");
         let deleted = bind(&sql, &values)
             .execute(&pool)
             .await

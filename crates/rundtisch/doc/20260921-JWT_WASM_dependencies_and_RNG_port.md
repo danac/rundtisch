@@ -1,7 +1,7 @@
 # JWT on Cloudflare Workers: crate choice, crypto/RNG, and hexagonal ports
 
-**Date:** 2026-09-21 (decisions locked 2026-09-22)  
-**Status:** decided plan — JWT/ports not implemented yet; schema in `001` updated to `auth_sessions` + unique `public_id`  
+**Date:** 2026-09-21 (decisions locked 2026-09-22; implemented 2026-09-22)  
+**Status:** v1 implemented — `RandomSource` / `Clock` / `SecretStore`, jwt-compact HS256, Argon2id + session HMAC, register/activate/login/refresh/logout, Bearer `/api/auth/me`  
 **Related:** [auth-flow-diagram.md](./auth-flow-diagram.md), [20260708-150107-RustCloudflareWorkerAuthenticationDesign.md](./20260708-150107-RustCloudflareWorkerAuthenticationDesign.md)
 
 This note records the crate survey, WASM probes, and the **locked v1 auth design**. The July 2026 snippet (`jsonwebtoken 9` + `ring` + `getrandom 0.2` `js`) is outdated and must not be copied.
@@ -212,7 +212,7 @@ pub trait Platform: 'static {
 
 `CloudflarePlatform` does **not** need to mention Random or Clock unless WorkerRandom later needs `Env` (it should not: `crypto` is global). `AppState` holds `database`, `random`, `clock`, and later `secrets` filled by `from_platform`.
 
-**Domain use:** 32-byte session token → URL-safe base64 (no padding) → HMAC-SHA-256(`HASH_PEPPER`, token) → `auth_sessions.token_hash`. Same `RandomSource` supplies the 16-byte Argon2id salt (do **not** enable `argon2`’s `getrandom` feature on WASM) and the 16 random bytes for `public_id` UUIDv4. Until that port exists, `new_public_id()` uses `getrandom::fill` directly.
+**Domain use:** 32-byte session token → URL-safe base64 (no padding) → HMAC-SHA-256(`HASH_PEPPER`, token) → `auth_sessions.token_hash`. Same `RandomSource` supplies the 16-byte Argon2id salt (do **not** enable `argon2`’s `getrandom` feature on WASM) and the 16 random bytes for `public_id` UUIDv4 (`new_public_id(&dyn RandomSource)`). `NewUser::new` still uses `getrandom::fill` as a convenience constructor.
 
 Error type: small `RandomError` (`Unavailable` / `Backend(String)`), not `traits::db::Error`.
 
@@ -336,15 +336,17 @@ On refresh: look up by `token_hash`, reject if revoked/expired, generate a new r
 2. **JWT helper:** `jwt-compact` HS256, access claims `{sub, exp, role}`, activation JWT tests. `cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown`.
 3. **Secrets + sessions + login:** `SecretStore`, same salted+peppered Argon2id hasher on Worker and native, generic login errors + dummy hash on unknown user, issue access JWT, persist HMAC’d `auth_sessions`, Strict cookie, Bearer extractor.
 
-CI should keep compiling the Worker target on every PR that touches crypto.
+**Shipped:** steps 1–3 plus demo routes (`/api/auth/register|activate|login|refresh|logout|me`) and a landing-page register/login panel. Register returns `activation_token` (no mailer). Playground `GET/POST /api/auth/users` stays public; `/api/auth/me` is the Bearer-protected example.
+
+CI compiles the Worker target (`cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown`) on every PR.
 
 ---
 
-## 8. Remaining (not blocking ports / JWT helper)
+## 8. Remaining (not blocking v1)
 
-- Concrete access-token TTL (5 vs 15 min) and session TTL (days).
+- Concrete TTLs are set (access 15 min, session 14 d, activation 24 h, leeway 30 s). Tune if needed.
 - If register/login hits Error 1102 on Free, switch the **same** Worker to Paid (same hasher). No param fork.
-- Later: Have I Been Pwned k-anonymity check; MFA; forgot-password JWT; dual-pepper window; login rate-limit binding.
+- Later: Have I Been Pwned k-anonymity check; MFA; forgot-password JWT; dual-pepper window; login rate-limit binding; email sending (register currently returns `activation_token` for the demo).
 
 ---
 

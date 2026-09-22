@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_imports)]
 
+use crate::traits::random::RandomSource;
 use email_address::EmailAddress;
 use sea_query::Iden;
 use serde::{Deserialize, Serialize};
@@ -43,14 +44,18 @@ pub enum UserTable {
 
 /// Opaque UUIDv4 for JWT `sub` and `/api/auth/users/{public_id}`. Integer [`User::id`]
 /// stays the SQLite rowid / FK target and is not a public identifier.
-pub fn new_public_id() -> uuid::Uuid {
-    let mut bytes = [0u8; 16];
-    getrandom::fill(&mut bytes).expect("CSPRNG available for UUIDv4");
-    // RFC 4122 version 4 + variant 1, without enabling uuid's `v4` feature
-    // (that feature fails to compile on wasm32-unknown-unknown).
+pub fn public_id_from_bytes(mut bytes: [u8; 16]) -> uuid::Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     uuid::Uuid::from_bytes(bytes)
+}
+
+pub fn new_public_id(
+    random: &dyn RandomSource,
+) -> Result<uuid::Uuid, crate::traits::random::RandomError> {
+    let mut bytes = [0u8; 16];
+    random.fill_bytes(&mut bytes)?;
+    Ok(public_id_from_bytes(bytes))
 }
 
 /// Row to insert into [`UserTable`]. Timestamps default to now so JSON
@@ -85,8 +90,10 @@ impl NewUser {
         password_hash: Option<String>,
     ) -> Self {
         let now = now_utc();
+        let mut bytes = [0u8; 16];
+        getrandom::fill(&mut bytes).expect("CSPRNG available for UUIDv4");
         Self {
-            public_id: new_public_id(),
+            public_id: public_id_from_bytes(bytes),
             email,
             alias: alias.into(),
             role,
@@ -96,14 +103,17 @@ impl NewUser {
         }
     }
 
-    pub fn stamp_now(&mut self) {
-        let now = now_utc();
+    pub fn stamp_now(&mut self, now: DateTime) {
         self.created_at = now;
         self.updated_at = now;
     }
 
-    pub fn assign_public_id(&mut self) {
-        self.public_id = new_public_id();
+    pub fn assign_public_id(
+        &mut self,
+        random: &dyn RandomSource,
+    ) -> Result<(), crate::traits::random::RandomError> {
+        self.public_id = new_public_id(random)?;
+        Ok(())
     }
 }
 
@@ -116,6 +126,7 @@ pub struct User {
     pub email: EmailAddress,
     pub alias: String,
     pub role: Role,
+    #[serde(skip_serializing)]
     pub password_hash: Option<String>,
     #[serde(with = "time::serde::rfc3339::option")]
     pub email_verified_at: Option<DateTime>,
@@ -187,9 +198,10 @@ mod tests {
 
     #[test]
     fn new_public_id_is_uuid_v4() {
-        let id = new_public_id();
+        let rng = crate::adapters::random::OsRandom;
+        let id = new_public_id(&rng).unwrap();
         assert_eq!(id.get_version(), Some(uuid::Version::Random));
-        assert_ne!(id, new_public_id());
+        assert_ne!(id, new_public_id(&rng).unwrap());
     }
 
     #[test]
@@ -205,6 +217,7 @@ mod tests {
         );
         let value = serde_json::to_value(&user).expect("serialize user");
         assert!(value.get("id").is_none(), "{value}");
+        assert!(value.get("password_hash").is_none(), "{value}");
         let public_id = value["public_id"].as_str().expect("public_id string");
         uuid::Uuid::parse_str(public_id).expect("public_id is a uuid");
         assert_eq!(public_id, user.public_id.to_string());

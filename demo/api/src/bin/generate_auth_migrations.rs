@@ -33,8 +33,7 @@ fn confirm_target(default: &Path) -> io::Result<Option<PathBuf>> {
     io::stdin().read_line(&mut line)?;
     let answer = line.trim();
 
-    if answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes")
-    {
+    if answer.is_empty() || answer.eq_ignore_ascii_case("y") || answer.eq_ignore_ascii_case("yes") {
         return Ok(Some(default_abs));
     }
     if answer.eq_ignore_ascii_case("n") || answer.eq_ignore_ascii_case("no") {
@@ -46,10 +45,7 @@ fn confirm_target(default: &Path) -> io::Result<Option<PathBuf>> {
     Ok(Some(override_abs))
 }
 
-fn write_sqlite_migrations(
-    target: &Path,
-    migrations: &[Box<dyn Migration>],
-) -> io::Result<()> {
+fn write_sqlite_migrations(target: &Path, migrations: &[Box<dyn Migration>]) -> io::Result<()> {
     std::fs::create_dir_all(target)?;
 
     for migration in migrations {
