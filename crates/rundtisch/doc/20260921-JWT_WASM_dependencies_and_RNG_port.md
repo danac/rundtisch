@@ -1,7 +1,7 @@
 # JWT on Cloudflare Workers: crate choice, crypto/RNG, and hexagonal ports
 
 **Date:** 2026-09-21 (decisions locked 2026-09-22)  
-**Status:** decided plan — JWT/ports not implemented yet; schema in `001` updated to `auth_sessions`  
+**Status:** decided plan — JWT/ports not implemented yet; schema in `001` updated to `auth_sessions` + unique `public_id`  
 **Related:** [auth-flow-diagram.md](./auth-flow-diagram.md), [20260708-150107-RustCloudflareWorkerAuthenticationDesign.md](./20260708-150107-RustCloudflareWorkerAuthenticationDesign.md)
 
 This note records the crate survey, WASM probes, and the **locked v1 auth design**. The July 2026 snippet (`jsonwebtoken 9` + `ring` + `getrandom 0.2` `js`) is outdated and must not be copied.
@@ -15,14 +15,15 @@ Compile probes used **rustc 1.98.1** (`stable`) and `--target wasm32-unknown-unk
 | Topic | Decision |
 |-------|----------|
 | Access token | Symmetric **HS256** JWT via **`jwt-compact` 0.8** (`default-features = false, features = ["std"]`). No RSA/EdDSA. |
-| Access claims | **`sub`, `exp`, `role` only** (`role` is `User` / `Admin`). No `iat` / `iss` / `jti` / email in the access token. |
+| Access claims | **`sub`, `exp`, `role` only** (`role` is `User` / `Admin`). `sub` is `auth_users.public_id` (UUIDv4 string), never the integer PK. No `iat` / `iss` / `jti` / email in the access token. |
 | Email activation | **Stateless JWT**, different secret (`JWT_VERIFY_SECRET`). Claims bind `sub` + `email` + `exp` (and a type tag so it cannot be used as access). No activation table. |
 | Session / refresh | Opaque 32-byte token in an **HttpOnly, Secure, `SameSite=Strict`** cookie (SPA and API share a domain). Row in **`auth_sessions`**. Rotate by updating `token_hash` on the same row. |
 | Session hash | **HMAC-SHA-256(`HASH_PEPPER`, raw token)** (`hmac` + `sha2` + `subtle`). Not Argon2. Same on Worker and native. Pepper from `SecretStore`. |
 | Passwords | **Same Argon2id on Worker and native** (OWASP [Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html): `m=19456,t=2,p=1`). **Unique CSPRNG salt per password** (16+ bytes from `RandomSource`, stored **inside** the PHC string — no extra salt column). **Keyed with `HASH_PEPPER`**. Full PHC in `auth_users.password_hash`. Never a global/static salt, never username/email as salt, never unsalted SHA-256. Worker = native security; upgrade to Paid on Error 1102 rather than weakening. |
 | Password policy | OWASP [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) / NIST SP 800-63B: min **15** chars (no MFA in v1), max **256** (NIST floor for the max is 64), any Unicode, **no** composition rules, **no** silent truncation, **no** periodic rotation. Reject a bundled common-password list on register/change. Constant-time verify; dummy Argon2id on unknown user. |
 | Platform ports | **`RandomSource` + `Clock` on `Platform` with default methods**, so native (and the Worker, for clock) need not implement them. WASM overrides `random()` only if the default Worker adapter is not already selected by `cfg`. **`SecretStore`** for JWT secrets and `HASH_PEPPER`. |
-| Schema change | **Edit migration `001`** (`001_auth_create_users_and_token_tables`). Nothing is in production; do not add `002`. |
+| Schema change | **Edit migration `001`** (`001_auth_create_users_and_token_tables`). Adds `auth_sessions` and `auth_users.public_id`. Nothing is in production; do not add `002`. |
+| User identifiers | Integer **`id`** is SQLite rowid / FK target (`auth_sessions.user_id`; later OAuth/WebAuthn). Unique **`public_id` UUIDv4** (CSPRNG) is the external id: JWT `sub`, `/api/auth/users/{public_id}`, WebAuthn `userHandle`. Never serialize `id` in JSON; never accept `public_id` from clients. Do **not** use UUID as the PK (D1/SQLite FKs stay on integer rowid). |
 | Secrets | `SecretStore.get(name)` (Worker secrets / native env). v1 names: `JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER`. Each ≥ 32 bytes. Access vs verify stay separate. |
 
 ---
@@ -36,6 +37,7 @@ From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and sche
 | Sign / verify **access JWT** | HMAC-SHA-256 (recommended for v1) | **No** — deterministic given secret + payload | No, if we stay on pure-Rust HMAC |
 | Sign / verify **email-activation JWT** (optional, stateless) | HMAC-SHA-256, **different secret** | No | No |
 | **Refresh / session token** (opaque, HttpOnly cookie) | 32+ random bytes, store **HMAC-SHA-256(`HASH_PEPPER`, token)** | **Yes** (the token) | Entropy source differs (OS vs Workers `crypto.getRandomValues`); pepper from `SecretStore` |
+| **`public_id` UUIDv4** | 16 CSPRNG bytes, RFC 4122 v4 | **Yes** | Same entropy as refresh; stored as unique string on `auth_users` |
 | OAuth `state`, WebAuthn challenge (later) | random bytes | **Yes** | Same as refresh |
 | Hash stored session token | **HMAC-SHA-256 + pepper**, not Argon2 | No | Pepper is a secret; hash is portable Rust |
 | **Password** | **Argon2id** PHC: **unique salt** + shared pepper, same params on Worker and native | **Yes — new salt every hash** | Salt is public (in PHC); pepper is a `SecretStore` secret; Free CPU may force a **Paid** upgrade, not a weaker hash |
@@ -74,7 +76,7 @@ There is no OS entropy on this target. Backends:
 
 **A Random port does not make a transitive `getrandom` compile.** If any JWT crate links `getrandom` on WASM, the **leaf crate** (`demo/worker` or `rundtisch` with `d1`) must still enable the matching feature (and, for 0.3.3, rustflags). Two major lines (`0.2` and `0.3`/`0.4`) can coexist; **each** needs its own feature. That is the usual Workers-rs footgun.
 
-**Recommendation:** **`jwt-compact` HMAC-only** (locked; see §0). Worker entropy for tokens/salts is `crypto.getRandomValues` via the Random port default, not `getrandom`. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3.
+**Recommendation:** **`jwt-compact` HMAC-only** (locked; see §0). Session tokens and password salts will use the Random port (`crypto.getRandomValues` on the Worker). **`public_id` generation** currently calls `getrandom::fill` + `uuid::Builder::from_random_bytes` (the `d1` feature enables `getrandom/wasm_js`; same `Crypto.getRandomValues` backend). Switch that to `RandomSource` when the port lands so there is one entropy path. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3. Pin **0.3.4+**.
 
 ---
 
@@ -210,7 +212,7 @@ pub trait Platform: 'static {
 
 `CloudflarePlatform` does **not** need to mention Random or Clock unless WorkerRandom later needs `Env` (it should not: `crypto` is global). `AppState` holds `database`, `random`, `clock`, and later `secrets` filled by `from_platform`.
 
-**Domain use:** 32-byte session token → URL-safe base64 (no padding) → HMAC-SHA-256(`HASH_PEPPER`, token) → `auth_sessions.token_hash`. Same `RandomSource` supplies the 16-byte Argon2id salt (do **not** enable `argon2`’s `getrandom` feature on WASM).
+**Domain use:** 32-byte session token → URL-safe base64 (no padding) → HMAC-SHA-256(`HASH_PEPPER`, token) → `auth_sessions.token_hash`. Same `RandomSource` supplies the 16-byte Argon2id salt (do **not** enable `argon2`’s `getrandom` feature on WASM) and the 16 random bytes for `public_id` UUIDv4. Until that port exists, `new_public_id()` uses `getrandom::fill` directly.
 
 Error type: small `RandomError` (`Unavailable` / `Backend(String)`), not `traits::db::Error`.
 
@@ -274,23 +276,36 @@ See [§11](#11-hashing-sessions-vs-passwords-worker--native) and [§12](#12-pass
 
 ```json
 {
-  "sub": "123",
+  "sub": "550e8400-e29b-41d4-a716-446655440000",
   "role": "User",
   "exp": 0
 }
 ```
 
-Verify with typed `Hs256` only. Check `exp` via `Clock` + small leeway. Role changes take effect when the access token expires.
+`sub` is `auth_users.public_id` (hyphenated UUIDv4), not the integer PK. Verify with typed `Hs256` only. Check `exp` via `Clock` + small leeway. Role changes take effect when the access token expires.
 
 ### Email activation JWT (stateless)
 
-Separate secret. Claims: `sub`, `email`, `exp`, plus a type tag that the access-token verifier rejects. Activation:
+Separate secret. Claims: `sub` (= `public_id`), `email`, `exp`, plus a type tag that the access-token verifier rejects. Activation:
 
 ```sql
-UPDATE auth_users SET email_verified_at = ? WHERE id = ? AND email = ?;
+UPDATE auth_users SET email_verified_at = ? WHERE public_id = ? AND email = ?;
 ```
 
 No extra table.
+
+### `auth_users` identifiers (edit migration `001`)
+
+OWASP [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) recommends **random user IDs** so sequential integers are not leaked in URLs, JWTs, or WebAuthn. Sequential `id` values enumerate accounts, enable IDOR guessing, and correlate JWT `sub` with row count / signup order.
+
+**Locked:** dual key. Integer PK stays for SQLite/D1 FKs; the public identifier is a unique UUIDv4.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | integer PK AUTOINCREMENT | Rowid. FK target for `auth_sessions.user_id`. **`#[serde(skip_serializing)]`** — never in JSON. |
+| `public_id` | string UNIQUE NOT NULL | UUIDv4, assigned server-side (`new_public_id()`). JWT `sub`, `/api/auth/users/{public_id}`, later WebAuthn `userHandle`. Clients cannot set it (`skip_deserializing` on `NewUser`). |
+
+Do **not** make `public_id` the primary key: D1/SQLite foreign keys and `last_insert_rowid()` stay on integer `id`. Do **not** expose `id` as a second public identifier.
 
 ### Session cookie
 
@@ -303,7 +318,7 @@ SQLite for the demo is in `demo/migrations/001_auth_create_users_and_token_table
 | Column | Type | Notes |
 |--------|------|--------|
 | `id` | integer PK | Stable across token rotation |
-| `user_id` | integer FK → `auth_users` ON DELETE CASCADE | |
+| `user_id` | integer FK → `auth_users.id` ON DELETE CASCADE | Internal PK, not `public_id` |
 | `token_hash` | string UNIQUE | HMAC-SHA-256(`HASH_PEPPER`, cookie), hex |
 | `created_at` | RFC 3339 string | |
 | `last_used_at` | RFC 3339 string | Update **only** on `/auth/refresh` |
@@ -491,6 +506,7 @@ Wire as a field on `AppState` constructed in `from_platform`. Do **not** merge i
 
 | Need | Mechanism | WASM issue |
 |------|-----------|------------|
+| `public_id` UUIDv4 | 16 CSPRNG bytes → `uuid::Builder::from_random_bytes` | `getrandom` until `RandomSource`; `d1` enables `wasm_js` |
 | Session token bytes | **`RandomSource` port** | `crypto.getRandomValues` vs OS |
 | Session `token_hash` | HMAC-SHA-256(`HASH_PEPPER`, token) | Pepper from `SecretStore`; hash is cheap |
 | JWT access / activation | `jwt-compact` HS256 | Secrets from `SecretStore` |
@@ -532,7 +548,8 @@ v1 follows current [OWASP Password Storage](https://cheatsheetseries.owasp.org/c
 
 | Practice | v1 |
 |----------|----|
-| Short-lived access JWT | HS256, `sub`/`exp`/`role`, memory on the client |
+| Short-lived access JWT | HS256, `sub` (= `public_id`) / `exp` / `role`, memory on the client |
+| Opaque user identifiers | Integer PK internally; UUIDv4 `public_id` in JWT `sub`, API paths, WebAuthn `userHandle`; never serialize integer `id` |
 | Server-side session | Rotating opaque cookie, HMAC + pepper, `auth_sessions`, revoke on logout |
 | Cookie flags | HttpOnly, Secure, `SameSite=Strict`, `__Host-` prefix when served on HTTPS |
 | Email proof | Stateless activation JWT; login requires `email_verified_at` |

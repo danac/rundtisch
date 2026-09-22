@@ -14,6 +14,7 @@ impl Migration for AuthMigration001 {
                     .table(UserTable::Table)
                     .if_not_exists()
                     .col(ColumnDef::new(UserTable::Id).integer().not_null().auto_increment().primary_key())
+                    .col(ColumnDef::new(UserTable::PublicId).string().not_null().unique_key())
                     .col(ColumnDef::new(UserTable::Email).string().not_null().unique_key())
                     .col(ColumnDef::new(UserTable::Alias).string().not_null())
                     .col(ColumnDef::new(UserTable::Role).string().not_null())
@@ -122,6 +123,11 @@ mod tests {
             .map(|stmt| schema_to_sql(stmt, Dialect::Sqlite))
             .collect::<Vec<_>>()
             .join(";\n\n");
+        assert!(sql.contains("public_id"), "{sql}");
+        assert!(
+            sql.contains(r#""public_id" varchar NOT NULL UNIQUE"#),
+            "{sql}"
+        );
         assert!(sql.contains("auth_sessions"), "{sql}");
         assert!(!sql.contains("auth_refresh_tokens"), "{sql}");
         assert!(sql.contains("token_hash"), "{sql}");
@@ -129,5 +135,20 @@ mod tests {
         assert!(sql.contains("last_used_at"), "{sql}");
         assert!(sql.contains("user_agent"), "{sql}");
         assert!(sql.contains("fk_session_user_id") || sql.contains("FOREIGN KEY"), "{sql}");
+    }
+
+    #[test]
+    fn demo_sqlite_snapshot_matches_up_sql() {
+        let sql = AuthMigration001
+            .up()
+            .iter()
+            .map(|stmt| schema_to_sql(stmt, Dialect::Sqlite))
+            .collect::<Vec<_>>()
+            .join(";\n\n");
+        let generated = format!("{sql};\n");
+        let snapshot = include_str!(
+            "../../../../../demo/migrations/001_auth_create_users_and_token_tables.sql"
+        );
+        assert_eq!(generated, snapshot);
     }
 }

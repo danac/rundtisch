@@ -9,7 +9,7 @@ publish = false
 
 [features]
 default = []
-d1 = ["worker/d1", "time/wasm-bindgen"]
+d1 = ["worker/d1", "time/wasm-bindgen", "getrandom/wasm_js"]
 sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
 
 [dependencies]
@@ -21,6 +21,8 @@ worker = { workspace = true, optional = true }
 time = { workspace = true, features = ["std", "formatting", "parsing", "serde", "serde-well-known"] }
 axum = { workspace = true, features = ["json"] }
 serde_json.workspace = true
+uuid = { version = "1.18", default-features = false, features = ["std", "serde", "v4"] }
+getrandom = { version = "0.3.4", default-features = false }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }

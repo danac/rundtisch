@@ -238,7 +238,7 @@ User          Frontend        REST API        Email           Database
 
 | Table | Columns |
 |-------|---------|
-| **auth_users** | `id`, `email`, `alias`, `role`, `password_hash`, `email_verified_at`, `created_at`, `updated_at`, `last_login_at` |
+| **auth_users** | `id` (integer PK, not in JSON), `public_id` (UUIDv4 UNIQUE; JWT `sub` / API paths / WebAuthn `userHandle`), `email`, `alias`, `role`, `password_hash`, `email_verified_at`, `created_at`, `updated_at`, `last_login_at` |
 | **auth_sessions** | `id`, `user_id`, `token_hash` (HMAC-SHA-256 + `HASH_PEPPER`, unique), `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
 
 Email activation is a **stateless JWT** (separate secret). No activation table.
@@ -251,6 +251,6 @@ Worker and native use the **same** Argon2id: **unique 16-byte salt per password*
 
 | Token | Lifetime | Storage (frontend) | Used for |
 |-------|----------|--------------------|----------|
-| **Access JWT** | Short (5–15 min) | Memory (auth context) | Every API request (`sub`, `exp`, `role`; HS256) |
+| **Access JWT** | Short (5–15 min) | Memory (auth context) | Every API request (`sub` = `public_id`, `exp`, `role`; HS256) |
 | **Activation JWT** | Hours | Email link only | `/auth/activate` |
 | **Session / refresh token** | Long (days/weeks) | HttpOnly Secure `SameSite=Strict` cookie | Only `/auth/refresh` and `/auth/logout` |

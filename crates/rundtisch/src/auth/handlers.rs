@@ -9,6 +9,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde_json::json;
+use uuid::Uuid;
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
@@ -48,6 +49,7 @@ pub async fn create_user<P: Platform>(
         Ok(alias) => new_user.alias = alias,
         Err(e) => return e.into_response(),
     }
+    new_user.assign_public_id();
     new_user.stamp_now();
     match state.database.insert(user_insert_query(&new_user)).await {
         Ok(id) => (
@@ -61,7 +63,7 @@ pub async fn create_user<P: Platform>(
 
 pub async fn update_user<P: Platform>(
     State(state): State<AppState<P>>,
-    Path(id): Path<i64>,
+    Path(public_id): Path<Uuid>,
     Json(body): Json<UpdateUserAlias>,
 ) -> impl IntoResponse {
     let alias = match normalize_alias(body.alias) {
@@ -71,11 +73,15 @@ pub async fn update_user<P: Platform>(
     let updated_at = time::OffsetDateTime::now_utc();
     match state
         .database
-        .execute(user_update_alias_query(id, &alias, updated_at))
+        .execute(user_update_alias_query(public_id, &alias, updated_at))
         .await
     {
         Ok(result) if result.rows_affected > 0 => {
-            match state.database.fetch_one::<User>(user_get_query(id)).await {
+            match state
+                .database
+                .fetch_one::<User>(user_get_query(public_id))
+                .await
+            {
                 Ok(user) => Json(json!({"result": user})).into_response(),
                 Err(e) => e.into_response(),
             }
@@ -87,10 +93,12 @@ pub async fn update_user<P: Platform>(
 
 pub async fn delete_user<P: Platform>(
     State(state): State<AppState<P>>,
-    Path(id): Path<i64>,
+    Path(public_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match state.database.execute(user_delete_query(id)).await {
-        Ok(result) if result.rows_affected > 0 => Json(json!({"deleted": id})).into_response(),
+    match state.database.execute(user_delete_query(public_id)).await {
+        Ok(result) if result.rows_affected > 0 => {
+            Json(json!({"deleted": public_id})).into_response()
+        }
         Ok(_) => Error::NotFound.into_response(),
         Err(e) => e.into_response(),
     }
@@ -137,7 +145,7 @@ mod tests {
         axum::Router::new()
             .route("/api/auth/users", axum::routing::get(list_users).post(create_user))
             .route(
-                "/api/auth/users/{id}",
+                "/api/auth/users/{public_id}",
                 axum::routing::patch(update_user).delete(delete_user),
             )
             .with_state(state)
@@ -173,7 +181,9 @@ mod tests {
         assert_eq!(json["result"]["email"], "carol@example.com");
         assert_eq!(json["result"]["alias"], "carol");
         assert_eq!(json["result"]["role"], "User");
-        let id = json["result"]["id"].as_i64().unwrap();
+        assert!(json["result"]["id"].is_null() || json["result"].get("id").is_none());
+        let public_id = json["result"]["public_id"].as_str().unwrap().to_string();
+        uuid::Uuid::parse_str(&public_id).expect("public_id is a uuid");
 
         let listed = app
             .clone()
@@ -182,12 +192,15 @@ mod tests {
             .unwrap();
         let (status, json) = body_json(listed).await;
         assert_eq!(status, HttpStatus::OK);
-        assert_eq!(json["result"].as_array().unwrap().len(), 1);
+        let listed_users = json["result"].as_array().unwrap();
+        assert_eq!(listed_users.len(), 1);
+        assert_eq!(listed_users[0]["public_id"], public_id);
+        assert!(listed_users[0].get("id").is_none());
 
         let deleted = app
             .clone()
             .oneshot(
-                Request::delete(format!("/api/auth/users/{id}"))
+                Request::delete(format!("/api/auth/users/{public_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -195,11 +208,11 @@ mod tests {
             .unwrap();
         let (status, json) = body_json(deleted).await;
         assert_eq!(status, HttpStatus::OK);
-        assert_eq!(json["deleted"], id);
+        assert_eq!(json["deleted"], public_id);
 
         let missing = app
             .oneshot(
-                Request::delete(format!("/api/auth/users/{id}"))
+                Request::delete(format!("/api/auth/users/{public_id}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -208,6 +221,28 @@ mod tests {
         let (status, json) = body_json(missing).await;
         assert_eq!(status, HttpStatus::NOT_FOUND);
         assert_eq!(json["error"], "not found");
+    }
+
+    #[tokio::test]
+    async fn create_ignores_client_public_id() {
+        let app = app().await;
+        let created = app
+            .oneshot(
+                Request::post("/api/auth/users")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"email":"eve@example.com","alias":"eve","role":"User","public_id":"11111111-1111-4111-8111-111111111111"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(created).await;
+        assert_eq!(status, HttpStatus::CREATED);
+        let public_id = json["result"]["public_id"].as_str().unwrap();
+        assert_ne!(public_id, "11111111-1111-4111-8111-111111111111");
+        uuid::Uuid::parse_str(public_id).expect("public_id is a uuid");
+        assert!(json["result"].get("id").is_none());
     }
 
     #[tokio::test]
@@ -246,12 +281,12 @@ mod tests {
             .unwrap();
         let (status, json) = body_json(created).await;
         assert_eq!(status, HttpStatus::CREATED);
-        let id = json["result"]["id"].as_i64().unwrap();
+        let public_id = json["result"]["public_id"].as_str().unwrap().to_string();
 
         let updated = app
             .clone()
             .oneshot(
-                Request::patch(format!("/api/auth/users/{id}"))
+                Request::patch(format!("/api/auth/users/{public_id}"))
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"alias":"  carolyn  "}"#))
                     .unwrap(),
@@ -266,7 +301,7 @@ mod tests {
         let blank = app
             .clone()
             .oneshot(
-                Request::patch(format!("/api/auth/users/{id}"))
+                Request::patch(format!("/api/auth/users/{public_id}"))
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"alias":"   "}"#))
                     .unwrap(),
@@ -279,7 +314,7 @@ mod tests {
 
         let missing = app
             .oneshot(
-                Request::patch("/api/auth/users/999")
+                Request::patch("/api/auth/users/ffffffff-ffff-4fff-8fff-ffffffffffff")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"alias":"ghost"}"#))
                     .unwrap(),
