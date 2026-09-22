@@ -3,7 +3,7 @@
 **Source:** [https://gemini.google.com/share/69dbdbb0a717?skid=211cc3b9-2cb7-487a-9fe0-aba464a4a6cd](https://gemini.google.com/share/69dbdbb0a717?skid=211cc3b9-2cb7-487a-9fe0-aba464a4a6cd)
 **Created:** Published July 8, 2026 at 03:00 PM
 
-> **JWT crate / WASM update (2026-09-21):** the `jsonwebtoken 9` + `ring` + `getrandom 0.2` `js` snippet in the last section is outdated. See [20260921-JWT_WASM_dependencies_and_RNG_port.md](./20260921-JWT_WASM_dependencies_and_RNG_port.md) for the current crate comparison, Workers crypto notes, and the planned `RandomSource` / `Clock` ports. Flow-level advice in this document (access JWT + hashed refresh token, separate verify secret, no activation table) still stands.
+> **JWT / sessions update (2026-09-22):** crate choice, WASM RNG, `auth_sessions`, and hashing are in [20260921-JWT_WASM_dependencies_and_RNG_port.md](./20260921-JWT_WASM_dependencies_and_RNG_port.md). Flow-level advice here (access JWT + hashed session token, separate verify secret, no activation table) still stands. The `jsonwebtoken 9` + `ring` snippet at the end is obsolete.
 
 ---
 

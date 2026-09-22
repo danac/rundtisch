@@ -397,7 +397,7 @@ User       Frontend      REST API     Passkey       Email        Database
 | **webauthn_credentials** | `credential_id`, `user_id`, `public_key`, `sign_count`, `aaguid`, `transports`, `created_at` |
 | **users** | `id` (= opaque **userHandle** bytes, base64url), `email`, `email_verified`, `display_name` |
 | **webauthn_challenges** | `challenge`, `user_id`, `type` (register \| login), `expires_at` |
-| **refresh_tokens** | `token_hash`, `user_id`, `expires_at`, `revoked` |
+| **auth_sessions** | `token_hash`, `user_id`, `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
 
 ---
 
@@ -406,7 +406,7 @@ User       Frontend      REST API     Passkey       Email        Database
 | Artifact | Lifetime | Where it lives | Used for |
 |----------|----------|----------------|----------|
 | **Access JWT** | Short (5–15 min) | Frontend memory | Every API request |
-| **Refresh token** | Long (days/weeks) | HttpOnly Secure cookie | `/auth/refresh`, `/auth/logout` |
+| **Refresh / session token** | Long (days/weeks) | HttpOnly Secure `SameSite=Strict` cookie | `/auth/refresh`, `/auth/logout` |
 | **Passkey private key** | Permanent | Hardware authenticator only | WebAuthn login ceremonies |
 | **Passkey public key** | Permanent | Server DB | Verify login assertions |
 | **Resident credential** | Permanent | Hardware authenticator | Stores rpId + userHandle — enables usernameless login |

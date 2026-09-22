@@ -1,6 +1,6 @@
 # Registration & Authentication Flow
 
-Web frontend ↔ REST API with **email activation**, **JWT access tokens**, and **rotating refresh tokens**.
+Web frontend ↔ REST API with **stateless email-activation JWTs**, **HS256 access JWTs** (`sub` / `exp` / `role`), and **rotating session cookies** stored as hashed rows in `auth_sessions`.
 
 ## Legend
 
@@ -16,7 +16,7 @@ Web frontend ↔ REST API with **email activation**, **JWT access tokens**, and 
 
 ```
   User          Frontend        REST API        Email           Database
- (Browser)      (Web app)       (Backend)      (Mailer)    (Users + tokens)
+ (Browser)      (Web app)       (Backend)      (Mailer)    (auth_users + auth_sessions)
     |               |               |              |               |
 ```
 
@@ -32,11 +32,13 @@ User          Frontend        REST API        Email           Database
   |               |-- POST /auth/register ----->|               |
   |               |               |              |               |
   |               |               | ... create user ------------>|
-  |               |               |     hashed pwd, verified=false |
-  |               |               | ... store activation token --->|
+  |               |               |     Argon2id hash,           |
+  |               |               |     email_verified_at = NULL |
+  |               |               | ... sign activation JWT      |
+  |               |               |     (stateless; no DB row)   |
   |               |               |              |               |
   |               |               |-- send activation email ---->|
-  |               |               |   (link + token)             |
+  |               |               |   (link + activation JWT)    |
   |               |               |              |               |
   |               |<-- [201] Created ------------|               |
   |               |    (no session tokens)        |               |
@@ -59,16 +61,16 @@ User          Frontend        REST API        Email           Database
   |               |-- POST /auth/activate ----->|               |
   |               |   { token }   |              |               |
   |               |               |              |               |
-  |               |               | ... validate token, set ---->|
-  |               |               |     email_verified = true    |
-  |               |               |     invalidate token         |
+  |               |               | ... verify activation JWT -->|
+  |               |               |     UPDATE email_verified_at |
+  |               |               |     (no token table to clear)|
   |               |               |              |               |
   |               |<-- [200] Activated ----------|               |
   |               |    (optional auto-login)      |               |
   |               |               |              |               |
   |               |    +--[ auto-login ]--------+               |
-  |               |    |  ... create refresh token ------------>|
-  |               |    |  access JWT + Set-Cookie refresh      |
+  |               |    |  ... insert auth_sessions ------------>|
+  |               |    |  access JWT + Set-Cookie session      |
   |               |    +-- enter app (authenticated)            |
   |               |    |                                          |
   |               |    +--[ login required ]------+               |
@@ -95,9 +97,10 @@ User          Frontend        REST API        Email           Database
   |<-- resend activation / check email ---------|               |
   |               |    |                                          |
   |               |    +--[ email verified ]------+               |
-  |               |       ... store refresh token --------------->|
-  |               |       sign access JWT                         |
-  |               |<-- [200] access JWT + Set-Cookie refresh -----|
+  |               |       ... insert auth_sessions --------------->|
+  |               |       sign access JWT {sub,exp,role}          |
+  |               |<-- [200] access JWT + Set-Cookie session -----|
+  |               |    (HttpOnly, Secure, SameSite=Strict)        |
   |               |               |              |               |
 ```
 
@@ -112,8 +115,8 @@ User          Frontend        REST API        Email           Database
   |               |   Authorization: Bearer     |               |
   |               |   <accessJWT>               |               |
   |               |               |              |               |
-  |               |               | ... verify JWT signature      |
-  |               |               |     check exp, claims         |
+  |               |               | ... verify HS256, check exp   |
+  |               |               |     claims: sub, exp, role    |
   |               |               |              |               |
   |               |<-- [200] Resource JSON ------|               |
   |               |               |              |               |
@@ -136,15 +139,16 @@ User          Frontend        REST API        Email           Database
   |               |    { "error": "token_expired" }               |
   |               |               |              |               |
   |               |-- POST /auth/refresh ------->|               |
-  |               |   Cookie: refreshToken        |               |
-  |               |   (HttpOnly, Secure)          |               |
+  |               |   Cookie: session (HttpOnly,  |               |
+  |               |            Secure, Strict)    |               |
   |               |               |              |               |
-  |               |               | ... validate refresh token ->|
-  |               |               |     rotate: revoke old,      |
-  |               |               |             issue new          |
+  |               |               | ... lookup token_hash ------>|
+  |               |               |     reject if revoked/expired|
+  |               |               |     UPDATE token_hash +      |
+  |               |               |            last_used_at      |
   |               |               |              |               |
   |               |<-- [200] new access JWT -----|               |
-  |               |    Set-Cookie: refreshToken   |               |
+  |               |    Set-Cookie: session        |               |
   |               |               |              |               |
   |               |-- retry original request ---->|               |
   |               |   Bearer <new accessJWT>      |               |
@@ -163,9 +167,9 @@ User          Frontend        REST API        Email           Database
   |-- logout ---->|               |              |               |
   |               |               |              |               |
   |               |-- POST /auth/logout --------->|               |
-  |               |   Cookie: refreshToken        |               |
+  |               |   Cookie: session             |               |
   |               |               |              |               |
-  |               |               | ... revoke refresh token ---->|
+  |               |               | ... SET revoked_at ---------->|
   |               |               |              |               |
   |               |<-- [204] Clear cookie -------|               |
   |               |               |              |               |
@@ -223,10 +227,21 @@ User          Frontend        REST API        Email           Database
 | `POST` | `/auth/register` | Create account (unverified) |
 | `POST` | `/auth/activate` | Confirm email with token from link |
 | `POST` | `/auth/resend-activation` | Resend activation email (rate-limited) |
-| `POST` | `/auth/login` | Issue access JWT + refresh cookie |
-| `POST` | `/auth/refresh` | Rotate tokens when access JWT expires |
-| `POST` | `/auth/logout` | Revoke refresh token / clear cookie |
+| `POST` | `/auth/login` | Issue access JWT + session cookie |
+| `POST` | `/auth/refresh` | Rotate session `token_hash` when access JWT expires |
+| `POST` | `/auth/logout` | Set `revoked_at` / clear cookie |
 | `GET` | `/api/*` | Protected resources (`Authorization: Bearer …`) |
+
+---
+
+## Persistence (v1)
+
+| Table | Columns |
+|-------|---------|
+| **auth_users** | `id`, `email`, `alias`, `role`, `password_hash`, `email_verified_at`, `created_at`, `updated_at`, `last_login_at` |
+| **auth_sessions** | `id`, `user_id`, `token_hash` (SHA-256, unique), `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
+
+Email activation is a **stateless JWT** (separate secret). No activation table.
 
 ---
 
@@ -234,5 +249,6 @@ User          Frontend        REST API        Email           Database
 
 | Token | Lifetime | Storage (frontend) | Used for |
 |-------|----------|--------------------|----------|
-| **Access JWT** | Short (5–15 min) | Memory (auth context) | Every API request |
-| **Refresh token** | Long (days/weeks) | HttpOnly Secure cookie | Only `/auth/refresh` and `/auth/logout` |
+| **Access JWT** | Short (5–15 min) | Memory (auth context) | Every API request (`sub`, `exp`, `role`; HS256) |
+| **Activation JWT** | Hours | Email link only | `/auth/activate` |
+| **Session / refresh token** | Long (days/weeks) | HttpOnly Secure `SameSite=Strict` cookie | Only `/auth/refresh` and `/auth/logout` |

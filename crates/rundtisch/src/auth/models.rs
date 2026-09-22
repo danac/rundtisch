@@ -125,20 +125,33 @@ pub fn datetime_to_rfc3339(dt: DateTime) -> String {
 }
 
 #[derive(Iden)]
-pub enum RefreshTokenTable {
-    #[iden = "auth_refresh_tokens"]
+pub enum SessionTable {
+    #[iden = "auth_sessions"]
     Table,
     Id,
     UserId,
     TokenHash,
+    CreatedAt,
+    LastUsedAt,
     ExpiresAt,
-    Revoked,
+    RevokedAt,
+    UserAgent,
 }
 
-// struct RefreshToken {
-//     id: i64,
-//     user_id: i64,
-//     token_hash: String,
-//     expires_at: DateTime,
-//     revoked: bool,
-// }
+/// Row in [`SessionTable`]. `token_hash` is SHA-256 of the raw cookie value;
+/// the raw token is never stored.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Session {
+    pub id: i64,
+    pub user_id: i64,
+    pub token_hash: String,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: DateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_used_at: DateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: DateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub revoked_at: Option<DateTime>,
+    pub user_agent: Option<String>,
+}
