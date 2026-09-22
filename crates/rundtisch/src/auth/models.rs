@@ -138,8 +138,8 @@ pub enum SessionTable {
     UserAgent,
 }
 
-/// Row in [`SessionTable`]. `token_hash` is SHA-256 of the raw cookie value;
-/// the raw token is never stored.
+/// Row in [`SessionTable`]. `token_hash` is HMAC-SHA-256 of the raw cookie
+/// with `HASH_PEPPER`; the raw token is never stored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: i64,
