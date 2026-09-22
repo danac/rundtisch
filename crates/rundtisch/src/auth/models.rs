@@ -46,7 +46,11 @@ pub enum UserTable {
 pub fn new_public_id() -> uuid::Uuid {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes).expect("CSPRNG available for UUIDv4");
-    uuid::Builder::from_random_bytes(bytes).into_uuid()
+    // RFC 4122 version 4 + variant 1, without enabling uuid's `v4` feature
+    // (that feature fails to compile on wasm32-unknown-unknown).
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    uuid::Uuid::from_bytes(bytes)
 }
 
 /// Row to insert into [`UserTable`]. Timestamps default to now so JSON
