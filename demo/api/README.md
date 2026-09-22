@@ -170,9 +170,9 @@ environment (same names as Wrangler secrets / `demo/.dev.vars.example`):
 
 | Name | Length |
 |------|--------|
-| `JWT_ACCESS_SECRET` | ≥ 32 bytes |
-| `JWT_VERIFY_SECRET` | ≥ 32 bytes |
-| `HASH_PEPPER` | **exactly** 32 bytes |
+| `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
+| `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
+| `AUTH_HASH_PEPPER` | **exactly** 32 bytes |
 
 Worker local dev: copy `demo/.dev.vars.example` to `demo/.dev.vars`. Production: `wrangler secret put`.
 

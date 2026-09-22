@@ -86,4 +86,4 @@ cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown
 
 - [Root README](../../README.md) — monorepo layout, demo Worker, CI
 - [Demo API](../../demo/api/README.md) — example routes using this crate
-- [JWT / WASM / RNG port plan](doc/20260921-JWT_WASM_dependencies_and_RNG_port.md) — locked v1: jwt-compact HS256, default Clock/Random, `SecretStore` + `HASH_PEPPER`, same Argon2id on Worker and native, `auth_sessions`, opaque `public_id` UUIDv4
+- [JWT / WASM / RNG port plan](doc/20260921-JWT_WASM_dependencies_and_RNG_port.md) — locked v1: jwt-compact HS256, default Clock/Random, `SecretStore` + `AUTH_HASH_PEPPER`, same Argon2id on Worker and native, `auth_sessions`, opaque `public_id` UUIDv4

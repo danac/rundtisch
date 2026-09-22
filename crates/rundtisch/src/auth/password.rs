@@ -71,7 +71,7 @@ pub trait PasswordHasher: Send + Sync {
     fn verify(&self, password: &str, password_hash: &str) -> Result<bool, PasswordHashError>;
 }
 
-/// OWASP Argon2id `m=19456,t=2,p=1`, unique 16-byte salt, keyed with `HASH_PEPPER`.
+/// OWASP Argon2id `m=19456,t=2,p=1`, unique 16-byte salt, keyed with `AUTH_HASH_PEPPER`.
 pub struct Argon2idHasher {
     random: Arc<dyn RandomSource>,
     pepper: Vec<u8>,
