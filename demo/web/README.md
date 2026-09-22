@@ -12,9 +12,7 @@ Small React SPA used to exercise the [demo API](../api/README.md) while the [`ru
 
 ## Current state
 
-Landing page only — wordmark **rundtisch** on a paper/ink canvas with concentric rings.
-
-**Next:** an API playground (button list that calls `/api/*` and shows the JSON response).
+Landing page with a **register / login / session** panel (activation token is returned in the register JSON until a mailer exists) and a **users** CRUD panel against `/api/auth/users`.
 
 ## Commands
 

@@ -1,11 +1,13 @@
-use sea_query::{ColumnDef, ForeignKey, ForeignKeyAction, Table, TableStatement};
-use crate::traits::db::{Migration, Statement};
 use crate::auth::models::*;
+use crate::traits::db::{Migration, Statement};
+use sea_query::{ColumnDef, ForeignKey, ForeignKeyAction, Table, TableStatement};
 
 pub struct AuthMigration001;
 
 impl Migration for AuthMigration001 {
-    fn name(&self) -> &str { "001_auth_create_users_and_token_tables" }
+    fn name(&self) -> &str {
+        "001_auth_create_users_and_token_tables"
+    }
 
     fn up(&self) -> Vec<Statement> {
         vec![
@@ -13,9 +15,25 @@ impl Migration for AuthMigration001 {
                 Table::create()
                     .table(UserTable::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(UserTable::Id).integer().not_null().auto_increment().primary_key())
-                    .col(ColumnDef::new(UserTable::PublicId).string().not_null().unique_key())
-                    .col(ColumnDef::new(UserTable::Email).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(UserTable::Id)
+                            .integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(UserTable::PublicId)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(
+                        ColumnDef::new(UserTable::Email)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(ColumnDef::new(UserTable::Alias).string().not_null())
                     .col(ColumnDef::new(UserTable::Role).string().not_null())
                     .col(ColumnDef::new(UserTable::PasswordHash).string().null())
@@ -23,15 +41,26 @@ impl Migration for AuthMigration001 {
                     .col(ColumnDef::new(UserTable::CreatedAt).string().not_null())
                     .col(ColumnDef::new(UserTable::UpdatedAt).string().not_null())
                     .col(ColumnDef::new(UserTable::LastLoginAt).string().null())
-                    .to_owned()
+                    .to_owned(),
             )),
             Statement::TableStatement(TableStatement::Create(
                 Table::create()
                     .table(SessionTable::Table)
                     .if_not_exists()
-                    .col(ColumnDef::new(SessionTable::Id).integer().not_null().auto_increment().primary_key())
+                    .col(
+                        ColumnDef::new(SessionTable::Id)
+                            .integer()
+                            .not_null()
+                            .auto_increment()
+                            .primary_key(),
+                    )
                     .col(ColumnDef::new(SessionTable::UserId).integer().not_null())
-                    .col(ColumnDef::new(SessionTable::TokenHash).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(SessionTable::TokenHash)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
                     .col(ColumnDef::new(SessionTable::CreatedAt).string().not_null())
                     .col(ColumnDef::new(SessionTable::LastUsedAt).string().not_null())
                     .col(ColumnDef::new(SessionTable::ExpiresAt).string().not_null())
@@ -44,9 +73,9 @@ impl Migration for AuthMigration001 {
                             .from_col(SessionTable::UserId)
                             .to_tbl(UserTable::Table)
                             .to_col(UserTable::Id)
-                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_delete(ForeignKeyAction::Cascade),
                     )
-                    .to_owned()
+                    .to_owned(),
             )),
         ]
     }
@@ -54,14 +83,10 @@ impl Migration for AuthMigration001 {
     fn down(&self) -> Vec<Statement> {
         vec![
             Statement::TableStatement(TableStatement::Drop(
-                Table::drop()
-                    .table(SessionTable::Table)
-                    .to_owned()
+                Table::drop().table(SessionTable::Table).to_owned(),
             )),
             Statement::TableStatement(TableStatement::Drop(
-                Table::drop()
-                    .table(UserTable::Table)
-                    .to_owned()
+                Table::drop().table(UserTable::Table).to_owned(),
             )),
         ]
     }
@@ -70,7 +95,7 @@ impl Migration for AuthMigration001 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::db::{schema_to_sql, Dialect};
+    use crate::traits::db::{Dialect, schema_to_sql};
     use sea_query::Iden;
 
     async fn execute_statements(pool: &sqlx::SqlitePool, statements: Vec<Statement>) {
@@ -134,7 +159,10 @@ mod tests {
         assert!(sql.contains("revoked_at"), "{sql}");
         assert!(sql.contains("last_used_at"), "{sql}");
         assert!(sql.contains("user_agent"), "{sql}");
-        assert!(sql.contains("fk_session_user_id") || sql.contains("FOREIGN KEY"), "{sql}");
+        assert!(
+            sql.contains("fk_session_user_id") || sql.contains("FOREIGN KEY"),
+            "{sql}"
+        );
     }
 
     #[test]
