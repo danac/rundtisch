@@ -243,7 +243,7 @@ User          Frontend        REST API        Email           Database
 
 Email activation is a **stateless JWT** (separate secret). No activation table.
 
-Worker and native use the **same** Argon2id params and `HASH_PEPPER` (from `SecretStore`). Do not skip password hashing on the Worker.
+Worker and native use the **same** Argon2id: **unique 16-byte salt per password** (inside the PHC in `password_hash`, not a separate column) plus `HASH_PEPPER` from `SecretStore`.
 
 ---
 

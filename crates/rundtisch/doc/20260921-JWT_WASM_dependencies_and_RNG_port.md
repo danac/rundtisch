@@ -19,7 +19,8 @@ Compile probes used **rustc 1.98.1** (`stable`) and `--target wasm32-unknown-unk
 | Email activation | **Stateless JWT**, different secret (`JWT_VERIFY_SECRET`). Claims bind `sub` + `email` + `exp` (and a type tag so it cannot be used as access). No activation table. |
 | Session / refresh | Opaque 32-byte token in an **HttpOnly, Secure, `SameSite=Strict`** cookie (SPA and API share a domain). Row in **`auth_sessions`**. Rotate by updating `token_hash` on the same row. |
 | Session hash | **HMAC-SHA-256(`HASH_PEPPER`, raw token)** (`hmac` + `sha2` + `subtle`). Not Argon2. Same on Worker and native. Pepper from `SecretStore`. |
-| Passwords | **Same Argon2id on Worker and native** — OWASP `m=19456,t=2,p=1`, `p=1`, PHC string, salt from `RandomSource`, **keyed with `HASH_PEPPER`**. Worker demo must be as secure as native: do **not** weaken params, skip the KDF, or switch to magic-link-only auth. If Free 10 ms CPU trips Error 1102 on register/login, **upgrade the Worker to Paid**; do not fork the hasher. |
+| Passwords | **Same Argon2id on Worker and native** (OWASP [Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html): `m=19456,t=2,p=1`). **Unique CSPRNG salt per password** (16+ bytes from `RandomSource`, stored **inside** the PHC string — no extra salt column). **Keyed with `HASH_PEPPER`**. Full PHC in `auth_users.password_hash`. Never a global/static salt, never username/email as salt, never unsalted SHA-256. Worker = native security; upgrade to Paid on Error 1102 rather than weakening. |
+| Password policy | OWASP [Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) / NIST SP 800-63B: min **15** chars (no MFA in v1), max **256** (NIST floor for the max is 64), any Unicode, **no** composition rules, **no** silent truncation, **no** periodic rotation. Reject a bundled common-password list on register/change. Constant-time verify; dummy Argon2id on unknown user. |
 | Platform ports | **`RandomSource` + `Clock` on `Platform` with default methods**, so native (and the Worker, for clock) need not implement them. WASM overrides `random()` only if the default Worker adapter is not already selected by `cfg`. **`SecretStore`** for JWT secrets and `HASH_PEPPER`. |
 | Schema change | **Edit migration `001`** (`001_auth_create_users_and_token_tables`). Nothing is in production; do not add `002`. |
 | Secrets | `SecretStore.get(name)` (Worker secrets / native env). v1 names: `JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER`. Each ≥ 32 bytes. Access vs verify stay separate. |
@@ -37,7 +38,7 @@ From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and sche
 | **Refresh / session token** (opaque, HttpOnly cookie) | 32+ random bytes, store **HMAC-SHA-256(`HASH_PEPPER`, token)** | **Yes** (the token) | Entropy source differs (OS vs Workers `crypto.getRandomValues`); pepper from `SecretStore` |
 | OAuth `state`, WebAuthn challenge (later) | random bytes | **Yes** | Same as refresh |
 | Hash stored session token | **HMAC-SHA-256 + pepper**, not Argon2 | No | Pepper is a secret; hash is portable Rust |
-| **Password** | **Argon2id** PHC, **same params + pepper on Worker and native** | **Yes** (per-password salt) | Algorithm and params are shared; Free CPU may later force a **Paid** upgrade, not a weaker hash |
+| **Password** | **Argon2id** PHC: **unique salt** + shared pepper, same params on Worker and native | **Yes — new salt every hash** | Salt is public (in PHC); pepper is a `SecretStore` secret; Free CPU may force a **Paid** upgrade, not a weaker hash |
 
 So: **JWT HMAC and session HMAC are portable library problems. Random bytes and secrets are platform problems. Argon2id is the same library and parameters on every host.** Do not put session tokens and passwords through the same hash. Do not give the Worker a weaker password path.
 
@@ -258,7 +259,7 @@ Handler tests can use a real HS256 key and `FrozenClock`.
 
 ### 5.5 Password hasher — **yes, a port; not the same as session hashing**
 
-See [§11](#11-hashing-sessions-vs-passwords-worker--native). Session HMAC is a library call (`hmac` + `sha2`) using `HASH_PEPPER`. Passwords use one **`Argon2idHasher`** (same params + pepper) on Worker and native. Keep a `PasswordHasher` trait so tests can inject a fake; do not ship a weaker Worker adapter.
+See [§11](#11-hashing-sessions-vs-passwords-worker--native) and [§12](#12-password-management--authentication-owasp--nist). Session HMAC is a library call (`hmac` + `sha2`) using `HASH_PEPPER`. Passwords use one **`Argon2idHasher`**: unique salt + shared pepper + OWASP params on Worker and native. Keep a `PasswordHasher` trait so tests can inject a fake; do not ship a weaker Worker adapter.
 
 ### 5.6 What we will **not** port
 
@@ -318,7 +319,7 @@ On refresh: look up by `token_hash`, reject if revoked/expired, generate a new r
 
 1. **Ports:** `RandomSource` + `Clock` with default methods; `SecretStore` (Worker secrets / native env, including `HASH_PEPPER`); `AppState` fields; tests with `ReplayRandom` / `FrozenClock` / in-memory secrets. Native and Cloudflare platforms still do not implement Random or Clock.
 2. **JWT helper:** `jwt-compact` HS256, access claims `{sub, exp, role}`, activation JWT tests. `cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown`.
-3. **Secrets + sessions + login:** `SecretStore` (`JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER`), same Argon2id+pepper hasher on Worker and native, issue access JWT, persist HMAC’d `auth_sessions`, Strict cookie, Bearer extractor.
+3. **Secrets + sessions + login:** `SecretStore`, same salted+peppered Argon2id hasher on Worker and native, generic login errors + dummy hash on unknown user, issue access JWT, persist HMAC’d `auth_sessions`, Strict cookie, Bearer extractor.
 
 CI should keep compiling the Worker target on every PR that touches crypto.
 
@@ -328,7 +329,7 @@ CI should keep compiling the Worker target on every PR that touches crypto.
 
 - Concrete access-token TTL (5 vs 15 min) and session TTL (days).
 - If register/login hits Error 1102 on Free, switch the **same** Worker to Paid (same hasher). No param fork.
-- Later (optional): dual-pepper window if `HASH_PEPPER` must rotate without logging everyone out.
+- Later: Have I Been Pwned k-anonymity check; MFA; forgot-password JWT; dual-pepper window; login rate-limit binding.
 
 ---
 
@@ -414,14 +415,33 @@ argon2 = { version = "0.6", default-features = false, features = ["alloc", "pass
 | **`getrandom`** (in default features) | **No** — salt from `RandomSource` |
 | `parallel` / `rayon` | **No** — `p=1` on every platform |
 
+**Salt vs pepper (both required):**
+
+| | Salt | Pepper (`HASH_PEPPER`) |
+|---|------|------------------------|
+| Unique? | **Yes — new 16-byte CSPRNG value for every hash** (register, password change, rehash) | No — one secret for the deployment |
+| Source | `RandomSource::fill_bytes` (never `getrandom` crate defaults on WASM) | `SecretStore` |
+| Stored in D1? | **Yes**, encoded inside the PHC string (`$argon2id$v=19$m=19456,t=2,p=1$<salt>$<digest>`) | **No** |
+| Purpose | Stop rainbow tables and “crack once, all users with that password” | Stop offline cracking if D1 leaks without Worker/native secrets |
+
+Do **not** add a `password_salt` column. Duplicating the PHC salt is how hashes and salts get out of sync. Do **not** use a static salt, email, user id, or `HASH_PEPPER` as the salt.
+
+Example stored value (illustrative):
+
+```
+$argon2id$v=19$m=19456,t=2,p=1$<16-byte-salt-b64>$<digest-b64>
+```
+
 **Construction (identical on Worker and native):**
 
 - Params: OWASP **`m=19456, t=2, p=1`**. Native must **not** use a heavier preset so verify cost stays the same everywhere.
-- Salt: 16 bytes from `RandomSource` → `password_hash::SaltString`.
+- Salt: **16 bytes (128 bits)** from `RandomSource` → `password_hash::SaltString` (RFC 9106 / OWASP minimum). A new salt on every `hash()` call, including password change.
 - Pepper: `Argon2::new_with_secret(HASH_PEPPER)` — 32-byte key, **not** serialized into the PHC string. Verify must load the same pepper from `SecretStore`.
-- Store the **full PHC string** in `auth_users.password_hash`. Verify with the params **in the stored string**.
+- Store the **full PHC string** in `auth_users.password_hash`. Verify with `Argon2::verify_password` using the salt and params **in the stored string**, in constant time (`password-hash` crate).
+- After hashing, **zeroize** the plaintext password buffer (`zeroize` feature). Never log the password or the PHC.
+- On successful login, if stored params are below the current OWASP preset, **rehash with a fresh salt** and update the row (upgrade path without a migration).
 
-Login/register only. Never on the Bearer or refresh path.
+Login/register only. Never on the Bearer or refresh path. Session tokens are **not** salted Argon2 (high-entropy secrets; HMAC-SHA-256 + pepper is correct).
 
 ### 11.3 Worker CPU: keep the hasher, pay for CPU if needed
 
@@ -476,7 +496,60 @@ Wire as a field on `AppState` constructed in `from_platform`. Do **not** merge i
 | JWT access / activation | `jwt-compact` HS256 | Secrets from `SecretStore` |
 | JWT `exp`, `expires_at` | **`Clock` port** | `time` + `wasm-bindgen` already on `d1` |
 | `JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER` | **`SecretStore` port** | Worker secrets vs env |
-| Password salt | **`RandomSource`** | Same as session token |
-| Password hash / verify | **`Argon2idHasher`** (same as native) | ~100 ms CPU; upgrade to Paid if Free 1102 |
+| Password salt (unique, 16 bytes) | **`RandomSource`**, embedded in PHC | Must be CSPRNG; never a column of its own |
+| Password hash / verify | **`Argon2idHasher`** (salt + `HASH_PEPPER`, same as native) | ~100 ms CPU; upgrade to Paid if Free 1102 |
 
 No extra port for “hashing in general.”
+
+---
+
+## 12. Password management & authentication (OWASP / NIST)
+
+v1 follows current [OWASP Password Storage](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [OWASP Authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html), and NIST SP 800-63B. The Worker demo does not get a lighter interpretation.
+
+### 12.1 Store verifiers, not passwords
+
+- Never store plaintext, reversible encryption, or a fast hash (SHA-256, HMAC-only, MD5, SHA-1) of a password.
+- One PHC string per user: **algorithm + params + unique salt + digest**. Salt is mandatory and per-password ([§11.2](#112-passwords--argon2id--pepper-same-hasher-on-worker-and-native)).
+- Pepper is extra defense-in-depth, stored only in `SecretStore`, never in D1.
+- Compare with the library verifier (constant time). Dummy-verify a hard-coded PHC when the email is unknown so login timing does not enumerate accounts.
+
+### 12.2 Password rules (v1)
+
+| Rule | v1 |
+|------|----|
+| Minimum length | **15** (no MFA yet; NIST/OWASP treat shorter than 15 as weak without MFA) |
+| Maximum length | **256** (floor is 64; cap avoids Argon2 CPU DoS on huge bodies) |
+| Composition / complexity | **None** (no “must include a digit”) |
+| Periodic rotation | **No** |
+| Silent truncation | **Forbidden** (reject over-max; Argon2 has no bcrypt 72-byte trap) |
+| Allowed characters | Any Unicode; allow paste |
+| Common passwords | Reject against a **bundled** top-password list on register and change |
+| Breached-password API (HIBP) | **Later** (k-anonymity range query) |
+| Change password | Require the current password; new hash = **new salt** + same pepper |
+
+### 12.3 Authentication mechanism (v1)
+
+| Practice | v1 |
+|----------|----|
+| Short-lived access JWT | HS256, `sub`/`exp`/`role`, memory on the client |
+| Server-side session | Rotating opaque cookie, HMAC + pepper, `auth_sessions`, revoke on logout |
+| Cookie flags | HttpOnly, Secure, `SameSite=Strict`, `__Host-` prefix when served on HTTPS |
+| Email proof | Stateless activation JWT; login requires `email_verified_at` |
+| Login errors | Single generic message (`invalid_credentials`); same for bad password and unknown email |
+| Transport | HTTPS only in deploy (Secure cookie is meaningless on cleartext) |
+| Secrets | Distinct `JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER` |
+| Rate limit | Register / login / activate / refresh (platform limiter; exact binding later) |
+| MFA / WebAuthn / OAuth | **Later** (planned flows already exist as docs) |
+| Forgot password | **Later**, same JWT shape as activation, then **new salt** on reset |
+
+### 12.4 Explicitly not SOTA — do not ship
+
+- Global or per-app salt, username/email as salt, empty salt
+- Unsalted or fast hashes for passwords
+- Weaker Worker KDF, PBKDF2-100k, client-side hashing
+- Revealing “email not registered” vs “wrong password” on login
+- Logging passwords, cookies, or PHC strings
+- Storing the raw session token
+- `alg=none` / algorithm confusion (typed `Hs256` in jwt-compact)
+- Long-lived access tokens instead of rotating sessions
