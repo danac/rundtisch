@@ -1,4 +1,5 @@
 use crate::traits::random::{RandomError, RandomSource};
+#[cfg(test)]
 use std::sync::Mutex;
 
 /// `getrandom::fill` — default on native.
@@ -50,11 +51,13 @@ pub use WorkerRandom as DefaultRandom;
 pub use OsRandom as DefaultRandom;
 
 /// Cycles a fixed byte string. Tests override [`crate::traits::Platform::random`].
+#[cfg(test)]
 pub struct ReplayRandom {
     bytes: Vec<u8>,
     offset: Mutex<usize>,
 }
 
+#[cfg(test)]
 impl ReplayRandom {
     pub fn new(bytes: impl Into<Vec<u8>>) -> Self {
         Self {
@@ -64,6 +67,7 @@ impl ReplayRandom {
     }
 }
 
+#[cfg(test)]
 impl RandomSource for ReplayRandom {
     fn fill_bytes(&self, dest: &mut [u8]) -> Result<(), RandomError> {
         if self.bytes.is_empty() {
