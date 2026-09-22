@@ -12,7 +12,7 @@ Compile probes below used **rustc 1.98.1** (current `stable`, matching CI `dtoln
 
 ## 1. What auth actually needs from crypto
 
-From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and schema (`auth_users`, `auth_refresh_tokens.token_hash`):
+From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and schema (`auth_users`; session rows planned as `auth_sessions.token_hash`):
 
 | Operation | Algorithm | Needs CSPRNG? | Platform-specific? |
 |-----------|-----------|---------------|--------------------|
