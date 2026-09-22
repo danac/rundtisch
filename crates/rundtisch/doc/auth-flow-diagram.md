@@ -239,11 +239,11 @@ User          Frontend        REST API        Email           Database
 | Table | Columns |
 |-------|---------|
 | **auth_users** | `id`, `email`, `alias`, `role`, `password_hash`, `email_verified_at`, `created_at`, `updated_at`, `last_login_at` |
-| **auth_sessions** | `id`, `user_id`, `token_hash` (SHA-256, unique), `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
+| **auth_sessions** | `id`, `user_id`, `token_hash` (HMAC-SHA-256 + `HASH_PEPPER`, unique), `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
 
 Email activation is a **stateless JWT** (separate secret). No activation table.
 
-On **Free Workers**, `password_hash` stays NULL: no in-isolate password KDF (10 ms CPU). Password Argon2id is a **native** `PasswordHasher`. Worker login is magic-link (same activation-JWT shape).
+Worker and native use the **same** Argon2id params and `HASH_PEPPER` (from `SecretStore`). Do not skip password hashing on the Worker.
 
 ---
 
