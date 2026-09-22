@@ -79,4 +79,4 @@ cargo test -p rundtisch --features native
 
 - [Root README](../../README.md) — monorepo layout, demo Worker, CI
 - [Demo API](../../demo/api/README.md) — example routes using this crate
-- [JWT / WASM / RNG port plan](doc/20260921-JWT_WASM_dependencies_and_RNG_port.md) — crate choice and hexagonal ports before implementing auth tokens
+- [JWT / WASM / RNG port plan](doc/20260921-JWT_WASM_dependencies_and_RNG_port.md) — locked v1 design: jwt-compact HS256, default Clock/Random ports, `auth_sessions`

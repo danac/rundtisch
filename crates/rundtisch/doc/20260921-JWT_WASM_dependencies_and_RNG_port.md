@@ -1,12 +1,28 @@
 # JWT on Cloudflare Workers: crate choice, crypto/RNG, and hexagonal ports
 
-**Date:** 2026-09-21  
-**Status:** investigation only — no implementation in this change  
+**Date:** 2026-09-21 (decisions locked 2026-09-22)  
+**Status:** decided plan — JWT/ports not implemented yet; schema in `001` updated to `auth_sessions`  
 **Related:** [auth-flow-diagram.md](./auth-flow-diagram.md), [20260708-150107-RustCloudflareWorkerAuthenticationDesign.md](./20260708-150107-RustCloudflareWorkerAuthenticationDesign.md)
 
-This note records a crate and architecture survey before we implement JWT access tokens. The July 2026 design recommended `jsonwebtoken 9` + `ring` + `getrandom 0.2` with the `js` feature. That advice is **out of date**: `jsonwebtoken` 11 dropped `ring`, WASM entropy configuration changed across `getrandom` 0.2/0.3/0.4, and HMAC-only signing does not need a CSPRNG at all.
+This note records the crate survey, WASM probes, and the **locked v1 auth design**. The July 2026 snippet (`jsonwebtoken 9` + `ring` + `getrandom 0.2` `js`) is outdated and must not be copied.
 
-Compile probes below used **rustc 1.98.1** (current `stable`, matching CI `dtolnay/rust-toolchain@stable`) and `--target wasm32-unknown-unknown`.
+Compile probes used **rustc 1.98.1** (`stable`) and `--target wasm32-unknown-unknown`.
+
+---
+
+## 0. Locked v1 decisions
+
+| Topic | Decision |
+|-------|----------|
+| Access token | Symmetric **HS256** JWT via **`jwt-compact` 0.8** (`default-features = false, features = ["std"]`). No RSA/EdDSA. |
+| Access claims | **`sub`, `exp`, `role` only** (`role` is `User` / `Admin`). No `iat` / `iss` / `jti` / email in the access token. |
+| Email activation | **Stateless JWT**, different secret (`JWT_VERIFY_SECRET`). Claims bind `sub` + `email` + `exp` (and a type tag so it cannot be used as access). No activation table. |
+| Session / refresh | Opaque 32-byte token in an **HttpOnly, Secure, `SameSite=Strict`** cookie (SPA and API share a domain). Row in **`auth_sessions`**. Rotate by updating `token_hash` on the same row. |
+| Session hash | **SHA-256** of the raw token (`sha2` + `subtle`). Not Argon2. Optional HMAC pepper later; not required for v1. |
+| Passwords | **Argon2id** PHC string via RustCrypto `argon2` 0.6 **without** default `getrandom` / `parallel`. Salt from `RandomSource`. `PasswordHasher` port (later). Worker params: OWASP `m=19456,t=2,p=1` (Paid plan; ~100 ms CPU). |
+| Platform ports | **`RandomSource` + `Clock` on `Platform` with default methods**, so native (and the Worker, for clock) need not implement them. WASM overrides `random()` only if the default Worker adapter is not already selected by `cfg`. |
+| Schema change | **Edit migration `001`** (`001_auth_create_users_and_token_tables`). Nothing is in production; do not add `002`. |
+| Secrets | Still a later `SecretStore`. Access vs verify secrets stay separate. HS256 secret ≥ 32 bytes. |
 
 ---
 
@@ -20,7 +36,6 @@ From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and sche
 | Sign / verify **email-activation JWT** (optional, stateless) | HMAC-SHA-256, **different secret** | No | No |
 | **Refresh / session token** (opaque, HttpOnly cookie) | 32+ random bytes, store **SHA-256** (or HMAC-SHA-256 + pepper) | **Yes** (the token) | Entropy source differs (OS vs Workers `crypto.getRandomValues`) |
 | OAuth `state`, WebAuthn challenge (later) | random bytes | **Yes** | Same as refresh |
-| JWT `jti` (optional replay id) | random bytes or UUID | **Yes** if used | Same |
 | Hash stored session token | **SHA-256**, not Argon2 | No | No — high-entropy secret |
 | **Password** | **Argon2id** (PHC string) | **Yes** (per-password salt) | Algorithm is portable Rust; **CPU/memory params** are platform-specific |
 
@@ -58,7 +73,7 @@ There is no OS entropy on this target. Backends:
 
 **A Random port does not make a transitive `getrandom` compile.** If any JWT crate links `getrandom` on WASM, the **leaf crate** (`demo/worker` or `rundtisch` with `d1`) must still enable the matching feature (and, for 0.3.3, rustflags). Two major lines (`0.2` and `0.3`/`0.4`) can coexist; **each** needs its own feature. That is the usual Workers-rs footgun.
 
-**Recommendation:** pick a JWT crate whose HS256 path has **zero** `getrandom` dependency, and implement Worker entropy ourselves via `crypto.getRandomValues`. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3.
+**Recommendation:** **`jwt-compact` HMAC-only** (locked; see §0). Worker entropy for tokens/salts is `crypto.getRandomValues` via the Random port default, not `getrandom`. Do not add `.cargo/config.toml` rustflags unless a future crate forces `getrandom` 0.3.3.
 
 ---
 
@@ -123,9 +138,9 @@ Sizes are un-`wasm-opt`’d isolated cdylibs. In the real Worker, `wasm-bindgen`
 - `HS256Key::generate()` calls `rand::rng()` (`rand` 0.10 → `getrandom` 0.4). Compile succeeded because **`ed25519-compact` enabled `getrandom/wasm_js` for us** — a transitive accident we should not rely on.
 - Author explicitly prefers JS WebCrypto JWT **in browsers**; we are a Worker, so that warning is weaker, but the binary cost remains.
 
-### 4.4 Recommendation
+### 4.4 Choice: `jwt-compact` 0.8 HMAC-only
 
-**Use `jwt-compact` 0.8** in `rundtisch`, HMAC-only:
+**Locked.** Use `jwt-compact` 0.8 in `rundtisch`:
 
 ```toml
 jwt-compact = { version = "0.8", default-features = false, features = ["std"] }
@@ -142,9 +157,7 @@ Why this over `jsonwebtoken` 11:
 
 Why not `jwt-simple`: clock works, but the graph is huge and native `boring` is a trap; HMAC-only is not selectable.
 
-**Fallback** if jwt-compact looks unmaintained when we implement: `jsonwebtoken` 11 + `rust_crypto` + explicit `getrandom` 0.2 `js` on the WASM target, and check `exp` ourselves via the Clock port (`Validation { validate_exp: false, .. }` plus manual compare). Optionally an HMAC-only `CryptoProvider` to drop RSA from the binary.
-
-**Do not** follow the July doc’s `jsonwebtoken = "9"` + `ring` setup for new code.
+**Fallback** if jwt-compact looks unmaintained when we implement: `jsonwebtoken` 11 + `rust_crypto` + explicit `getrandom` 0.2 `js` on the WASM target, and check `exp` ourselves via the Clock port. Not the v1 path.
 
 ---
 
@@ -170,34 +183,39 @@ impl dyn RandomSource {
 
 Keep it **synchronous**. Both `getrandom` on native and `crypto.getRandomValues` on Workers are sync. Do not use `crypto.subtle` here.
 
-**Adapters** (same layering as DB: traits in `rundtisch`, impls in `adapters`, platforms in `demo/` construct them):
-
-| Adapter | Where | Backend |
-|---------|--------|---------|
-| `OsRandom` | `rundtisch`, `#[cfg(not(target_arch = "wasm32"))]` | `getrandom::fill` (0.2 or 0.3 — native needs no extra feature) |
-| `WorkerRandom` | `rundtisch` `d1` feature | `js_sys` call to global `crypto.getRandomValues` (copy into `&mut [u8]`). **Do not** go through `getrandom` so the WASM graph stays free of `wasm_js` unless some other crate pulls it. |
-| `ReplayRandom` / seeded ChaCha | tests / `#[cfg(test)]` | Deterministic; never used in production platforms |
-
-Wire through `Platform`:
+**Default implementations (native platforms should not implement these).** Associated type defaults are still awkward on stable Rust, so `random` / `clock` are **default trait methods** returning trait objects. `NativePlatform` keeps only `Database`. Tests override the methods.
 
 ```rust
 pub trait Platform: 'static {
     type Database: DatabaseExecutor + Send + Sync;
-    type Random: RandomSource + Send + Sync;
     fn database(&self) -> Arc<Self::Database>;
-    fn random(&self) -> Arc<Self::Random>;
+
+    fn random(&self) -> Arc<dyn RandomSource> {
+        Arc::new(DefaultRandom)
+    }
+
+    fn clock(&self) -> Arc<dyn Clock> {
+        Arc::new(SystemClock)
+    }
 }
 ```
 
-`AppState` grows `random: Arc<P::Random>`. `NativePlatform` / `CloudflarePlatform` / `TestPlatform` supply the matching adapter.
+| Adapter | Backend | Who uses it |
+|---------|---------|-------------|
+| `OsRandom` | `getrandom::fill` | `DefaultRandom` on **non-WASM** |
+| `WorkerRandom` | `crypto.getRandomValues` via `js_sys` (not `getrandom`) | `DefaultRandom` on **`wasm32`** |
+| `SystemClock` | `time::OffsetDateTime::now_utc()` | Default on **both** (enable `time/wasm-bindgen` on `d1`) |
+| `ReplayRandom` / `FrozenClock` | deterministic | tests override `fn random` / `fn clock` |
 
-**Domain use (later, not this PR):** 32-byte session token → base64url → SHA-256 (`sha2`, not a port) → store hex/bytes in `auth_sessions.token_hash`. Never log or persist the raw token. Same `RandomSource` later supplies the 16-byte salt for Argon2id (do **not** enable `argon2`’s `getrandom` feature on WASM).
+`CloudflarePlatform` does **not** need to mention Random or Clock unless WorkerRandom later needs `Env` (it should not: `crypto` is global). `AppState` holds `database`, `random`, and `clock` filled by `from_platform`.
+
+**Domain use:** 32-byte session token → URL-safe base64 (no padding) → SHA-256 → `auth_sessions.token_hash`. Same `RandomSource` supplies the 16-byte Argon2id salt (do **not** enable `argon2`’s `getrandom` feature on WASM).
 
 Error type: small `RandomError` (`Unavailable` / `Backend(String)`), not `traits::db::Error`.
 
-### 5.2 Clock — **yes, add `Clock` in the same increment as Random**
+### 5.2 Clock — default `SystemClock`
 
-Handlers already call `time::OffsetDateTime::now_utc()` (`auth/models.rs`). JWT `iat`/`exp` and refresh `expires_at` need the same clock. Tests cannot freeze `now_utc()`. jwt-compact’s default clock is the wrong crate and panics on WASM.
+Handlers today call `time::OffsetDateTime::now_utc()` (`auth/models.rs`). JWT `exp` and session `expires_at` / `last_used_at` need the same clock. Tests freeze it via `fn clock`.
 
 ```rust
 pub trait Clock: Send + Sync {
@@ -205,10 +223,7 @@ pub trait Clock: Send + Sync {
 }
 ```
 
-- `SystemClock`: `OffsetDateTime::now_utc()` — already correct on WASM when `d1` enables `time/wasm-bindgen`.
-- `FrozenClock`: tests.
-
-Not async. JWT adapter converts to unix seconds / `chrono` only at the jwt-compact boundary.
+`SystemClock` is the default on native **and** WASM (`d1` already enables `time/wasm-bindgen`). jwt-compact’s `TimeOptions::default()` (`chrono::Utc::now()`) must **not** be used; pass `TimeOptions::new(leeway, || clock.now_utc()…)` at the adapter boundary.
 
 ### 5.3 Secrets — already planned; needed before signing
 
@@ -220,14 +235,14 @@ HS256 secret: **≥ 256 bits** (32 bytes). jwt-compact can enforce this via `Str
 
 Signing is CPU-only and the same on native and WASM if we stay on hmac+sha2. Making `TokenIssuer` a `Platform` associated type would imply a Worker WebCrypto adapter we do not want for v1.
 
-Put a small **in-crate service** next to auth (e.g. `auth/jwt.rs` or `adapters/jwt.rs`) that:
+Put a small **in-crate service** next to auth (e.g. `auth/jwt.rs`) that:
 
-- takes `&dyn Clock` (or `Arc<P::Clock>`) and the secret bytes;
-- encodes/decodes typed claims with `Hs256`;
-- pins `token_type` / `iss` in claims (`access` vs `email_verification`);
+- takes `&dyn Clock` and the HS256 secret bytes;
+- encodes/decodes **access** claims `{ sub, exp, role }` with `Hs256`;
+- encodes/decodes **email-activation** JWTs with a **different** secret and claims (`sub`, `email`, `exp`, plus a type tag);
 - maps crate errors to a domain `TokenError`.
 
-Handler tests can use a real HS256 key and `FrozenClock`. A `TokenIssuer` trait is optional sugar; do not add it until a second implementation exists.
+Handler tests can use a real HS256 key and `FrozenClock`.
 
 ### 5.5 Password hasher — **yes, a port; not the same as session hashing**
 
@@ -240,58 +255,68 @@ See [§11](#11-hashing-on-wasm-sessions-vs-passwords). Session `token_hash` stay
 
 ---
 
-## 6. Suggested claims (v1)
+## 6. Tokens, cookie, and `auth_sessions`
 
-Access token (Bearer, 5–15 minutes, memory on the client):
+### Access JWT (Bearer, 5–15 min, memory on the client)
 
 ```json
 {
   "sub": "123",
   "role": "User",
-  "typ": "access",
-  "iss": "rundtisch",
-  "iat": 0,
   "exp": 0
 }
 ```
 
-Email activation JWT (if we skip an activation-token table): `typ: "email_verification"`, include `email`, sign with **`JWT_VERIFY_SECRET`**, short `exp`. Verify with `UPDATE … WHERE id = ? AND email = ?` as in the July note.
+Verify with typed `Hs256` only. Check `exp` via `Clock` + small leeway. Role changes take effect when the access token expires.
 
-Do not put the refresh token in a JWT. Opaque random + DB hash + rotation stays as designed.
+### Email activation JWT (stateless)
 
-Verification must:
+Separate secret. Claims: `sub`, `email`, `exp`, plus a type tag that the access-token verifier rejects. Activation:
 
-1. Use **only** `Hs256` (typed API).
-2. Reject wrong `typ` (activation JWT is not an access token).
-3. Check `exp` via Clock + small leeway (jwt-compact default leeway is 60s if we use `TimeOptions`).
-4. Not trust a client-supplied `alg` header.
+```sql
+UPDATE auth_users SET email_verified_at = ? WHERE id = ? AND email = ?;
+```
+
+No extra table.
+
+### Session cookie
+
+HttpOnly, Secure, **`SameSite=Strict`** (frontend and API are the same site). Value: 32 CSPRNG bytes, URL-safe base64 without padding. Never persist the raw value.
+
+### `auth_sessions` (edit migration `001`, no `002`)
+
+SQLite for the demo is in `demo/migrations/001_auth_create_users_and_token_tables.sql` (regenerate with `generate_auth_migrations`). Nothing is in production, so this rewrite is the whole schema change.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `id` | integer PK | Stable across token rotation |
+| `user_id` | integer FK → `auth_users` ON DELETE CASCADE | |
+| `token_hash` | string UNIQUE | SHA-256 (hex) of the cookie |
+| `created_at` | RFC 3339 string | |
+| `last_used_at` | RFC 3339 string | Update **only** on `/auth/refresh` |
+| `expires_at` | RFC 3339 string | Absolute lifetime |
+| `revoked_at` | RFC 3339 string NULL | Active = `revoked_at IS NULL AND expires_at > now` |
+| `user_agent` | string NULL | Display only; cap ~512 in application code |
+
+On refresh: look up by `token_hash`, reject if revoked/expired, generate a new raw token, **UPDATE** `token_hash` + `last_used_at` on the same `id`. Logout sets `revoked_at`. Logout-all updates every row for that `user_id`. Reuse detection (`previous_token_hash`) is deferred.
 
 ---
 
-## 7. Implementation sequence (when we start coding)
+## 7. Implementation sequence
 
-Do not combine all of this with login/refresh in one PR.
+1. **Ports:** `RandomSource` + `Clock` with default methods; `AppState` fields; tests with `ReplayRandom` / `FrozenClock`. Native and Cloudflare platforms stay Database-only.
+2. **JWT helper:** `jwt-compact` HS256, access claims `{sub, exp, role}`, activation JWT tests. `cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown`.
+3. **Secrets + sessions + login:** `SecretStore`, Argon2id `PasswordHasher`, issue access JWT, persist `auth_sessions`, Strict cookie, Bearer extractor.
 
-1. **Ports only:** `RandomSource` + `Clock`, adapters, `Platform` / `AppState` / native + Worker + test platforms. Replace `now_utc()` in auth models/handlers with `state.clock`. Unit-test `WorkerRandom` shape with a thin JS mock if feasible; always test `OsRandom` + `FrozenClock` + `ReplayRandom`.
-2. **JWT helper:** add `jwt-compact` (HMAC-only), claims structs, encode/decode tests (native). `cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown` in CI (already used on some PRs). Still no HTTP.
-3. **Secrets + sessions + login:** `SecretStore`, issue access JWT, persist `auth_sessions` row (Random + SHA-256), Argon2id `PasswordHasher` with Worker-safe params, Axum extractor/middleware for `Authorization: Bearer`.
-
-CI should keep compiling the Worker target on every PR that touches crypto features.
+CI should keep compiling the Worker target on every PR that touches crypto.
 
 ---
 
-## 8. Open questions
+## 8. Remaining (not blocking ports / JWT helper)
 
-1. **HS256 vs Ed25519/ES256 for v1?** Recommendation: **HS256**. This process is both issuer and verifier; Worker secrets hold a shared key; no RNG in the signer; smallest WASM. Asymmetric only if another service must verify without the secret.
-2. **Access-token claims:** `sub` + `role` only, or also `email` / `alias`? Role in the token avoids a D1 hit on every request but delays revocation of role changes until expiry (5–15 min).
-3. **Email activation:** stateless JWT (July follow-up) vs hashed token in DB? Schema today has `email_verified_at` and **no** activation table. JWT fits that.
-4. **jwt-compact 0.8 age:** accept 2024 stable, or prefer `jsonwebtoken` 11 + `getrandom` 0.2 `js` for maintenance? This note prefers jwt-compact; easy to reverse in step 2 before HTTP exists.
-5. **Clock in the same PR as Random?** Recommendation: **yes** — JWT and `expires_at` need it, and `now_utc()` is already scattered.
-6. **Refresh token encoding:** raw 32 bytes as URL-safe base64 (no padding), 256-bit. Cookie flags: `HttpOnly`, `Secure`, `SameSite=Lax` or `Strict`? SPA on the same origin can use Strict; confirm cookie vs JSON body for native API clients.
-7. **`jti` on access tokens?** Only useful with a denylist; skip for v1 to keep the API stateless.
-8. **Secret rotation / `kid`?** Skip for v1; one access secret, one verify secret.
-9. **Workers plan for Argon2id?** OWASP `m=19456,t=2,p=1` needs ~100 ms CPU — **Paid**, not Free (10 ms). Confirm the demo account is Paid before login ships.
-10. **Session token hash:** bare SHA-256 vs HMAC-SHA-256 with a `SESSION_PEPPER` secret?
+- Confirm **Paid Workers** before register/login (Argon2id ~100 ms; Free is 10 ms).
+- Optional `SESSION_PEPPER` HMAC instead of bare SHA-256.
+- Concrete access-token TTL (5 vs 15 min) and session TTL (days).
 
 ---
 
@@ -359,7 +384,7 @@ hmac = "0.12"
 
 `sha2` is pure Rust, no `getrandom`. Compare with `subtle::ConstantTimeEq`, not `==`.
 
-Optional hardening: store `HMAC-SHA-256(SESSION_PEPPER, raw_token)` instead of bare SHA-256 so a DB dump is useless without the Worker secret (`SecretStore`). Still not a port.
+Optional later: store `HMAC-SHA-256(SESSION_PEPPER, raw_token)` instead of bare SHA-256 so a DB dump is useless without the Worker secret. Not v1.
 
 ### 11.2 Passwords — Argon2id, **do** add a port
 
