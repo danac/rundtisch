@@ -18,8 +18,8 @@ Compile probes used **rustc 1.98.1** (`stable`) and `--target wasm32-unknown-unk
 | Access claims | **`sub`, `exp`, `role` only** (`role` is `User` / `Admin`). No `iat` / `iss` / `jti` / email in the access token. |
 | Email activation | **Stateless JWT**, different secret (`JWT_VERIFY_SECRET`). Claims bind `sub` + `email` + `exp` (and a type tag so it cannot be used as access). No activation table. |
 | Session / refresh | Opaque 32-byte token in an **HttpOnly, Secure, `SameSite=Strict`** cookie (SPA and API share a domain). Row in **`auth_sessions`**. Rotate by updating `token_hash` on the same row. |
-| Session hash | **SHA-256** of the raw token (`sha2` + `subtle`). Not Argon2. Optional HMAC pepper later; not required for v1. |
-| Passwords | **Argon2id** PHC string via RustCrypto `argon2` 0.6 **without** default `getrandom` / `parallel`. Salt from `RandomSource`. `PasswordHasher` port (later). Worker params: OWASP `m=19456,t=2,p=1` (Paid plan; ~100 ms CPU). |
+| Session hash | **SHA-256** of the raw token (`sha2` + `subtle`). Not Argon2. Fine on Free Workers. Optional HMAC pepper later; not required for v1. |
+| Passwords | **Argon2id** is still the algorithm, but **not executed on Free Workers** (10 ms CPU). Native: OWASP `m=19456,t=2,p=1` via `PasswordHasher`. Worker v1: **no password KDF** — magic-link / activation JWT (`password_hash` stays NULL). Do not ship PBKDF2-100k or a weakened Argon2 as the crate default. Paid hasher Worker via service binding is a later upgrade. |
 | Platform ports | **`RandomSource` + `Clock` on `Platform` with default methods**, so native (and the Worker, for clock) need not implement them. WASM overrides `random()` only if the default Worker adapter is not already selected by `cfg`. |
 | Schema change | **Edit migration `001`** (`001_auth_create_users_and_token_tables`). Nothing is in production; do not add `002`. |
 | Secrets | Still a later `SecretStore`. Access vs verify secrets stay separate. HS256 secret ≥ 32 bytes. |
@@ -37,9 +37,9 @@ From the existing flow ([auth-flow-diagram.md](./auth-flow-diagram.md)) and sche
 | **Refresh / session token** (opaque, HttpOnly cookie) | 32+ random bytes, store **SHA-256** (or HMAC-SHA-256 + pepper) | **Yes** (the token) | Entropy source differs (OS vs Workers `crypto.getRandomValues`) |
 | OAuth `state`, WebAuthn challenge (later) | random bytes | **Yes** | Same as refresh |
 | Hash stored session token | **SHA-256**, not Argon2 | No | No — high-entropy secret |
-| **Password** | **Argon2id** (PHC string) | **Yes** (per-password salt) | Algorithm is portable Rust; **CPU/memory params** are platform-specific |
+| **Password** | **Argon2id** (PHC string) on native / Paid | **Yes** (per-password salt) | Algorithm is portable Rust; **CPU budget is not** — Free Workers cannot run it |
 
-So: **JWT HMAC and SHA-256 are portable library problems. Random bytes are a platform problem. Argon2id is a portable library with a platform-specific budget.** Do not put session tokens and passwords through the same hash.
+So: **JWT HMAC and SHA-256 are portable library problems. Random bytes are a platform problem. Argon2id is a portable library that the Free Worker cannot afford.** Do not put session tokens and passwords through the same hash.
 
 ECDSA (`ES256`) signing needs a per-signature nonce (CSPRNG). RSA-PSS needs blinding. We should not pick those for v1 on Workers.
 
@@ -246,7 +246,7 @@ Handler tests can use a real HS256 key and `FrozenClock`.
 
 ### 5.5 Password hasher — **yes, a port; not the same as session hashing**
 
-See [§11](#11-hashing-on-wasm-sessions-vs-passwords). Session `token_hash` stays a library call (`sha2`). Passwords get a `PasswordHasher` port so tests, Worker params, and a later service-binding offload can differ without touching handlers.
+See [§11](#11-hashing-on-wasm-sessions-vs-passwords). Session `token_hash` stays a library call (`sha2`). Passwords get a `PasswordHasher` port so **native Argon2id**, **Worker Free (no KDF)**, tests, and a later Paid hasher Worker can differ without touching handlers.
 
 ### 5.6 What we will **not** port
 
@@ -306,7 +306,7 @@ On refresh: look up by `token_hash`, reject if revoked/expired, generate a new r
 
 1. **Ports:** `RandomSource` + `Clock` with default methods; `AppState` fields; tests with `ReplayRandom` / `FrozenClock`. Native and Cloudflare platforms stay Database-only.
 2. **JWT helper:** `jwt-compact` HS256, access claims `{sub, exp, role}`, activation JWT tests. `cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown`.
-3. **Secrets + sessions + login:** `SecretStore`, Argon2id `PasswordHasher`, issue access JWT, persist `auth_sessions`, Strict cookie, Bearer extractor.
+3. **Secrets + sessions + login:** `SecretStore`, native Argon2id `PasswordHasher`, Worker magic-link (reuse activation JWT), issue access JWT, persist `auth_sessions`, Strict cookie, Bearer extractor.
 
 CI should keep compiling the Worker target on every PR that touches crypto.
 
@@ -314,9 +314,9 @@ CI should keep compiling the Worker target on every PR that touches crypto.
 
 ## 8. Remaining (not blocking ports / JWT helper)
 
-- Confirm **Paid Workers** before register/login (Argon2id ~100 ms; Free is 10 ms).
 - Optional `SESSION_PEPPER` HMAC instead of bare SHA-256.
 - Concrete access-token TTL (5 vs 15 min) and session TTL (days).
+- Later: Paid hasher Worker + service binding if password login must run on the edge.
 
 ---
 
@@ -388,16 +388,16 @@ Optional later: store `HMAC-SHA-256(SESSION_PEPPER, raw_token)` instead of bare 
 
 ### 11.2 Passwords — Argon2id, **do** add a port
 
-Argon2id is the right algorithm (OWASP first choice). The RustCrypto **`argon2` 0.6** crate is `no_std`, compiles to `wasm32-unknown-unknown`, and does **not** need `getrandom` if we generate the salt ourselves.
+Argon2id is the right algorithm (OWASP first choice) **on native**. The RustCrypto **`argon2` 0.6** crate is `no_std`, compiles to `wasm32-unknown-unknown`, and does **not** need `getrandom` if we generate the salt ourselves. Compiling it on WASM is not the same as **running** it on Free Workers — see [§11.3](#113-free-workers-no-password-kdf-on-the-isolate).
 
 ```toml
-# Worker / lib — do not use crate defaults
+# Native hasher (and a later Paid hasher Worker) — never enable crate defaults
 argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash", "zeroize"] }
 ```
 
 | Feature | Use on WASM? |
 |---------|----------------|
-| `alloc` + `password-hash` | **Yes** — PHC strings (`$argon2id$v=19$m=…`) |
+| `alloc` + `password-hash` | **Yes** — PHC strings (`$argon2id$v=19$m=…`) — compile-checked; **do not call this on Free** |
 | `zeroize` | Yes |
 | **`getrandom`** (in default features) | **No** — would reintroduce the WASM entropy footgun. Pass 16 salt bytes from `RandomSource`. |
 | `parallel` / `rayon` | **No** — Workers have no threads. `p=1`. |
@@ -406,24 +406,43 @@ Hash API: `Argon2::hash_password(password, &salt)` → store the **full PHC stri
 
 Salt: `RandomSource::fill_bytes` → 16 bytes → `password_hash::SaltString`. This is why Random is a platform port and Argon2 itself is not.
 
-### 11.3 Worker CPU / memory (this is the real constraint)
+### 11.3 Free Workers: no password KDF on the isolate
+
+We are targeting **Workers Free**. That is a hard CPU ceiling, not a soft preference.
 
 | Plan | CPU per request | Memory per isolate |
 |------|-----------------|--------------------|
-| Workers **Free** | **10 ms** | 128 MB |
+| Workers **Free** (this project) | **10 ms** | 128 MB |
 | Workers **Paid** | 30 s default (up to 5 min) | 128 MB |
 
-OWASP minimum Argon2id: **m=19456 (19 MiB), t=2, p=1**. Public measurements of Rust Argon2id at those params on a CF Worker are on the order of **~100 ms CPU** — fine on Paid, **impossible on Free**. 19 MiB is comfortable inside 128 MB if we are not hashing many passwords concurrently on one isolate.
+[Limits](https://developers.cloudflare.com/workers/platform/limits/): CPU is *execution* time. `fetch` / D1 / service-binding wait does **not** count; hashing **does**. Exceeding the cap is Error 1102 (`exceededCpu`). Cloudflare notes the isolate has some infrequent-overage slack, then starts killing invocations that stay over the limit.
 
-Web Crypto on Workers offers **PBKDF2**, not Argon2, and production PBKDF2 is capped (historically 100k iterations). Do not use it as the primary password KDF.
+| Job | Fits Free 10 ms? |
+|-----|------------------|
+| HMAC-SHA-256 JWT sign/verify (~200 bytes) | **Yes** |
+| SHA-256 of a 32-byte session token | **Yes** |
+| Web Crypto `PBKDF2-SHA-256` at the production cap (**100,000** iterations) | **No** — ~40 ms in published Worker measurements; [OWASP wants 600,000](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html); workerd **throws** above 100k rather than clamping ([Jul 2026 write-up](https://dxdev.com/blog/2026-07-09_cf-pbkdf2-workers-limit/), [workerd#1346](https://github.com/cloudflare/workerd/issues/1346)) |
+| Argon2id OWASP `m=19456,t=2,p=1` in WASM | **No** — ~100 ms ([lucia + Rust hasher tutorial](https://mli.puffinsystems.com/blog/lucia-auth-cloudflare-argon2)) |
+| Weakened Argon2 / bcrypt-cost-4 to squeeze under 10 ms | Fits the clock; **not an acceptable crate default** (GPU-cheap, below OWASP) |
 
-Practical policy:
+**A second Worker via service binding does not help on Free.** The hasher isolate also has 10 ms. The lucia/argon2-cloudflare pattern needs **Paid** on the hasher. Durable Objects on Free inherit the same Worker CPU plan; do not treat them as an Argon2 escape hatch.
 
-- Target **Paid Workers** for register/login, or accept that Free cannot do real Argon2id.
-- Use **p=1**, OWASP `m=19456,t=2` on the Worker; native can use a heavier preset (`m=47104,t=1` or higher) — that difference is why a port exists.
-- Login/register only. Never on the Bearer path.
+**Recommended approach (locked):**
 
-A dedicated hashing Worker + service binding (the lucia/argon2-cloudflare pattern) is a later optimisation if login CPU shows up in metrics. A `PasswordHasher` port lets us move there without rewriting handlers.
+1. **Session `token_hash`:** SHA-256 in-process on every platform, including Free. Do not Argon2 the cookie.
+2. **Passwords:** Argon2id PHC strings, **only where CPU allows**.
+   - **Native** (`cargo run -p rundtisch-demo --features native`): in-process Argon2id, OWASP `m=19456,t=2,p=1` (native can go heavier).
+   - **Free Worker:** **do not hash or verify passwords**. Register/login on the Worker is **magic-link** — reuse the stateless activation JWT (`JWT_VERIFY_SECRET`). `auth_users.password_hash` stays `NULL` (already nullable for OAuth-only users).
+3. **Upgrade path:** if password login must run on the edge later, add a **Paid** hasher Worker and call it over a service binding. Waiting is I/O on the main Worker; the hasher needs the Paid CPU budget. Keep that behind `PasswordHasher`.
+
+**Rejected as crate defaults**
+
+- SHA-256 / HMAC-SHA-256 of the password (even with a pepper). Fast hashes belong on session tokens, not passwords.
+- Web Crypto PBKDF2 at 100k. Below OWASP, still over 10 ms, platform-capped.
+- Client-side hashing. The hash becomes the password equivalent without OPAQUE/SRP (out of scope).
+- Lowering Argon2 memory/time until it fits 10 ms, then shipping that as `WorkerArgon2`.
+
+A pepper (`HMAC(PEPPER, password)` before Argon2, or HMAC of the session token) is still useful later as defense-in-depth. It is **not** a substitute for a slow KDF.
 
 ### 11.4 `PasswordHasher` port (sketch)
 
@@ -438,25 +457,25 @@ pub trait PasswordHasher: Send + Sync {
 
 | Adapter | Behaviour |
 |---------|-----------|
-| `Argon2Hasher` | RustCrypto Argon2id, PHC string, salt from `RandomSource`, optional pepper from `SecretStore` |
-| `WorkerArgon2` | Same crate, Worker params (`m=19456,t=2,p=1`) |
-| `NativeArgon2` | Same crate, stronger params |
+| `NativeArgon2` | RustCrypto Argon2id, PHC string, salt from `RandomSource`, OWASP (or heavier) params |
+| `UnsupportedOnWorker` | `hash`/`verify` return a domain error — Free Worker uses magic-link instead |
+| `PaidWorkerArgon2` | Later: same crate, OWASP params, behind a Paid service binding (`impl Future`) |
 | `TestPasswordHasher` | Fast, deterministic (never production) |
 
-Wire as `type PasswordHasher: …` on `Platform` **or** as a field on `AppState` constructed in `from_platform`. Either is fine; do **not** merge it with `RandomSource` or a generic “Hasher” that also does SHA-256.
+Wire as a field on `AppState` constructed in `from_platform`. Do **not** merge it with `RandomSource` or a generic “Hasher” that also does SHA-256.
 
-`hash` / `verify` can stay **sync**. Argon2 is CPU-bound; making it async does not yield the isolate (no threads). If we later call a service binding, the trait methods become `impl Future + Send` like `DatabaseExecutor`.
+On native, `hash` / `verify` can stay **sync**. If we later call a Paid hasher Worker, the trait methods become `impl Future + Send` like `DatabaseExecutor`.
 
 ### 11.5 WASM dependency / port map (sessions + passwords)
 
-| Need | Mechanism | WASM issue |
-|------|-----------|------------|
+| Need | Mechanism | WASM / Free issue |
+|------|-----------|-------------------|
 | Session token bytes | **`RandomSource` port** | `crypto.getRandomValues` vs OS |
-| Session `token_hash` | `sha2` (+ optional `hmac` pepper) | None |
-| JWT access token | `jwt-compact` HS256 | None if HMAC-only |
-| JWT `iat`/`exp`, `expires_at` | **`Clock` port** | `time` + `wasm-bindgen` already on `d1` |
+| Session `token_hash` | `sha2` (+ optional `hmac` pepper) | None — fits 10 ms |
+| JWT access token | `jwt-compact` HS256 | None if HMAC-only — fits 10 ms |
+| JWT `exp`, `expires_at` | **`Clock` port** | `time` + `wasm-bindgen` already on `d1` |
 | Signing / pepper secrets | **`SecretStore` port** (already stubbed) | Worker secrets vs env |
-| Password salt | **`RandomSource`** again | Same as session token |
-| Password hash / verify | **`PasswordHasher` port** → `argon2` 0.6 without `getrandom`/`parallel` | CPU ~100 ms; Paid plan; 19 MiB RAM |
+| Password salt | **`RandomSource`** (native hasher only) | Same as session token |
+| Password hash / verify | **`PasswordHasher` port** → native Argon2id; **no KDF on Free Worker** | 10 ms CPU; magic-link instead |
 
 No extra port for “hashing in general.”
