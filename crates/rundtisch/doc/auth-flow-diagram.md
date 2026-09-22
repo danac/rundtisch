@@ -243,6 +243,8 @@ User          Frontend        REST API        Email           Database
 
 Email activation is a **stateless JWT** (separate secret). No activation table.
 
+On **Free Workers**, `password_hash` stays NULL: no in-isolate password KDF (10 ms CPU). Password Argon2id is a **native** `PasswordHasher`. Worker login is magic-link (same activation-JWT shape).
+
 ---
 
 ## Token summary
