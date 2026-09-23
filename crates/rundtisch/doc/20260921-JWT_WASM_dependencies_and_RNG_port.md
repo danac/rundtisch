@@ -208,7 +208,7 @@ pub trait Platform: 'static {
 | `OsRandom` | `getrandom::fill` | `DefaultRandom` on **non-WASM** |
 | `WorkerRandom` | `crypto.getRandomValues` via `js_sys` (not `getrandom`) | `DefaultRandom` on **`wasm32`** |
 | `SystemClock` | `time::OffsetDateTime::now_utc()` | Default on **both** (enable `time/wasm-bindgen` on `d1`) |
-| `ReplayRandom` / `FrozenClock` | deterministic | tests override `fn random` / `fn clock` |
+| `ReplayRandom` / `FrozenClock` | deterministic | tests override `fn random` / `fn clock` (`ReplayRandom` is `#[cfg(test)]` only) |
 
 `CloudflarePlatform` does **not** need to mention Random or Clock unless WorkerRandom later needs `Env` (it should not: `crypto` is global). `AppState` holds `database`, `random`, `clock`, and later `secrets` filled by `from_platform`.
 
