@@ -1,9 +1,5 @@
 use std::fmt;
 
-pub const JWT_ACCESS_SECRET: &str = "JWT_ACCESS_SECRET";
-pub const JWT_VERIFY_SECRET: &str = "JWT_VERIFY_SECRET";
-pub const HASH_PEPPER: &str = "HASH_PEPPER";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SecretError {
     NotFound,

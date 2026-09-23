@@ -1,4 +1,7 @@
-use crate::auth::config::{ACCESS_TTL, SESSION_COOKIE, SESSION_TTL};
+use crate::auth::config::{
+    ACCESS_TTL, AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET, SESSION_COOKIE,
+    SESSION_TTL,
+};
 use crate::auth::error::AuthError;
 use crate::auth::extract::{BearerUser, secret_bytes};
 use crate::auth::jwt::{issue_access_token, issue_activation_token, verify_activation_token};
@@ -15,7 +18,6 @@ use crate::auth::session::{
     session_cookie_header, token_hash,
 };
 use crate::traits::db::{DatabaseExecutor, Error};
-use crate::traits::secrets::{HASH_PEPPER, JWT_ACCESS_SECRET, JWT_VERIFY_SECRET};
 use crate::{AppState, Platform};
 use axum::Json;
 use axum::extract::{Path, State};
@@ -155,8 +157,8 @@ async fn issue_tokens<P: Platform>(
     user: &User,
     headers: &HeaderMap,
 ) -> Result<(String, String), AuthError> {
-    let access_secret = secret_bytes(&*state.secrets, JWT_ACCESS_SECRET, 32)?;
-    let pepper = secret_bytes(&*state.secrets, HASH_PEPPER, 32)?;
+    let access_secret = secret_bytes(&*state.secrets, AUTH_JWT_ACCESS_SECRET, 32)?;
+    let pepper = secret_bytes(&*state.secrets, AUTH_HASH_PEPPER, 32)?;
     let access_token =
         issue_access_token(user.public_id, user.role, &access_secret, &*state.clock)?;
     let raw = generate_session_token(&*state.random)?;
@@ -239,7 +241,7 @@ async fn register_inner<P: Platform>(
     new_user.stamp_now(state.clock.now_utc());
     let id = state.database.insert(user_insert_query(&new_user)).await?;
     let user = User::from_new(id, new_user);
-    let verify_secret = secret_bytes(&*state.secrets, JWT_VERIFY_SECRET, 32)?;
+    let verify_secret = secret_bytes(&*state.secrets, AUTH_JWT_VERIFY_SECRET, 32)?;
     let activation_token = issue_activation_token(
         user.public_id,
         user.email.as_ref(),
@@ -270,7 +272,7 @@ async fn activate_inner<P: Platform>(
     state: AppState<P>,
     body: ActivateBody,
 ) -> Result<axum::response::Response, AuthError> {
-    let verify_secret = secret_bytes(&*state.secrets, JWT_VERIFY_SECRET, 32)?;
+    let verify_secret = secret_bytes(&*state.secrets, AUTH_JWT_VERIFY_SECRET, 32)?;
     let claims = verify_activation_token(&body.token, &verify_secret, &*state.clock)?;
     let result = state
         .database
@@ -356,7 +358,7 @@ async fn refresh_inner<P: Platform>(
     headers: HeaderMap,
 ) -> Result<axum::response::Response, AuthError> {
     let raw = cookie_value(&headers, SESSION_COOKIE).ok_or(AuthError::InvalidToken)?;
-    let pepper = secret_bytes(&*state.secrets, HASH_PEPPER, 32)?;
+    let pepper = secret_bytes(&*state.secrets, AUTH_HASH_PEPPER, 32)?;
     let hash = token_hash(&pepper, &raw)
         .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     let session = state
@@ -379,7 +381,7 @@ async fn refresh_inner<P: Platform>(
         .database
         .execute(session_rotate_query(session.id, &new_hash, now))
         .await?;
-    let access_secret = secret_bytes(&*state.secrets, JWT_ACCESS_SECRET, 32)?;
+    let access_secret = secret_bytes(&*state.secrets, AUTH_JWT_ACCESS_SECRET, 32)?;
     let access_token =
         issue_access_token(user.public_id, user.role, &access_secret, &*state.clock)?;
     Ok(login_response(&user, access_token, new_raw))
@@ -400,7 +402,7 @@ async fn logout_inner<P: Platform>(
     headers: HeaderMap,
 ) -> Result<axum::response::Response, AuthError> {
     if let Some(raw) = cookie_value(&headers, SESSION_COOKIE) {
-        let pepper = secret_bytes(&*state.secrets, HASH_PEPPER, 32)?;
+        let pepper = secret_bytes(&*state.secrets, AUTH_HASH_PEPPER, 32)?;
         if let Ok(hash) = token_hash(&pepper, &raw) {
             if let Ok(Some(session)) = state
                 .database
@@ -441,13 +443,13 @@ mod tests {
     use crate::adapters::clock::SystemClock;
     use crate::adapters::db::sqlite::SqliteExecutor;
     use crate::adapters::secrets::MapSecretStore;
+    use crate::auth::config::{AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET};
     use crate::auth::migrations::auth_migration_001::AuthMigration001;
     use crate::auth::models::Role;
     use crate::auth::password::TestPasswordHasher;
     use crate::traits::clock::Clock;
     use crate::traits::db::{Dialect, Migration, schema_to_sql};
     use crate::traits::random::RandomSource;
-    use crate::traits::secrets::{HASH_PEPPER, JWT_ACCESS_SECRET, JWT_VERIFY_SECRET};
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
     use std::sync::Arc;
@@ -487,9 +489,9 @@ mod tests {
 
     fn test_secrets() -> MapSecretStore {
         MapSecretStore::new([
-            (JWT_ACCESS_SECRET, ACCESS_SECRET),
-            (JWT_VERIFY_SECRET, VERIFY_SECRET),
-            (HASH_PEPPER, PEPPER),
+            (AUTH_JWT_ACCESS_SECRET, ACCESS_SECRET),
+            (AUTH_JWT_VERIFY_SECRET, VERIFY_SECRET),
+            (AUTH_HASH_PEPPER, PEPPER),
         ])
     }
 

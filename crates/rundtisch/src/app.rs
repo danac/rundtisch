@@ -1,8 +1,9 @@
+use crate::auth::AUTH_HASH_PEPPER;
 use crate::auth::password::{Argon2idHasher, PasswordHasher};
 use crate::traits::Platform;
 use crate::traits::clock::Clock;
 use crate::traits::random::RandomSource;
-use crate::traits::secrets::{HASH_PEPPER, SecretStore};
+use crate::traits::secrets::SecretStore;
 use std::sync::Arc;
 
 pub struct AppState<P: Platform> {
@@ -44,7 +45,7 @@ fn hasher_from_secrets(
     secrets: &dyn SecretStore,
     random: Arc<dyn RandomSource>,
 ) -> Arc<dyn PasswordHasher> {
-    match secrets.get(HASH_PEPPER) {
+    match secrets.get(AUTH_HASH_PEPPER) {
         Ok(pepper) if pepper.len() == 32 => {
             Arc::new(Argon2idHasher::new(random, pepper.into_bytes()))
         }

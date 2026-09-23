@@ -61,12 +61,11 @@ impl SecretStore for WorkerSecretStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::secrets::HASH_PEPPER;
 
     #[test]
     fn map_store_returns_values() {
-        let store = MapSecretStore::new([(HASH_PEPPER, "pepper-value")]);
-        assert_eq!(store.get(HASH_PEPPER).unwrap(), "pepper-value");
+        let store = MapSecretStore::new([("example-secret", "pepper-value")]);
+        assert_eq!(store.get("example-secret").unwrap(), "pepper-value");
         assert_eq!(store.get("missing").unwrap_err(), SecretError::NotFound);
     }
 }

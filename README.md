@@ -209,7 +209,7 @@ Workflow: `.github/workflows/deploy.yml`
 | Push to `main` | Test lib → build frontend → `wrangler deploy` (production) |
 | Pull request to `main` | Test lib → build frontend → preview alias `pr-<N>` |
 
-CI steps: checkout → Node.js + Rust toolchains → Cargo cache → `cargo test -p rundtisch --features sqlite` → WASM `d1` check → `npm ci` + `npm run build` in `demo/web/` → Wrangler deploy (which compiles WASM via `build.command`). Auth secrets (`JWT_ACCESS_SECRET`, `JWT_VERIFY_SECRET`, `HASH_PEPPER`) must be set on the Worker for login to work.
+CI steps: checkout → Node.js + Rust toolchains → Cargo cache → `cargo test -p rundtisch --features sqlite` → WASM `d1` check → `npm ci` + `npm run build` in `demo/web/` → Wrangler deploy (which compiles WASM via `build.command`). Auth secrets (`AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET`, `AUTH_HASH_PEPPER`) must be set on the Worker for login to work.
 
 Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **Cloudflare Workers** environment.
 
