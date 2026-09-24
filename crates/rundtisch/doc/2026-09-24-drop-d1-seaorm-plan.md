@@ -1,6 +1,6 @@
 # Drop Cloudflare D1 and move persistence to SeaORM
 
-Status: **plan only**. This document does not change runtime code. Implementation starts only after the open questions at the end are answered.
+Status: **plan only**. This document does not change runtime code. Database engine, migration apply in CI, and Wasmer packaging are decided below and are not open questions.
 
 Synced to GitHub `main` at `0b13339` (`Implement v1 JWT auth: ports, Argon2id, sessions, demo login (#23)`).
 
@@ -15,20 +15,26 @@ Auth behavior stays: users, sessions, Argon2id, jwt-compact HS256, the same HTTP
 ## Target shape
 
 ```text
-native binary (demo/api/src/bin/native.rs)
+demo/api/src/bin/native.rs
     │
     ▼
-Database::connect(DATABASE_URL) -> sea_orm::DatabaseConnection
+native_platform.rs
+    Database::connect(DATABASE_URL) -> sea_orm::DatabaseConnection
+    (sqlite, mysql, or postgres — chosen only here)
     │
     ▼
-AppState { db }
-    │  secret(name) -> std::env::var
+AppState { db }                         secret(name) -> std::env::var
+    │
     ▼
 Axum handlers (no Platform type parameter)
     │
     ▼
-SeaORM entities in auth/  (no SeaQuery, no DatabaseExecutor)
+SeaORM entities + auth::migrations()    demo Migrator lists those migrations
 ```
+
+The library never selects a backend. `sea_orm::DatabaseConnection` already wraps whichever sqlx pool it was built from. `rundtisch` compiles SeaORM with the sqlite, mysql, and postgres drivers together, and it does **not** grow `sqlite` / `mysql` / `postgres` feature flags. The `d1` and `sqlite` features that exist today are removed. The demo’s `native` and `cloudflare` features are removed with them.
+
+`native.rs` calls into `native_platform.rs` to open the connection and build `AppState`. A `sqlite://`, `mysql://`, or `postgres://` `DATABASE_URL` is the only switch. Handlers, entities, and queries do not branch on the backend.
 
 `AppState` holds the connection and nothing else. Secrets are one method:
 
@@ -67,14 +73,17 @@ Delete:
 
 Stop building SQL with SeaQuery. `auth/queries.rs` today returns `SelectStatement` / `InsertStatement` / `UpdateStatement` / `DeleteStatement` (`user_list_query`, `user_insert_query`, `session_rotate_query`, …). Those functions become async functions that take `&DatabaseConnection` and return models or `DbErr`.
 
-The connection is opened in the demo binary, not behind a trait:
+The connection is opened in the demo, not behind a trait. `native_platform.rs` stops implementing `Platform` and becomes the place that builds the connection:
 
 ```rust
-let db = sea_orm::Database::connect(&database_url).await?;
-let state = AppState { db };
+// demo/api/src/native_platform.rs
+pub async fn connect() -> Result<DatabaseConnection, DbErr> {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    sea_orm::Database::connect(&url).await
+}
 ```
 
-`SQLITE_PATH` and `NativePlatform` go away with this step (wiring finishes in steps 3 and 6).
+`native.rs` calls `connect()`, puts the connection in `AppState`, and serves. `SQLITE_PATH` goes away; SQLite is just another `DATABASE_URL` (`sqlite://…` or `sqlite::memory:` in tests). There is no `sqlite` / `mysql` / `postgres` Cargo feature on `rundtisch` or `rundtisch-demo`.
 
 ## Step 2 — Secrets
 
@@ -99,8 +108,9 @@ Delete:
 - `crates/rundtisch/src/traits/clock.rs`, `adapters/clock.rs` (`SystemClock` is `OffsetDateTime::now_utc`)
 - `crates/rundtisch/src/traits/random.rs`, `adapters/random.rs` (`OsRandom`, `WorkerRandom`)
 - `crates/rundtisch/src/adapters.rs` once it has no modules left
-- `demo/api/src/native_platform.rs`
 - `demo/worker/` entirely (`CloudflarePlatform`, `#[event(fetch)]`)
+
+`demo/api/src/native_platform.rs` stays. It no longer implements `Platform`. It only opens the `DatabaseConnection` (step 1).
 
 `lib.rs` stops exporting `Platform`, `Clock`, `RandomSource`, and `SecretStore`.
 
@@ -142,8 +152,8 @@ Replace SeaQuery `Iden` enums and serde row structs with SeaORM models.
 | `UserTable` / `User` / `NewUser` in `auth/models.rs` | `auth/entities/user.rs` `DeriveEntityModel`, table `auth_users` |
 | `SessionTable` / `Session` | `auth/entities/session.rs`, table `auth_sessions` |
 | `Role` as a Rust enum stored via `.as_str()` | `DeriveActiveEnum` stored as a string (`User`, `Admin`), not a MySQL native ENUM, so the column stays a normal `VARCHAR` |
-| timestamps as RFC 3339 **strings** (`datetime_to_rfc3339` on insert) | real datetime columns. SeaORM `with-time`, fields `time::OffsetDateTime`. This is the D1 workaround; sqlx MySQL encodes `OffsetDateTime` as `TIMESTAMP` |
-| `public_id: Uuid` inserted as text | `Uuid` column. On MySQL, SeaORM’s default uuid mapping is `binary(16)`. JSON still emits the hyphenated string through serde on the response DTO |
+| timestamps as RFC 3339 **strings** (`datetime_to_rfc3339` on insert) | real datetime columns via SeaORM `with-time` and `time::OffsetDateTime`. The migration uses SeaQuery schema helpers (`timestamp`, `date_time`) so the same Rust migration maps to each backend. No backend-specific SQL |
+| `public_id: Uuid` inserted as text | `Uuid` column through SeaORM, which picks a backend-specific storage type. JSON still emits the hyphenated string on the response DTO |
 | `email: EmailAddress` | store `String`, parse `EmailAddress` at the handler boundary (SeaORM has no `EmailAddress` column type) |
 | `password_hash` skipped in JSON | not a column attribute problem: response DTOs omit it, same as `#[serde(skip_serializing)]` today |
 
@@ -167,9 +177,30 @@ Integer `id` stays the foreign key. Public URLs keep `public_id`.
 
 ### Migration
 
-Replace `AuthMigration001` (SeaQuery `Table::create`, rendered to SQLite, snapshotted into `demo/migrations/001_auth_create_users_and_token_tables.sql`).
+Follow [Writing Migration](https://www.sea-ql.org/SeaORM/docs/migration/writing-migration/). Migrations are Rust files from here on. Each one is a `MigrationTrait` with `up` and `down`, named `mYYYYMMDD_HHMMSS_<name>.rs`. DDL goes through `SchemaManager` and the SeaQuery helpers (`pk_auto`, `string`, `timestamp`, …) so one file runs on SQLite, MySQL, and Postgres. Raw SQL is not used for this migration; the docs note that raw SQL drops multi-backend compatibility.
 
-Use one SeaORM migration in `auth/migrations/` that creates `auth_users` and `auth_sessions` with the column types above (`if_not_exists` is not a substitute for a versioned migration once the schema changes again). `down` drops `auth_sessions` then `auth_users`.
+`auth` owns the migration files and exports the list. It does **not** implement `MigratorTrait`. The demo app does, and its list is the auth list (later modules append their own):
+
+```rust
+// crates/rundtisch/src/auth/migrations/mod.rs
+pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+    vec![Box::new(m20260924_000001_create_auth_tables::Migration)]
+}
+
+// demo/api/src/migrator.rs
+pub struct Migrator;
+
+#[async_trait]
+impl MigratorTrait for Migrator {
+    fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+        rundtisch::auth::migrations()
+    }
+}
+```
+
+The first migration creates `auth_users` and `auth_sessions` in `up`, and drops `auth_sessions` then `auth_users` in `down`. `DeriveMigrationName` supplies the name SeaORM records in its migration table.
+
+Replace `AuthMigration001` (SeaQuery `Table::create` rendered to SQLite and snapshotted into `demo/migrations/001_auth_create_users_and_token_tables.sql`).
 
 Delete:
 
@@ -177,7 +208,7 @@ Delete:
 - `demo/migrations/`
 - the test `demo_sqlite_snapshot_matches_up_sql`
 
-How the migration is applied is an open question (below). The code that generates dialect-specific SQL for Wrangler D1 does not stay.
+Applying migrations to a production database is a **pre-deployment step** (`Migrator::up` from the CLI or an equivalent, as in [Running Migration](https://www.sea-ql.org/SeaORM/docs/migration/running-migration/)). That step is not part of this refactor. The native server does not migrate on startup. Tests may call `Migrator::up` against whatever `DATABASE_URL` they were given. A CI MySQL service is also later; this change does not add one.
 
 ### What does not get rewritten
 
@@ -214,9 +245,9 @@ Docs to rewrite so they describe a native Axum demo only:
 
 Crate description in `crates/rundtisch/Cargo.toml` (“hexagonal architecture”) is updated in step 7.
 
-Historical notes under `crates/rundtisch/doc/` (`20260708-150107-RustCloudflareWorkerAuthenticationDesign.md`, `20260921-JWT_WASM_dependencies_and_RNG_port.md`, D1 migration write-ups) are **not** scrubbed in this plan. They are design history, not build instructions. Deleting them is an open question.
+Historical notes under `crates/rundtisch/doc/` stay, including `20260708-150107-RustCloudflareWorkerAuthenticationDesign.md`, `20260921-JWT_WASM_dependencies_and_RNG_port.md`, and the D1 migration write-ups. They are design history, not build instructions.
 
-Wasmer `app.yaml` / `cargo wasix` is **not** part of this refactor. `wasmer-sqlx-demo` remains the Edge packaging reference. This repo’s runnable app after the change is the native binary.
+Wasmer `app.yaml` / `cargo wasix` is not part of this refactor.
 
 ## Step 7 — Dependencies
 
@@ -224,12 +255,12 @@ Wasmer `app.yaml` / `cargo wasix` is **not** part of this refactor. `wasmer-sqlx
 
 | Dependency | Why it is unused after the steps above |
 | --- | --- |
-| `sea-query` | Only the database port and auth query builders use it |
+| `sea-query` as a direct workspace dependency | DML no longer builds SeaQuery statements. Migration DDL uses SeaQuery through `sea-orm-migration`, which re-exports it |
 | `worker`, `worker-macros` | D1 and the Worker entry |
 | `js-sys`, `wasm-bindgen` | `d1` feature (`getrandom/wasm_js`, `time/wasm-bindgen`) |
 | `tower-service` | Only `demo/worker` calls `Service::call` |
-| features `d1`, `sqlite` | Replaced by the SeaORM backend feature (question 1) |
-| `sqlx` as a direct rundtisch dependency | Pulled in by `sea-orm`’s `sqlx-*` feature. Keep an explicit `sqlx` dep only if tests still open a pool themselves |
+| features `d1`, `sqlite`, and any future `mysql` / `postgres` flags | All three sqlx drivers are always compiled in. The entry point picks the backend with `DATABASE_URL` |
+| `sqlx` as a direct rundtisch dependency | Pulled in by `sea-orm`’s `sqlx-*` features |
 
 `getrandom` stays if UUIDv4 / session tokens call it directly. `uuid` can enable the `v4` feature instead and drop the hand-rolled `public_id_from_bytes` — only if tests that lock the version nibble still pass. Default: keep the existing UUIDv4 helper and call `getrandom::fill`.
 
@@ -240,11 +271,21 @@ sea-orm = { version = "2.0", default-features = false, features = [
   "macros",
   "runtime-tokio-rustls",
   "with-time",
-  # "sqlx-mysql" or "sqlx-sqlite" — question 1
+  "sqlx-sqlite",
+  "sqlx-mysql",
+  "sqlx-postgres",
+] }
+sea-orm-migration = { version = "2.0", default-features = false, features = [
+  "runtime-tokio-rustls",
+  "sqlx-sqlite",
+  "sqlx-mysql",
+  "sqlx-postgres",
 ] }
 ```
 
-Tokio is already a demo dependency. The library needs it for SeaORM’s runtime feature; make `tokio` a normal dependency of `rundtisch` with `macros` and `rt-multi-thread` (tests and the connection). The demo feature flag `native` can disappear: the demo crate always runs the native server.
+`sea-orm-migration` is what provides `MigrationTrait`, `MigratorTrait`, `SchemaManager`, and `DeriveMigrationName`. The demo depends on it for `Migrator`. The auth crate depends on it for the migration files and the exported list.
+
+Tokio is already a demo dependency. The library needs it for SeaORM’s runtime feature; make `tokio` a normal dependency of `rundtisch` with `macros` and `rt-multi-thread` (tests and the connection). The demo feature flag `native` disappears: the demo crate always runs the native server, and it has no per-database features either.
 
 `time` stays (formatting, parsing, serde, rfc3339). Do not add `time/wasm-bindgen`.
 
@@ -258,32 +299,35 @@ After the edit, `cargo metadata` / a clean `cargo build` should show no `worker`
 
 The steps are one PR sequence, not seven releases. Compile breaks until 1–5 land together.
 
-1. Add SeaORM and the new entities + migration beside the old code; get migration tests green on the chosen backend.
+1. Add SeaORM (all three sqlx drivers) and the auth migration files plus `auth::migrations()`. The demo `Migrator` lists that vec.
 2. Switch `auth/queries.rs` and handlers to `DatabaseConnection`. Delete trait bounds.
-3. Collapse `AppState` and delete traits/adapters/platforms.
-4. Point `demo/api` at `Database::connect`. Delete `demo/worker`, Wrangler, the `cloudflare` feature, and CI deploy.
+3. Collapse `AppState` and delete traits/adapters. Leave `native_platform.rs` as the `Database::connect` entry.
+4. Delete `demo/worker`, Wrangler, the `cloudflare` feature, and the CI deploy job. Do not add a MySQL service to CI.
 5. Dependency cleanup and README/AGENTS rewrite.
 6. `cargo test` and a manual pass of register → activate → login → `GET /api/auth/me` → logout against the demo API.
 
 ## Out of scope
 
 - New product features, GraphQL, or a shop schema.
-- Porting D1 data. The next schema is empty and applied by the new migration.
+- Porting D1 data. The next schema is empty until a later pre-deploy step runs `Migrator::up`.
 - Publishing to crates.io (`publish` stays `false`).
 - Wasmer deploy manifests in this repository.
+- Running migrations against production, and adding a MySQL (or Postgres) service to CI.
+
+## Decisions
+
+- **All three sqlx backends.** The library takes a `DatabaseConnection`. `native_platform.rs` is the only place that calls `Database::connect`. No `sqlite` / `mysql` / `postgres` feature flags.
+- **SeaORM migration files.** `auth::migrations()` returns the `Vec<Box<dyn MigrationTrait>>`. The demo implements `MigratorTrait` and returns that list. DDL uses `SchemaManager`, not raw SQL and not the old SQL snapshot.
+- **Apply later.** Production migrate is a pre-deployment step. The server does not migrate on startup. CI does not gain a database container in this change.
+- **Docs.** Cloudflare design notes under `crates/rundtisch/doc/` stay. README, `AGENTS.md`, and the demo READMEs are rewritten.
+- **Wasmer.** Packaging is a later change.
 
 ## Risks
 
-- **Backend choice changes types.** SQLite SeaORM datetime is often TEXT; MySQL `TIMESTAMP` is binary. Picking both backends recreates the dialect split this refactor removes. One backend only.
-- **`binary(16)` UUIDs** on MySQL are not the hyphenated strings stored today. Response DTOs must still serialize `public_id` as a string. A `CHAR(36)` column is the alternative if we want the column readable in the SQL shell.
+- **Schema helpers must stay portable.** A migration that uses MySQL-only or Postgres-only DDL (`create_type`, raw `AUTO_INCREMENT`) will not run on the other drivers. Stick to `SchemaManager` helpers.
+- **SeaORM’s `Uuid` storage differs by backend** (`binary(16)` on MySQL, `uuid` on Postgres, text on SQLite). Response DTOs still serialize the hyphenated string. Do not compare raw column bytes across engines.
+- **Datetime storage differs by backend** (`TIMESTAMP` vs `DATETIME` vs text). Entities use `time::OffsetDateTime` and let SeaORM encode them. Do not keep writing RFC 3339 strings by hand.
 - **Env secrets in tests.** `MapSecretStore` could be constructed per test. `std::env::var` cannot. Auth handler tests that need `AUTH_HASH_PEPPER` must set and restore env vars without overlapping `cargo test` threads, or those tests become single-threaded.
 - **Argon2id on every login** still dominates CPU. Building the hasher from the pepper per request is cheap next to that and matches “`AppState` holds only the connection”.
-- **CI** loses the Workers preview. The workflow must not keep failing on `wasm32-unknown-unknown` or missing `CLOUDFLARE_API_TOKEN`.
-
-## Open questions
-
-1. **Which database?** Recommendation: **MySQL only** (`sqlx-mysql`), `DATABASE_URL=mysql://…`, because that is the engine already proven with SeaORM on Wasmer and it is the datetime/bool behavior you want. The alternative is **SQLite only**, which keeps in-memory tests and today’s native file (`SQLITE_PATH`) but is not the Wasmer engine. This plan does not support compiling both.
-2. **When does the migration run?** Recommendation: the native binary runs the SeaORM migrator once before `axum::serve`, so `cargo run` on an empty database is enough. Alternative: a `migrate` subcommand only, and the server assumes the schema already exists.
-3. **CI database.** If the answer to (1) is MySQL, CI needs a MySQL service container (or the job will skip integration tests). If SQLite, `sqlite::memory:` stays and CI does not.
-4. **Historical `crates/rundtisch/doc/*` Cloudflare notes.** Recommendation: leave them. Say if they should be deleted in the implementation PR.
-5. **Wasmer packaging.** Recommendation: not in the implementation PR. Say if `app.yaml` / `cargo wasix` should be added in the same change.
+- **CI** loses the Workers preview. The workflow must not keep failing on `wasm32-unknown-unknown` or missing `CLOUDFLARE_API_TOKEN`. Tests that need a live database keep using SQLite in-memory until a later CI change adds MySQL or Postgres.
+- **Atomic migrations.** SeaORM runs Postgres migrations inside a transaction. MySQL and SQLite do not. `up` should still be safe to retry (`if_not_exists`, or `has_column` before `ALTER`).
