@@ -3,6 +3,8 @@
 **Source:** [https://gemini.google.com/share/69dbdbb0a717?skid=211cc3b9-2cb7-487a-9fe0-aba464a4a6cd](https://gemini.google.com/share/69dbdbb0a717?skid=211cc3b9-2cb7-487a-9fe0-aba464a4a6cd)
 **Created:** Published July 8, 2026 at 03:00 PM
 
+> **JWT / sessions update (2026-09-22):** crate choice, WASM RNG, `auth_sessions`, and hashing are in [20260921-JWT_WASM_dependencies_and_RNG_port.md](./20260921-JWT_WASM_dependencies_and_RNG_port.md). Flow-level advice here (access JWT + hashed session token, separate verify secret, no activation table) still stands. The `jsonwebtoken 9` + `ring` snippet at the end is obsolete.
+
 ---
 
 

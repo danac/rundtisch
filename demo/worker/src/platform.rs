@@ -1,26 +1,24 @@
 use rundtisch::adapters::db::d1::D1Executor;
+use rundtisch::adapters::secrets::WorkerSecretStore;
 use rundtisch::traits::Platform;
 use std::sync::Arc;
 use worker::Env;
 
 pub struct CloudflarePlatform {
-    env: Env,
     db: Arc<D1Executor>,
+    secrets: Arc<WorkerSecretStore>,
 }
 
-// Secrets will be wired later.
-// pub struct CloudflareSecrets;
-
 impl Platform for CloudflarePlatform {
-    // type SecretStore = CloudflareSecrets;
-    // fn secrets(&self) -> Arc<Self::SecretStore> {
-    //     Arc::new(CloudflareSecrets)
-    // }
-
     type Database = D1Executor;
+    type SecretStore = WorkerSecretStore;
 
     fn database(&self) -> Arc<Self::Database> {
         self.db.clone()
+    }
+
+    fn secrets(&self) -> Arc<Self::SecretStore> {
+        self.secrets.clone()
     }
 }
 
@@ -31,7 +29,7 @@ impl CloudflarePlatform {
             .d1(database_binding)
             .unwrap_or_else(|err| panic!("D1 binding `{database_binding}`: {err}"));
         Self {
-            env,
+            secrets: Arc::new(WorkerSecretStore::new(env)),
             db: Arc::new(D1Executor::new(db)),
         }
     }

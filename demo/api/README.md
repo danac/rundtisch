@@ -104,6 +104,14 @@ All Axum routes include the `/api` prefix (e.g. `/api/health`) because:
 | Method | Path | Handler | Response |
 |--------|------|---------|----------|
 | GET | `/api/health` | `health()` | JSON `{ "status": "ok", "headers": [...] }` |
+| GET / POST | `/api/auth/users` | playground CRUD | Public list/create (no password hashing) |
+| PATCH / DELETE | `/api/auth/users/{public_id}` | playground CRUD | Alias update / delete |
+| POST | `/api/auth/register` | `register()` | Creates user + returns `activation_token` |
+| POST | `/api/auth/activate` | `activate()` | Stateless email-verify JWT |
+| POST | `/api/auth/login` | `login()` | Access JWT + `session` cookie |
+| POST | `/api/auth/refresh` | `refresh()` | Rotate session cookie, new access JWT |
+| POST | `/api/auth/logout` | `logout()` | Revoke session, clear cookie |
+| GET | `/api/auth/me` | `me()` | Bearer access JWT |
 
 ## Development
 
@@ -124,7 +132,7 @@ sudo apt-get install libssl-dev pkg-config   # required by worker-build
 ```bash
 # from repo root
 cargo check -p rundtisch-demo --features native
-cargo test -p rundtisch --features native
+cargo test -p rundtisch --features sqlite
 ```
 
 ### Auth migration SQL
@@ -157,7 +165,16 @@ DATABASE_URL=sqlite:///tmp/rundtisch.sqlite sqlx migrate run --source migrations
 
 The native binary opens SQLite at `SQLITE_PATH`, or `rundtisch.sqlite` in the
 working directory if that variable is unset. Run migrations against that same
-file before starting the server (see above).
+file before starting the server (see above). Auth needs three secrets in the
+environment (same names as Wrangler secrets / `demo/.dev.vars.example`):
+
+| Name | Length |
+|------|--------|
+| `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
+| `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
+| `AUTH_HASH_PEPPER` | **exactly** 32 bytes |
+
+Worker local dev: copy `demo/.dev.vars.example` to `demo/.dev.vars`. Production: `wrangler secret put`.
 
 ```bash
 # from repo root; default DB file: ./rundtisch.sqlite
@@ -238,7 +255,7 @@ GitHub Actions (`.github/workflows/deploy.yml`):
 
 1. Setup Rust + `wasm32-unknown-unknown`
 2. Cache Cargo (`target`, registry)
-3. `cargo test -p rundtisch --features native`
+3. `cargo test -p rundtisch --features sqlite`
 4. Build frontend → `demo/web/dist/`
 5. `wrangler deploy` or preview upload — Wrangler runs `build.command` to compile WASM
 

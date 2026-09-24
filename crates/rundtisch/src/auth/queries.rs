@@ -1,8 +1,9 @@
-use crate::auth::models::{datetime_to_rfc3339, NewUser, UserTable};
+use crate::auth::models::{NewUser, SessionTable, UserTable, datetime_to_rfc3339};
 use sea_query::{
     Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement,
     UpdateStatement,
 };
+use uuid::Uuid;
 
 pub fn user_list_query() -> SelectStatement {
     Query::select()
@@ -11,11 +12,11 @@ pub fn user_list_query() -> SelectStatement {
         .to_owned()
 }
 
-pub fn user_get_query(id: i64) -> SelectStatement {
+pub fn user_get_query(public_id: Uuid) -> SelectStatement {
     Query::select()
         .column(Asterisk)
         .from(UserTable::Table)
-        .and_where(Expr::col(UserTable::Id).eq(id))
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
         .to_owned()
 }
 
@@ -23,6 +24,7 @@ pub fn user_insert_query(user: &NewUser) -> InsertStatement {
     Query::insert()
         .into_table(UserTable::Table)
         .columns([
+            UserTable::PublicId,
             UserTable::Email,
             UserTable::Alias,
             UserTable::Role,
@@ -31,6 +33,7 @@ pub fn user_insert_query(user: &NewUser) -> InsertStatement {
             UserTable::UpdatedAt,
         ])
         .values_panic([
+            user.public_id.to_string().into(),
             user.email.to_string().into(),
             user.alias.clone().into(),
             user.role.as_str().into(),
@@ -42,7 +45,7 @@ pub fn user_insert_query(user: &NewUser) -> InsertStatement {
 }
 
 pub fn user_update_alias_query(
-    id: i64,
+    public_id: Uuid,
     alias: &str,
     updated_at: time::OffsetDateTime,
 ) -> UpdateStatement {
@@ -50,19 +53,139 @@ pub fn user_update_alias_query(
         .table(UserTable::Table)
         .values([
             (UserTable::Alias, alias.into()),
-            (
-                UserTable::UpdatedAt,
-                datetime_to_rfc3339(updated_at).into(),
-            ),
+            (UserTable::UpdatedAt, datetime_to_rfc3339(updated_at).into()),
         ])
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .to_owned()
+}
+
+pub fn user_delete_query(public_id: Uuid) -> DeleteStatement {
+    Query::delete()
+        .from_table(UserTable::Table)
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .to_owned()
+}
+
+pub fn user_get_by_email_query(email: &str) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(UserTable::Table)
+        .and_where(Expr::col(UserTable::Email).eq(email))
+        .to_owned()
+}
+
+pub fn user_get_by_id_query(id: i64) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(UserTable::Table)
         .and_where(Expr::col(UserTable::Id).eq(id))
         .to_owned()
 }
 
-pub fn user_delete_query(id: i64) -> DeleteStatement {
-    Query::delete()
-        .from_table(UserTable::Table)
-        .and_where(Expr::col(UserTable::Id).eq(id))
+pub fn user_verify_email_query(
+    public_id: Uuid,
+    email: &str,
+    verified_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(UserTable::Table)
+        .values([
+            (
+                UserTable::EmailVerifiedAt,
+                datetime_to_rfc3339(verified_at).into(),
+            ),
+            (
+                UserTable::UpdatedAt,
+                datetime_to_rfc3339(verified_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .and_where(Expr::col(UserTable::Email).eq(email))
+        .to_owned()
+}
+
+pub fn user_touch_last_login_query(
+    public_id: Uuid,
+    last_login_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(UserTable::Table)
+        .values([
+            (
+                UserTable::LastLoginAt,
+                datetime_to_rfc3339(last_login_at).into(),
+            ),
+            (
+                UserTable::UpdatedAt,
+                datetime_to_rfc3339(last_login_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
+        .to_owned()
+}
+
+pub fn session_insert_query(
+    user_id: i64,
+    token_hash: &str,
+    created_at: time::OffsetDateTime,
+    expires_at: time::OffsetDateTime,
+    user_agent: Option<&str>,
+) -> InsertStatement {
+    Query::insert()
+        .into_table(SessionTable::Table)
+        .columns([
+            SessionTable::UserId,
+            SessionTable::TokenHash,
+            SessionTable::CreatedAt,
+            SessionTable::LastUsedAt,
+            SessionTable::ExpiresAt,
+            SessionTable::UserAgent,
+        ])
+        .values_panic([
+            user_id.into(),
+            token_hash.into(),
+            datetime_to_rfc3339(created_at).into(),
+            datetime_to_rfc3339(created_at).into(),
+            datetime_to_rfc3339(expires_at).into(),
+            user_agent.map(str::to_string).into(),
+        ])
+        .to_owned()
+}
+
+pub fn session_get_by_token_hash_query(token_hash: &str) -> SelectStatement {
+    Query::select()
+        .column(Asterisk)
+        .from(SessionTable::Table)
+        .and_where(Expr::col(SessionTable::TokenHash).eq(token_hash))
+        .to_owned()
+}
+
+pub fn session_rotate_query(
+    id: i64,
+    token_hash: &str,
+    last_used_at: time::OffsetDateTime,
+) -> UpdateStatement {
+    Query::update()
+        .table(SessionTable::Table)
+        .values([
+            (SessionTable::TokenHash, token_hash.into()),
+            (
+                SessionTable::LastUsedAt,
+                datetime_to_rfc3339(last_used_at).into(),
+            ),
+        ])
+        .and_where(Expr::col(SessionTable::Id).eq(id))
+        .to_owned()
+}
+
+pub fn session_revoke_query(id: i64, revoked_at: time::OffsetDateTime) -> UpdateStatement {
+    Query::update()
+        .table(SessionTable::Table)
+        .values([(
+            SessionTable::RevokedAt,
+            datetime_to_rfc3339(revoked_at).into(),
+        )])
+        .and_where(Expr::col(SessionTable::Id).eq(id))
         .to_owned()
 }
 
@@ -71,13 +194,14 @@ mod tests {
     use super::*;
     use crate::auth::migrations::auth_migration_001::AuthMigration001;
     use crate::auth::models::Role;
-    use crate::traits::db::{query_to_sql, schema_to_sql, Dialect, Error, Migration, Value};
+    use crate::traits::db::{Dialect, Error, Migration, Value, query_to_sql, schema_to_sql};
     use email_address::EmailAddress;
 
     fn sample_user() -> NewUser {
         let created = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
         let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_100).unwrap();
         NewUser {
+            public_id: uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
             email: "alice@example.com".parse().unwrap(),
             alias: "alice".into(),
             role: Role::Admin,
@@ -125,7 +249,7 @@ mod tests {
             .expect("render insert");
         assert_eq!(
             sql,
-            "INSERT INTO \"auth_users\" (\"email\", \"alias\", \"role\", \"password_hash\", \"created_at\", \"updated_at\") VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT INTO \"auth_users\" (\"public_id\", \"email\", \"alias\", \"role\", \"password_hash\", \"created_at\", \"updated_at\") VALUES (?, ?, ?, ?, ?, ?, ?)"
         );
         assert_eq!(
             values
@@ -137,6 +261,7 @@ mod tests {
                 })
                 .collect::<Vec<_>>(),
             [
+                "11111111-1111-4111-8111-111111111111",
                 "alice@example.com",
                 "alice",
                 "Admin",
@@ -149,46 +274,54 @@ mod tests {
 
     #[test]
     fn user_delete_query_sql() {
+        let public_id = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
         let (sql, values) =
-            query_to_sql(&user_delete_query(7), Dialect::Sqlite).expect("render delete");
-        assert_eq!(sql, "DELETE FROM \"auth_users\" WHERE \"id\" = ?");
+            query_to_sql(&user_delete_query(public_id), Dialect::Sqlite).expect("render delete");
+        assert_eq!(sql, "DELETE FROM \"auth_users\" WHERE \"public_id\" = ?");
         match values.as_slice() {
-            [Value::Int(7)] => {}
+            [Value::Text(s)] if s == "11111111-1111-4111-8111-111111111111" => {}
             other => panic!("unexpected binds: {other:?}"),
         }
     }
 
     #[test]
     fn user_get_query_sql() {
+        let public_id = uuid::Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
         let (sql, values) =
-            query_to_sql(&user_get_query(3), Dialect::Sqlite).expect("render get");
-        assert_eq!(sql, "SELECT * FROM \"auth_users\" WHERE \"id\" = ?");
+            query_to_sql(&user_get_query(public_id), Dialect::Sqlite).expect("render get");
+        assert_eq!(sql, "SELECT * FROM \"auth_users\" WHERE \"public_id\" = ?");
         match values.as_slice() {
-            [Value::Int(3)] => {}
+            [Value::Text(s)] if s == "22222222-2222-4222-8222-222222222222" => {}
             other => panic!("unexpected binds: {other:?}"),
         }
     }
 
     #[test]
     fn user_update_alias_query_sql() {
+        let public_id = uuid::Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
         let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_200).unwrap();
-        let (sql, values) =
-            query_to_sql(&user_update_alias_query(5, "bob", updated), Dialect::Sqlite)
-                .expect("render update");
+        let (sql, values) = query_to_sql(
+            &user_update_alias_query(public_id, "bob", updated),
+            Dialect::Sqlite,
+        )
+        .expect("render update");
         assert_eq!(
             sql,
-            "UPDATE \"auth_users\" SET \"alias\" = ?, \"updated_at\" = ? WHERE \"id\" = ?"
+            "UPDATE \"auth_users\" SET \"alias\" = ?, \"updated_at\" = ? WHERE \"public_id\" = ?"
         );
         assert_eq!(
             values
                 .iter()
                 .map(|v| match v {
                     Value::Text(s) => s.as_str(),
-                    Value::Int(5) => "5",
                     other => panic!("unexpected bind {other:?}"),
                 })
                 .collect::<Vec<_>>(),
-            ["bob", "2023-11-14T22:16:40Z", "5"]
+            [
+                "bob",
+                "2023-11-14T22:16:40Z",
+                "33333333-3333-4333-8333-333333333333"
+            ]
         );
     }
 
@@ -203,8 +336,7 @@ mod tests {
             .await
             .expect("insert user");
 
-        let (sql, values) =
-            query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
+        let (sql, values) = query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
         let row = bind(&sql, &values)
             .fetch_one(&pool)
             .await
@@ -216,8 +348,8 @@ mod tests {
         assert_eq!(alias, "alice");
         assert_eq!(role, "Admin");
 
-        let (sql, values) =
-            query_to_sql(&user_delete_query(1), Dialect::Sqlite).expect("render delete");
+        let (sql, values) = query_to_sql(&user_delete_query(user.public_id), Dialect::Sqlite)
+            .expect("render delete");
         let deleted = bind(&sql, &values)
             .execute(&pool)
             .await
@@ -234,13 +366,36 @@ mod tests {
     #[tokio::test]
     async fn delete_missing_user_affects_no_rows() {
         let pool = migrated_pool().await;
+        let missing = uuid::Uuid::parse_str("99999999-9999-4999-8999-999999999999").unwrap();
         let (sql, values) =
-            query_to_sql(&user_delete_query(99), Dialect::Sqlite).expect("render delete");
+            query_to_sql(&user_delete_query(missing), Dialect::Sqlite).expect("render delete");
         let deleted = bind(&sql, &values)
             .execute(&pool)
             .await
             .expect("delete missing");
         assert_eq!(deleted.rows_affected(), 0);
+    }
+
+    #[tokio::test]
+    async fn insert_duplicate_public_id_is_unique_violation() {
+        let pool = migrated_pool().await;
+        let first = sample_user();
+        let (sql, values) =
+            query_to_sql(&user_insert_query(&first), Dialect::Sqlite).expect("render insert");
+        bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect("insert first user");
+
+        let mut second = sample_user();
+        second.email = "other@example.com".parse().unwrap();
+        let (sql, values) =
+            query_to_sql(&user_insert_query(&second), Dialect::Sqlite).expect("render insert");
+        let err = bind(&sql, &values)
+            .execute(&pool)
+            .await
+            .expect_err("duplicate public_id");
+        assert!(err.to_string().to_ascii_lowercase().contains("unique"));
     }
 
     #[tokio::test]
@@ -278,6 +433,7 @@ mod tests {
         let users: Vec<User> = exec.fetch_all(user_list_query()).await.expect("list");
         assert_eq!(users.len(), 1);
         assert_eq!(users[0].id, id);
+        assert_eq!(users[0].public_id, new_user.public_id);
         assert_eq!(users[0].email, new_user.email);
         assert_eq!(users[0].alias, new_user.alias);
         assert_eq!(users[0].role, Role::Admin);
@@ -290,7 +446,7 @@ mod tests {
         assert_eq!(users[0].last_login_at, None);
 
         let deleted = exec
-            .execute(user_delete_query(id))
+            .execute(user_delete_query(new_user.public_id))
             .await
             .expect("delete");
         assert_eq!(deleted.rows_affected, 1);
@@ -306,6 +462,7 @@ mod tests {
         assert_eq!(user.alias, "bob");
         assert_eq!(user.role, Role::User);
         assert_eq!(user.password_hash, None);
+        assert_ne!(user.public_id, uuid::Uuid::nil());
     }
 
     #[test]

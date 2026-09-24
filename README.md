@@ -92,7 +92,7 @@ The SPA and demo API are separate projects with their own READMEs, dependencies,
 
 ### Frontend is a test harness
 
-The demo API currently exposes `/api/health`. The SPA is a landing-page skeleton; a button list that calls `/api/*` and displays JSON responses is planned next. In local dev, Vite proxies `/api` to Wrangler so same-origin `fetch('/api/...')` works without CORS.
+The demo API exposes `/api/health`, public playground `/api/auth/users`, and v1 auth (`/api/auth/register`, `/activate`, `/login`, `/refresh`, `/logout`, Bearer `/me`). The SPA has a register/login panel plus a users CRUD panel. In local dev, Vite proxies `/api` to Wrangler so same-origin `fetch('/api/...')` works without CORS. Auth cookies need `credentials: 'include'`.
 
 ### Two Wrangler configs
 
@@ -181,7 +181,8 @@ Output: `demo/web/dist/` (TypeScript check + Vite production bundle).
 ### Library and demo API
 
 ```bash
-cargo test -p rundtisch --features native
+cargo test -p rundtisch --features sqlite
+cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown
 cargo check -p rundtisch-demo --features native
 ```
 
@@ -208,7 +209,7 @@ Workflow: `.github/workflows/deploy.yml`
 | Push to `main` | Test lib → build frontend → `wrangler deploy` (production) |
 | Pull request to `main` | Test lib → build frontend → preview alias `pr-<N>` |
 
-CI steps: checkout → Node.js + Rust toolchains → Cargo cache → `cargo test -p rundtisch --features native` → `npm ci` + `npm run build` in `demo/web/` → Wrangler deploy (which compiles WASM via `build.command`).
+CI steps: checkout → Node.js + Rust toolchains → Cargo cache → `cargo test -p rundtisch --features sqlite` → WASM `d1` check → `npm ci` + `npm run build` in `demo/web/` → Wrangler deploy (which compiles WASM via `build.command`). Auth secrets (`AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET`, `AUTH_HASH_PEPPER`) must be set on the Worker for login to work.
 
 Requires `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in the GitHub **Cloudflare Workers** environment.
 

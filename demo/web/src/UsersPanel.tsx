@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 type Role = 'User' | 'Admin'
 
 type User = {
-  id: number
+  public_id: string
   email: string
   alias: string
   role: Role
@@ -41,7 +41,7 @@ export function UsersPanel() {
   const [email, setEmail] = useState('')
   const [alias, setAlias] = useState('')
   const [role, setRole] = useState<Role>('User')
-  const [editDrafts, setEditDrafts] = useState<Record<number, string>>({})
+  const [editDrafts, setEditDrafts] = useState<Record<string, string>>({})
 
   async function loadUsers() {
     setLoading(true)
@@ -54,7 +54,7 @@ export function UsersPanel() {
       }
       const body = (await response.json()) as ListResponse
       setUsers(body.result)
-      setEditDrafts(Object.fromEntries(body.result.map((user) => [user.id, user.alias])))
+      setEditDrafts(Object.fromEntries(body.result.map((user) => [user.public_id, user.alias])))
     } catch {
       setError('Network error')
     } finally {
@@ -91,12 +91,12 @@ export function UsersPanel() {
     }
   }
 
-  async function handleSaveAlias(id: number) {
-    const nextAlias = editDrafts[id] ?? ''
+  async function handleSaveAlias(publicId: string) {
+    const nextAlias = editDrafts[publicId] ?? ''
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/auth/users/${id}`, {
+      const response = await fetch(`/api/auth/users/${publicId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alias: nextAlias }),
@@ -113,11 +113,11 @@ export function UsersPanel() {
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(publicId: string) {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/auth/users/${id}`, { method: 'DELETE' })
+      const response = await fetch(`/api/auth/users/${publicId}`, { method: 'DELETE' })
       if (!response.ok) {
         setError(await readError(response))
         return
@@ -162,10 +162,10 @@ export function UsersPanel() {
         ) : (
           <ul className="divide-y divide-ring/50">
             {users.map((user) => {
-              const draft = editDrafts[user.id] ?? user.alias
+              const draft = editDrafts[user.public_id] ?? user.alias
               const dirty = draft.trim() !== user.alias
               return (
-                <li key={user.id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+                <li key={user.public_id} className="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <label className="block text-xs text-ink-muted">
@@ -174,7 +174,10 @@ export function UsersPanel() {
                           type="text"
                           value={draft}
                           onChange={(event) =>
-                            setEditDrafts((prev) => ({ ...prev, [user.id]: event.target.value }))
+                            setEditDrafts((prev) => ({
+                              ...prev,
+                              [user.public_id]: event.target.value,
+                            }))
                           }
                           className={`mt-1 ${compactInputClassName}`}
                           disabled={actionsDisabled}
@@ -188,7 +191,7 @@ export function UsersPanel() {
                       <button
                         type="button"
                         className={secondaryButtonClassName}
-                        onClick={() => void handleSaveAlias(user.id)}
+                        onClick={() => void handleSaveAlias(user.public_id)}
                         disabled={actionsDisabled || !dirty}
                       >
                         Save
@@ -196,7 +199,7 @@ export function UsersPanel() {
                       <button
                         type="button"
                         className={secondaryButtonClassName}
-                        onClick={() => void handleDelete(user.id)}
+                        onClick={() => void handleDelete(user.public_id)}
                         disabled={actionsDisabled}
                       >
                         Delete

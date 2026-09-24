@@ -133,7 +133,7 @@ User       Frontend      REST API     Passkey       Email        Database
   |            |             | ... store credential ------------------->|
   |            |             |     credentialId, publicKey, signCount,|
   |            |             |     aaguid, transports, userId,          |
-  |            |             |     userHandle (= opaque user.id)        |
+  |            |             |     userHandle (= auth_users.public_id)  |
   |            |             |                                          |
   |            |             |   Passkey also stores resident copy:     |
   |            |             |     rpId + userHandle + private key      |
@@ -214,7 +214,7 @@ User       Frontend      REST API     Passkey       Email        Database
   |            |             |            |            |              |
 ```
 
-**Why no email is needed:** at registration the server assigned an opaque `user.id` (userHandle). The passkey stored it as a resident credential. On login the assertion's `userHandle` identifies the account — the server never needed the email upfront.
+**Why no email is needed:** at registration the server assigned an opaque `public_id` (UUIDv4) as userHandle. The passkey stored it as a resident credential. On login the assertion's `userHandle` identifies the account — the server never needed the email upfront.
 
 ### 4B — Login with email (non-resident fallback)
 
@@ -397,7 +397,7 @@ User       Frontend      REST API     Passkey       Email        Database
 | **webauthn_credentials** | `credential_id`, `user_id`, `public_key`, `sign_count`, `aaguid`, `transports`, `created_at` |
 | **users** | `id` (= opaque **userHandle** bytes, base64url), `email`, `email_verified`, `display_name` |
 | **webauthn_challenges** | `challenge`, `user_id`, `type` (register \| login), `expires_at` |
-| **refresh_tokens** | `token_hash`, `user_id`, `expires_at`, `revoked` |
+| **auth_sessions** | `token_hash`, `user_id`, `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
 
 ---
 
@@ -406,18 +406,18 @@ User       Frontend      REST API     Passkey       Email        Database
 | Artifact | Lifetime | Where it lives | Used for |
 |----------|----------|----------------|----------|
 | **Access JWT** | Short (5–15 min) | Frontend memory | Every API request |
-| **Refresh token** | Long (days/weeks) | HttpOnly Secure cookie | `/auth/refresh`, `/auth/logout` |
+| **Refresh / session token** | Long (days/weeks) | HttpOnly Secure `SameSite=Strict` cookie | `/auth/refresh`, `/auth/logout` |
 | **Passkey private key** | Permanent | Hardware authenticator only | WebAuthn login ceremonies |
 | **Passkey public key** | Permanent | Server DB | Verify login assertions |
 | **Resident credential** | Permanent | Hardware authenticator | Stores rpId + userHandle — enables usernameless login |
-| **userHandle** | Permanent | Passkey + server `users.id` | Identifies account without email at login time |
+| **userHandle** | Permanent | Passkey + `auth_users.public_id` | Identifies account without email at login time |
 | **WebAuthn challenge** | ~60 seconds | Server DB (ephemeral) | Bind each ceremony to one request |
 
 ---
 
 ## Security notes specific to hardware passkeys
 
-- **Resident key required** (`residentKey: "required"`) stores credential on the authenticator with the opaque `user.id` as **userHandle** — prerequisite for usernameless login.
+- **Resident key required** (`residentKey: "required"`) stores credential on the authenticator with the opaque `public_id` as **userHandle** — prerequisite for usernameless login.
 - **Usernameless login**: omit `allowCredentials` in request options; passkey discovers resident creds for `rpId`; server identifies user from `userHandle` in the assertion.
 - **User verification** (`userVerification: "required"`) enforces PIN/biometric on the authenticator.
 - **Cross-platform** (`authenticatorAttachment: "cross-platform"`) targets removable hardware keys (not platform passkeys).
