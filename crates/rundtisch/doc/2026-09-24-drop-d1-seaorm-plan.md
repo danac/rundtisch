@@ -30,6 +30,7 @@ Axum handlers (no Platform type parameter)
     │
     ▼
 SeaORM entities + auth::migrations()    demo Migrator lists those migrations
+                                        demo bin `migrate` calls Migrator::up
 ```
 
 The library never selects a backend. `sea_orm::DatabaseConnection` already wraps whichever sqlx pool it was built from. `rundtisch` compiles SeaORM with the sqlite, mysql, and postgres drivers together, and it does **not** grow `sqlite` / `mysql` / `postgres` feature flags. The `d1` and `sqlite` features that exist today are removed. The demo’s `native` and `cloudflare` features are removed with them.
@@ -208,7 +209,19 @@ Delete:
 - `demo/migrations/`
 - the test `demo_sqlite_snapshot_matches_up_sql`
 
-Applying migrations to a production database is a **pre-deployment step** (`Migrator::up` from the CLI or an equivalent, as in [Running Migration](https://www.sea-ql.org/SeaORM/docs/migration/running-migration/)). That step is not part of this refactor. The native server does not migrate on startup. Tests may call `Migrator::up` against whatever `DATABASE_URL` they were given. A CI MySQL service is also later; this change does not add one.
+Add `demo/api/src/bin/migrate.rs`, a new executable on the demo crate. It is the pre-deployment command. It does not run inside `native`. Per [Running Migration](https://www.sea-ql.org/SeaORM/docs/migration/running-migration/), it applies pending migrations programmatically:
+
+```rust
+// demo/api/src/bin/migrate.rs
+#[tokio::main]
+async fn main() -> Result<(), sea_orm::DbErr> {
+    let db = rundtisch_demo::native_platform::connect().await?;
+    Migrator::up(&db, None).await?;
+    Ok(())
+}
+```
+
+`Migrator::up(db, None)` applies every pending migration. The same `DATABASE_URL` the server uses is the database this binary migrates. `cargo run -p rundtisch-demo --bin migrate` is the command a later pre-deploy step will call. Wiring that step into CI or a host is not part of this change. The native server still does not migrate on startup. Tests may call `Migrator::up` against whatever `DATABASE_URL` they were given. A CI MySQL service is also later.
 
 ### What does not get rewritten
 
@@ -299,7 +312,7 @@ After the edit, `cargo metadata` / a clean `cargo build` should show no `worker`
 
 The steps are one PR sequence, not seven releases. Compile breaks until 1–5 land together.
 
-1. Add SeaORM (all three sqlx drivers) and the auth migration files plus `auth::migrations()`. The demo `Migrator` lists that vec.
+1. Add SeaORM (all three sqlx drivers), the auth migration files, `auth::migrations()`, the demo `Migrator`, and the `migrate` binary that calls `Migrator::up(&db, None)`.
 2. Switch `auth/queries.rs` and handlers to `DatabaseConnection`. Delete trait bounds.
 3. Collapse `AppState` and delete traits/adapters. Leave `native_platform.rs` as the `Database::connect` entry.
 4. Delete `demo/worker`, Wrangler, the `cloudflare` feature, and the CI deploy job. Do not add a MySQL service to CI.
@@ -309,16 +322,16 @@ The steps are one PR sequence, not seven releases. Compile breaks until 1–5 la
 ## Out of scope
 
 - New product features, GraphQL, or a shop schema.
-- Porting D1 data. The next schema is empty until a later pre-deploy step runs `Migrator::up`.
+- Porting D1 data. The schema stays empty until someone runs the `migrate` binary.
 - Publishing to crates.io (`publish` stays `false`).
 - Wasmer deploy manifests in this repository.
-- Running migrations against production, and adding a MySQL (or Postgres) service to CI.
+- Calling `migrate` from CI or a deploy pipeline, and adding a MySQL (or Postgres) service to CI. The binary itself is in scope.
 
 ## Decisions
 
 - **All three sqlx backends.** The library takes a `DatabaseConnection`. `native_platform.rs` is the only place that calls `Database::connect`. No `sqlite` / `mysql` / `postgres` feature flags.
 - **SeaORM migration files.** `auth::migrations()` returns the `Vec<Box<dyn MigrationTrait>>`. The demo implements `MigratorTrait` and returns that list. DDL uses `SchemaManager`, not raw SQL and not the old SQL snapshot.
-- **Apply later.** Production migrate is a pre-deployment step. The server does not migrate on startup. CI does not gain a database container in this change.
+- **`migrate` binary.** `demo/api/src/bin/migrate.rs` opens the connection and calls `Migrator::up(&db, None)`. That is the pre-deployment command. The server does not migrate on startup. Invoking the binary from CI or a deploy pipeline, and a CI database container, come later.
 - **Docs.** Cloudflare design notes under `crates/rundtisch/doc/` stay. README, `AGENTS.md`, and the demo READMEs are rewritten.
 - **Wasmer.** Packaging is a later change.
 
