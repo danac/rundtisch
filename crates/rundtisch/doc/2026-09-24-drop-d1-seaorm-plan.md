@@ -1,6 +1,6 @@
 # Drop Cloudflare D1 and move persistence to SeaORM
 
-Status: **plan only**. This document does not change runtime code. Database engine, migration apply in CI, and Wasmer packaging are decided below and are not open questions.
+Status: **implemented** on this branch. CI still does not apply migrations or start MySQL/Postgres. Wasmer packaging is still later.
 
 Synced to GitHub `main` at `0b13339` (`Implement v1 JWT auth: ports, Argon2id, sessions, demo login (#23)`).
 

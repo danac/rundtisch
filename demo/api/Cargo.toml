@@ -4,22 +4,30 @@ version.workspace = true
 edition.workspace = true
 publish = false
 
-[features]
-default = ["native"]
-native = ["rundtisch/sqlite", "dep:tokio", "axum/http1", "axum/tokio"]
-cloudflare = ["rundtisch/d1"]
-
 [dependencies]
-rundtisch = { path = "../../crates/rundtisch", default-features = false }
+rundtisch = { path = "../../crates/rundtisch" }
 serde_json.workspace = true
-axum = { workspace = true, features = ["json"] }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"], optional = true }
+axum = { workspace = true, features = ["json", "http1", "tokio"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
+sea-orm = { workspace = true, features = [
+    "macros",
+    "runtime-tokio-rustls",
+    "sqlx-sqlite",
+    "sqlx-mysql",
+    "sqlx-postgres",
+] }
+sea-orm-migration = { workspace = true, features = [
+    "runtime-tokio-rustls",
+    "sqlx-sqlite",
+    "sqlx-mysql",
+    "sqlx-postgres",
+] }
+async-trait = "0.1"
 
 [[bin]]
 name = "native"
 path = "src/bin/native.rs"
-required-features = ["native"]
 
 [[bin]]
-name = "generate_auth_migrations"
-path = "src/bin/generate_auth_migrations.rs"
+name = "migrate"
+path = "src/bin/migrate.rs"

@@ -14,11 +14,6 @@ demo/web/public/locales/
 
 # Rust workspace
 target/
-demo/worker/build/
-demo/worker/pkg/
-
-# Wrangler local dev state
-.wrangler/
 
 # Local overrides
 *.local
@@ -46,5 +41,3 @@ pnpm-debug.log*
 .env
 .env.*
 !.env.example
-.dev.vars
-!.dev.vars.example

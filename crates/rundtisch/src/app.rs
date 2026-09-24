@@ -1,70 +1,33 @@
-use crate::auth::AUTH_HASH_PEPPER;
-use crate::auth::password::{Argon2idHasher, PasswordHasher};
-use crate::traits::Platform;
-use crate::traits::clock::Clock;
-use crate::traits::random::RandomSource;
-use crate::traits::secrets::SecretStore;
-use std::sync::Arc;
+use std::fmt;
 
-pub struct AppState<P: Platform> {
-    pub database: Arc<P::Database>,
-    pub secrets: Arc<P::SecretStore>,
-    pub random: Arc<dyn RandomSource>,
-    pub clock: Arc<dyn Clock>,
-    pub password_hasher: Arc<dyn PasswordHasher>,
+use sea_orm::DatabaseConnection;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SecretError {
+    NotFound,
 }
 
-impl<P: Platform> Clone for AppState<P> {
-    fn clone(&self) -> Self {
-        AppState {
-            database: self.database.clone(),
-            secrets: self.secrets.clone(),
-            random: self.random.clone(),
-            clock: self.clock.clone(),
-            password_hasher: self.password_hasher.clone(),
+impl fmt::Display for SecretError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SecretError::NotFound => write!(f, "secret not found"),
         }
     }
 }
 
-impl<P: Platform> AppState<P> {
-    pub fn from_platform(platform: &P) -> AppState<P> {
-        let secrets = platform.secrets();
-        let random = platform.random();
-        let password_hasher = hasher_from_secrets(&*secrets, random.clone());
-        AppState {
-            database: platform.database(),
-            secrets,
-            random,
-            clock: platform.clock(),
-            password_hasher,
-        }
-    }
+impl std::error::Error for SecretError {}
+
+/// Application state shared by Axum handlers.
+///
+/// The connection is opened by the process entry point. This crate does not
+/// choose SQLite, MySQL, or Postgres.
+#[derive(Clone)]
+pub struct AppState {
+    pub db: DatabaseConnection,
 }
 
-fn hasher_from_secrets(
-    secrets: &dyn SecretStore,
-    random: Arc<dyn RandomSource>,
-) -> Arc<dyn PasswordHasher> {
-    match secrets.get(AUTH_HASH_PEPPER) {
-        Ok(pepper) if pepper.len() == 32 => {
-            Arc::new(Argon2idHasher::new(random, pepper.into_bytes()))
-        }
-        _ => Arc::new(UnavailableHasher),
-    }
-}
-
-struct UnavailableHasher;
-
-impl PasswordHasher for UnavailableHasher {
-    fn hash(&self, _password: &str) -> Result<String, crate::auth::password::PasswordHashError> {
-        Err(crate::auth::password::PasswordHashError::Unavailable)
-    }
-
-    fn verify(
-        &self,
-        _password: &str,
-        _password_hash: &str,
-    ) -> Result<bool, crate::auth::password::PasswordHashError> {
-        Err(crate::auth::password::PasswordHashError::Unavailable)
+impl AppState {
+    pub fn secret(&self, name: &str) -> Result<String, SecretError> {
+        std::env::var(name).map_err(|_| SecretError::NotFound)
     }
 }

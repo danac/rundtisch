@@ -1,8 +1,9 @@
 #![allow(dead_code, unused_imports)]
 
-use crate::traits::random::RandomSource;
 use email_address::EmailAddress;
-use sea_query::Iden;
+use sea_orm::DeriveActiveEnum;
+use sea_orm::EnumIter;
+use sea_orm::prelude::StringLen;
 use serde::{Deserialize, Serialize};
 
 type DateTime = time::OffsetDateTime;
@@ -11,9 +12,12 @@ fn now_utc() -> DateTime {
     DateTime::now_utc()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, DeriveActiveEnum)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::None)")]
 pub enum Role {
+    #[sea_orm(string_value = "User")]
     User,
+    #[sea_orm(string_value = "Admin")]
     Admin,
 }
 
@@ -26,36 +30,18 @@ impl Role {
     }
 }
 
-#[derive(Iden)]
-pub enum UserTable {
-    #[iden = "auth_users"]
-    Table,
-    Id,
-    PublicId,
-    Email,
-    Alias,
-    Role,
-    PasswordHash,
-    EmailVerifiedAt,
-    CreatedAt,
-    UpdatedAt,
-    LastLoginAt,
-}
-
 /// Opaque UUIDv4 for JWT `sub` and `/api/auth/users/{public_id}`. Integer [`User::id`]
-/// stays the SQLite rowid / FK target and is not a public identifier.
+/// stays the row id / FK target and is not a public identifier.
 pub fn public_id_from_bytes(mut bytes: [u8; 16]) -> uuid::Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     uuid::Uuid::from_bytes(bytes)
 }
 
-pub fn new_public_id(
-    random: &dyn RandomSource,
-) -> Result<uuid::Uuid, crate::traits::random::RandomError> {
+pub fn new_public_id() -> uuid::Uuid {
     let mut bytes = [0u8; 16];
-    random.fill_bytes(&mut bytes)?;
-    Ok(public_id_from_bytes(bytes))
+    getrandom::fill(&mut bytes).expect("CSPRNG available for UUIDv4");
+    public_id_from_bytes(bytes)
 }
 
 /// Row to insert into [`UserTable`]. Timestamps default to now so JSON
@@ -108,12 +94,8 @@ impl NewUser {
         self.updated_at = now;
     }
 
-    pub fn assign_public_id(
-        &mut self,
-        random: &dyn RandomSource,
-    ) -> Result<(), crate::traits::random::RandomError> {
-        self.public_id = new_public_id(random)?;
-        Ok(())
+    pub fn assign_public_id(&mut self) {
+        self.public_id = new_public_id();
     }
 }
 
@@ -160,21 +142,7 @@ pub fn datetime_to_rfc3339(dt: DateTime) -> String {
         .expect("OffsetDateTime is always a valid RFC 3339 timestamp")
 }
 
-#[derive(Iden)]
-pub enum SessionTable {
-    #[iden = "auth_sessions"]
-    Table,
-    Id,
-    UserId,
-    TokenHash,
-    CreatedAt,
-    LastUsedAt,
-    ExpiresAt,
-    RevokedAt,
-    UserAgent,
-}
-
-/// Row in [`SessionTable`]. `token_hash` is HMAC-SHA-256 of the raw cookie
+/// Row in `auth_sessions`. `token_hash` is HMAC-SHA-256 of the raw cookie
 /// with `AUTH_HASH_PEPPER`; the raw token is never stored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
@@ -198,10 +166,9 @@ mod tests {
 
     #[test]
     fn new_public_id_is_uuid_v4() {
-        let rng = crate::adapters::random::OsRandom;
-        let id = new_public_id(&rng).unwrap();
+        let id = new_public_id();
         assert_eq!(id.get_version(), Some(uuid::Version::Random));
-        assert_ne!(id, new_public_id(&rng).unwrap());
+        assert_ne!(id, new_public_id());
     }
 
     #[test]

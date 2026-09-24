@@ -1,5 +1,4 @@
 use crate::auth::config::{SESSION_COOKIE, SESSION_TTL};
-use crate::traits::random::{RandomError, RandomSource};
 use axum::http::{HeaderMap, HeaderValue, header};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -9,9 +8,9 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
-pub fn generate_session_token(random: &dyn RandomSource) -> Result<String, RandomError> {
+pub fn generate_session_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
-    random.fill_bytes(&mut bytes)?;
+    getrandom::fill(&mut bytes).map_err(|err| err.to_string())?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
@@ -67,8 +66,6 @@ pub fn cap_user_agent(headers: &HeaderMap) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::random::ReplayRandom;
-
     #[test]
     fn hash_is_hex_hmac_and_eq() {
         let pepper = b"cccccccccccccccccccccccccccccccc";
@@ -82,8 +79,7 @@ mod tests {
 
     #[test]
     fn session_token_is_url_safe() {
-        let rng = ReplayRandom::new(vec![1u8; 32]);
-        let token = generate_session_token(&rng).unwrap();
+        let token = generate_session_token().unwrap();
         assert!(!token.contains('='));
         assert!(URL_SAFE_NO_PAD.decode(&token).is_ok());
     }

@@ -2,13 +2,9 @@
   "name": "rundtisch",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n fe,api -c blue,green \"npm run dev --prefix web\" \"wrangler dev --config wrangler.dev.jsonc --port 8787\""
+    "dev": "concurrently -n fe,api -c blue,green \"npm run dev --prefix web\" \"DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc cargo run --manifest-path ../Cargo.toml -p rundtisch-demo --bin migrate && DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc cargo run --manifest-path ../Cargo.toml -p rundtisch-demo --bin native\""
   },
   "devDependencies": {
-    "concurrently": "^10.0.3",
-    "wrangler": "^4.132.0"
-  },
-  "dependencies": {
-    "vite": "^8.3.0"
+    "concurrently": "^10.0.3"
   }
 }

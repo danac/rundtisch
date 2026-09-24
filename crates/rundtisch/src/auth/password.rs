@@ -1,7 +1,6 @@
-use crate::traits::random::RandomSource;
 use argon2::password_hash::{PasswordHasher as _, PasswordVerifier};
 use argon2::{Algorithm, Argon2, Params, Version};
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 use zeroize::Zeroize;
 
 pub const MIN_PASSWORD_LEN: usize = 15;
@@ -73,13 +72,12 @@ pub trait PasswordHasher: Send + Sync {
 
 /// OWASP Argon2id `m=19456,t=2,p=1`, unique 16-byte salt, keyed with `AUTH_HASH_PEPPER`.
 pub struct Argon2idHasher {
-    random: Arc<dyn RandomSource>,
     pepper: Vec<u8>,
 }
 
 impl Argon2idHasher {
-    pub fn new(random: Arc<dyn RandomSource>, pepper: Vec<u8>) -> Self {
-        Self { random, pepper }
+    pub fn new(pepper: Vec<u8>) -> Self {
+        Self { pepper }
     }
 
     fn argon(&self) -> Result<Argon2<'_>, PasswordHashError> {
@@ -90,20 +88,25 @@ impl Argon2idHasher {
     }
 }
 
-impl PasswordHasher for Argon2idHasher {
-    fn hash(&self, password: &str) -> Result<String, PasswordHashError> {
-        let mut salt_bytes = [0u8; 16];
-        self.random
-            .fill_bytes(&mut salt_bytes)
-            .map_err(|err| PasswordHashError::Backend(err.to_string()))?;
+impl Argon2idHasher {
+    pub fn hash_with_salt(&self, password: &str, salt: &[u8]) -> Result<String, PasswordHashError> {
         let mut password_bytes = password.as_bytes().to_vec();
         let hash = self
             .argon()?
-            .hash_password_with_salt(&password_bytes, &salt_bytes)
+            .hash_password_with_salt(&password_bytes, salt)
             .map_err(|err| PasswordHashError::Backend(err.to_string()))?
             .to_string();
         password_bytes.zeroize();
         Ok(hash)
+    }
+}
+
+impl PasswordHasher for Argon2idHasher {
+    fn hash(&self, password: &str) -> Result<String, PasswordHashError> {
+        let mut salt_bytes = [0u8; 16];
+        getrandom::fill(&mut salt_bytes)
+            .map_err(|err| PasswordHashError::Backend(err.to_string()))?;
+        self.hash_with_salt(password, &salt_bytes)
     }
 
     fn verify(&self, password: &str, password_hash: &str) -> Result<bool, PasswordHashError> {
@@ -166,8 +169,6 @@ impl PasswordHasher for TestPasswordHasher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::random::{OsRandom, ReplayRandom};
-
     #[test]
     fn policy_rejects_short_long_and_common() {
         assert_eq!(check_password_policy("short"), Err(PasswordError::TooShort));
@@ -192,10 +193,7 @@ mod tests {
 
     #[test]
     fn argon2id_hashes_with_unique_salts() {
-        let hasher = Argon2idHasher::new(
-            Arc::new(OsRandom),
-            b"cccccccccccccccccccccccccccccccc".to_vec(),
-        );
+        let hasher = Argon2idHasher::new(b"cccccccccccccccccccccccccccccccc".to_vec());
         let a = hasher.hash("unique-passphrase-ok").unwrap();
         let b = hasher.hash("unique-passphrase-ok").unwrap();
         assert!(a.starts_with("$argon2id$"));
@@ -206,16 +204,15 @@ mod tests {
 
     #[test]
     fn argon2id_uses_supplied_salt_bytes() {
-        let hasher = Argon2idHasher::new(
-            Arc::new(ReplayRandom::new(vec![7u8; 16])),
-            b"cccccccccccccccccccccccccccccccc".to_vec(),
-        );
-        let a = hasher.hash("unique-passphrase-ok").unwrap();
-        let hasher2 = Argon2idHasher::new(
-            Arc::new(ReplayRandom::new(vec![7u8; 16])),
-            b"cccccccccccccccccccccccccccccccc".to_vec(),
-        );
-        let b = hasher2.hash("unique-passphrase-ok").unwrap();
+        let pepper = b"cccccccccccccccccccccccccccccccc".to_vec();
+        let hasher = Argon2idHasher::new(pepper.clone());
+        let a = hasher
+            .hash_with_salt("unique-passphrase-ok", &[7u8; 16])
+            .unwrap();
+        let hasher2 = Argon2idHasher::new(pepper);
+        let b = hasher2
+            .hash_with_salt("unique-passphrase-ok", &[7u8; 16])
+            .unwrap();
         assert_eq!(a, b);
     }
 }
