@@ -22,7 +22,7 @@ sea-orm-migration = { workspace = true, features = [
     "sqlx-mysql",
     "sqlx-postgres",
 ] }
-async-trait = "0.1"
+async-trait.workspace = true
 
 [[bin]]
 name = "native"
