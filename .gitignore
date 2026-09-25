@@ -1,10 +1,13 @@
 # Dependencies
 node_modules/
 
-# Frontend (Vite) — demo/web/
+# Frontend (Vite)
 demo/web/dist/
 demo/web/dist-ssr/
 demo/web/public/locales/
+crockis/web/dist/*
+!crockis/web/dist/.keep
+crockis/web/dist-ssr/
 *.tsbuildinfo
 
 # Local SQLite (native demo)
