@@ -34,13 +34,11 @@ From the repository root, with MySQL running, apply migrations and start the API
 ```bash
 wasmer run target/wasm32-wasmer-wasi/release/migrate.wasi.wasm \
   --net \
-  --env PORT=3000 \
   --env DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev \
   --env DB_SSL_MODE=required
 
 wasmer run target/wasm32-wasmer-wasi/release/native.wasi.wasm \
   --net \
-  --env PORT=3000 \
   --env DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev \
   --env DB_SSL_MODE=required
 ```

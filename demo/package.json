@@ -2,8 +2,8 @@
   "name": "rundtisch",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/items_demo cargo run -p rundtisch-demo --bin migrate && DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev cargo run -p rundtisch-demo --bin native\"",
-    "dev:wasmer": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"cargo wasix build --release && wasmer run ../target/wasm32-wasmer-wasi/release/native.wasi.wasm --net --env PORT=3000 --env DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev --env DB_SSL_MODE=required --env AUTH_JWT_ACCESS_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --env AUTH_JWT_VERIFY_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --env AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc\""
+    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev cargo run -p rundtisch-demo --bin native\"",
+    "dev:wasmer": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"cargo wasix build --release && wasmer run ../target/wasm32-wasmer-wasi/release/native.wasi.wasm --net --env DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/rundtisch_dev --env DB_SSL_MODE=required --env AUTH_JWT_ACCESS_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --env AUTH_JWT_VERIFY_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb --env AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc\""
   },
   "devDependencies": {
     "concurrently": "^10.0.3"
