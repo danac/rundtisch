@@ -66,11 +66,13 @@ export async function downloadPhoto(photo: Photo, token: string | null) {
   saveBlob(blob, photoName(photo, blob))
 }
 
-export async function downloadCollection(
-  collection: Collection,
-  photos: Photo[],
-  token: string | null,
-) {
+export async function downloadPhotos(name: string, photos: Photo[], token: string | null) {
+  if (photos.length === 1) {
+    const only = photos[0]
+    if (only) await downloadPhoto(only, token)
+    return
+  }
+
   const zip = new JSZip()
   const used = new Set<string>()
   const queue = photos.map((photo, index) => ({ photo, index }))
@@ -79,12 +81,20 @@ export async function downloadCollection(
       const next = queue.shift()
       if (!next) return
       const blob = await fetchAsset(photoUrl(next.photo), token)
-      let name = `${String(next.index + 1).padStart(2, '0')}-${photoName(next.photo, blob)}`
-      while (used.has(name)) name = `copy-${name}`
-      used.add(name)
-      zip.file(name, blob)
+      let filename = `${String(next.index + 1).padStart(2, '0')}-${photoName(next.photo, blob)}`
+      while (used.has(filename)) filename = `copy-${filename}`
+      used.add(filename)
+      zip.file(filename, blob)
     }
   })
   await Promise.all(workers)
-  saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(collection.name)}.zip`)
+  saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(name)}.zip`)
+}
+
+export async function downloadCollection(
+  collection: Collection,
+  photos: Photo[],
+  token: string | null,
+) {
+  await downloadPhotos(collection.name, photos, token)
 }

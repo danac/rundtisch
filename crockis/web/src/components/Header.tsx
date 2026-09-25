@@ -4,6 +4,8 @@ import { Logo } from './Logo'
 
 type HeaderProps = {
   title?: string
+  selecting?: boolean
+  onToggleSelect?: () => void
 }
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -12,7 +14,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'text-ink' : 'text-mist',
   ].join(' ')
 
-export function Header({ title }: HeaderProps) {
+export function Header({ title, selecting, onToggleSelect }: HeaderProps) {
   const { user, logout } = useAuth()
 
   return (
@@ -48,6 +50,16 @@ export function Header({ title }: HeaderProps) {
       <nav className="flex items-center justify-end gap-3 font-display text-[12px] font-medium sm:gap-7">
         {user ? (
           <>
+            {onToggleSelect ? (
+              <button
+                type="button"
+                aria-pressed={selecting}
+                onClick={onToggleSelect}
+                className="tracking-[0.14em] uppercase text-mist transition-colors hover:text-ink sm:tracking-[0.22em]"
+              >
+                {selecting ? 'Cancel' : 'Select'}
+              </button>
+            ) : null}
             <NavLink to="/collections" className={`hidden sm:inline ${navClass({ isActive: false })}`}>
               Collections
             </NavLink>
