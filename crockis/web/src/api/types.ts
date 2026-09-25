@@ -26,6 +26,10 @@ export type Photo = {
   alt: string
   title?: string
   takenAt?: string
+  /** Original file when it differs from the display `src`. */
+  downloadSrc?: string
+  /** Download filename, including extension when known. */
+  filename?: string
 }
 
 export type LoginRequest = {

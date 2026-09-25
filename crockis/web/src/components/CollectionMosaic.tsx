@@ -1,24 +1,37 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { Collection } from '../api'
+import { api, type Collection } from '../api'
+import { useAuth } from '../auth/useAuth'
+import { downloadCollection } from '../download'
+import { DownloadControl } from './DownloadControl'
 
 type CollectionMosaicProps = {
   collections: Collection[]
 }
 
-export function CollectionMosaic({ collections }: CollectionMosaicProps) {
+function CollectionCard({ collection, featured }: { collection: Collection; featured: boolean }) {
+  const { token } = useAuth()
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    if (!token) return
+    setBusy(true)
+    try {
+      const photos = await api.listPhotos(token, collection.id)
+      await downloadCollection(collection, photos, token)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
-    <div className="photo-mosaic grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-      {collections.map((collection, index) => {
-        const featured = index === 0
-        return (
-          <Link
-            key={collection.id}
-            to={`/collections/${collection.id}`}
-            className={[
-              'group relative block overflow-hidden bg-void',
-              featured ? 'sm:col-span-2 lg:col-span-2 lg:row-span-2' : '',
-            ].join(' ')}
-          >
+    <div
+      className={[
+        'group relative overflow-hidden bg-void',
+        featured ? 'sm:col-span-2 lg:col-span-2 lg:row-span-2' : '',
+      ].join(' ')}
+    >
+      <Link to={`/collections/${collection.id}`} className="relative block">
             <img
               src={collection.cover.src}
               alt={collection.cover.alt}
@@ -40,8 +53,24 @@ export function CollectionMosaic({ collections }: CollectionMosaicProps) {
               </p>
             </div>
           </Link>
-        )
-      })}
+          <DownloadControl
+            variant="overlay"
+            label={`Download ${collection.name}`}
+            busy={busy}
+            onDownload={() => {
+              void save()
+            }}
+          />
+        </div>
+  )
+}
+
+export function CollectionMosaic({ collections }: CollectionMosaicProps) {
+  return (
+    <div className="photo-mosaic grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      {collections.map((collection, index) => (
+        <CollectionCard key={collection.id} collection={collection} featured={index === 0} />
+      ))}
     </div>
   )
 }
