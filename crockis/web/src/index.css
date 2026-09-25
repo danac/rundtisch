@@ -75,6 +75,7 @@ body {
   content: "";
   position: absolute;
   inset: 0;
+  z-index: 1;
   background: rgb(255 255 255 / 0.14);
   opacity: 0;
   pointer-events: none;
@@ -90,7 +91,7 @@ body {
   position: absolute;
   top: 0.65rem;
   right: 0.65rem;
-  z-index: 3;
+  z-index: 20;
   display: grid;
   width: 1.85rem;
   height: 1.85rem;
@@ -98,18 +99,18 @@ body {
   border: 0;
   border-radius: 999px;
   padding: 0;
-  background: rgb(0 0 0 / 0.42);
-  color: rgb(244 241 234 / 0.88);
+  background: rgb(0 0 0 / 0.55);
+  color: rgb(244 241 234 / 0.92);
   opacity: 0;
   cursor: pointer;
   transition: opacity 0.45s ease, background-color 0.2s ease, color 0.2s ease;
 }
 
-.react-photo-album--photo:hover .download-control,
-.react-photo-album--photo:focus-within .download-control,
-.group:hover .download-control,
-.group:focus-within .download-control,
-.download-control:focus-visible {
+.photo-mosaic .react-photo-album--photo:hover .download-control,
+.photo-mosaic .react-photo-album--photo:focus-within .download-control,
+.photo-mosaic .group:hover .download-control,
+.photo-mosaic .group:focus-within .download-control,
+.photo-mosaic .download-control:focus-visible {
   opacity: 1;
 }
 
