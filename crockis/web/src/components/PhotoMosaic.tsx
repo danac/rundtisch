@@ -39,7 +39,6 @@ export function PhotoMosaic({ photos }: PhotoMosaicProps) {
             extras: (_, { photo }) => (
               <DownloadControl
                 nested
-                variant="overlay"
                 label={`Download ${photo.title ?? photo.alt}`}
                 busy={busyId === photo.id}
                 onDownload={() => {

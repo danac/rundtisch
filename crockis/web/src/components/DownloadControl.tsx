@@ -3,7 +3,6 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
 type DownloadControlProps = {
   label: string
   busy?: boolean
-  variant: 'overlay' | 'inline'
   nested?: boolean
   onDownload: () => void
 }
@@ -18,14 +17,13 @@ function Icon() {
   )
 }
 
-export function DownloadControl({ label, busy, variant, nested, onDownload }: DownloadControlProps) {
+export function DownloadControl({ label, busy, nested, onDownload }: DownloadControlProps) {
   function activate(event: MouseEvent | KeyboardEvent) {
     event.preventDefault()
     event.stopPropagation()
     if (!busy) onDownload()
   }
 
-  const className = variant === 'inline' ? 'download-control download-control--inline' : 'download-control'
   const content: ReactNode = busy ? <span className="download-control__dot" /> : <Icon />
 
   if (nested) {
@@ -36,7 +34,7 @@ export function DownloadControl({ label, busy, variant, nested, onDownload }: Do
         aria-label={label}
         aria-busy={busy || undefined}
         title={label}
-        className={className}
+        className="download-control"
         onClick={activate}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') activate(event)
@@ -53,7 +51,7 @@ export function DownloadControl({ label, busy, variant, nested, onDownload }: Do
       aria-label={label}
       aria-busy={busy || undefined}
       title={label}
-      className={className}
+      className="download-control"
       onClick={activate}
     >
       {content}

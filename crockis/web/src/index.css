@@ -86,7 +86,7 @@ body {
   opacity: 1;
 }
 
-.download-control {
+.photo-mosaic .download-control {
   position: absolute;
   top: 0.65rem;
   right: 0.65rem;
@@ -107,28 +107,14 @@ body {
 
 .react-photo-album--photo:hover .download-control,
 .react-photo-album--photo:focus-within .download-control,
-.group:hover > .download-control,
-.group:focus-within > .download-control,
+.group:hover .download-control,
+.group:focus-within .download-control,
 .download-control:focus-visible {
   opacity: 1;
 }
 
-.download-control:hover {
+.photo-mosaic .download-control:hover {
   background: rgb(0 0 0 / 0.68);
-}
-
-.download-control--inline {
-  position: static;
-  width: auto;
-  height: auto;
-  background: transparent;
-  color: var(--color-mist);
-  opacity: 1;
-}
-
-.download-control--inline:hover {
-  background: transparent;
-  color: var(--color-ink);
 }
 
 .download-control[aria-busy='true'] {

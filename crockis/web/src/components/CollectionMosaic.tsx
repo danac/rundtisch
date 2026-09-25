@@ -41,6 +41,14 @@ function CollectionCard({ collection, featured }: { collection: Collection; feat
               ].join(' ')}
             />
             <div className="pointer-events-none absolute inset-0 z-10 bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
+            <DownloadControl
+              nested
+              label={`Download ${collection.name}`}
+              busy={busy}
+              onDownload={() => {
+                void save()
+              }}
+            />
             <div className="absolute inset-x-0 bottom-0 z-10 p-5 md:p-6">
               <h2 className="font-display text-lg font-medium tracking-[0.22em] uppercase md:text-xl">
                 {collection.name}
@@ -53,14 +61,6 @@ function CollectionCard({ collection, featured }: { collection: Collection; feat
               </p>
             </div>
           </Link>
-          <DownloadControl
-            variant="overlay"
-            label={`Download ${collection.name}`}
-            busy={busy}
-            onDownload={() => {
-              void save()
-            }}
-          />
         </div>
   )
 }

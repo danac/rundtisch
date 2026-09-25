@@ -1,11 +1,9 @@
-import type { ReactNode } from 'react'
 import { Link, NavLink } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { Logo } from './Logo'
 
 type HeaderProps = {
   title?: string
-  accessory?: ReactNode
 }
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -14,7 +12,7 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? 'text-ink' : 'text-mist',
   ].join(' ')
 
-export function Header({ title, accessory }: HeaderProps) {
+export function Header({ title }: HeaderProps) {
   const { user, logout } = useAuth()
 
   return (
@@ -29,14 +27,9 @@ export function Header({ title, accessory }: HeaderProps) {
         </span>
       </Link>
 
-      <div className="flex items-center justify-center gap-3">
-        {title ? (
-          <p className="hidden font-display text-[13px] font-medium tracking-[0.32em] uppercase text-mist sm:block">
-            {title}
-          </p>
-        ) : null}
-        {accessory}
-      </div>
+      <p className="hidden font-display text-[13px] font-medium tracking-[0.32em] uppercase text-mist sm:block">
+        {title}
+      </p>
 
       <nav className="flex items-center justify-end gap-7 font-display text-[12px] font-medium">
         {user ? (
