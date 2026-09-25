@@ -1,6 +1,9 @@
+import { LoginForm } from './LoginForm.tsx'
+import { UsersPanel } from './UsersPanel.tsx'
+
 function App() {
   return (
-    <main className="relative flex min-h-full items-center justify-center overflow-hidden px-6">
+    <main className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-6 py-16">
       {/* Soft paper grain */}
       <div
         aria-hidden
@@ -29,13 +32,21 @@ function App() {
         />
       </div>
 
-      <div className="relative z-10 text-center">
-        <h1 className="font-display text-6xl font-semibold tracking-tight text-ink sm:text-7xl md:text-8xl">
+      <div className="relative z-10 flex w-full max-w-4xl flex-col items-center text-center">
+        <h1 className="font-display text-5xl font-semibold tracking-tight text-ink sm:text-6xl md:text-7xl">
           rundtisch
         </h1>
         <p className="mt-4 text-lg text-ink-muted sm:text-xl">
           a round table for building on the web
         </p>
+        <div className="mt-10 flex w-full flex-col gap-6 lg:flex-row lg:items-start">
+          <div className="w-full lg:w-1/2">
+            <LoginForm />
+          </div>
+          <div className="w-full lg:w-1/2">
+            <UsersPanel />
+          </div>
+        </div>
       </div>
     </main>
   )

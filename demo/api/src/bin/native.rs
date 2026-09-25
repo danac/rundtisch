@@ -1,7 +1,7 @@
 use axum::Router;
 use rundtisch::AppState;
-use rundtisch_demo::native_platform::NativePlatform;
 use rundtisch_demo::build_router;
+use rundtisch_demo::native_platform::NativePlatform;
 use tokio::signal;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
@@ -17,7 +17,7 @@ async fn main() {
 ///
 /// `router` must already have state applied (Axum `Router::with_state`).
 async fn serve(router: Router) {
-    serve_at(router, "0.0.0.0:8080").await;
+    serve_at(router, "0.0.0.0:8787").await;
 }
 
 async fn serve_at(router: Router, addr: &str) {

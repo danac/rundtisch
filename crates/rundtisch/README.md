@@ -8,21 +8,20 @@ This crate is the reusable core of the [rundtisch](https://github.com/danac/rund
 
 | Module | Role |
 |--------|------|
-| `traits` | `Platform` and database traits (`DatabaseExecutor`, `DbRecord`, migrations) |
-| `app` | `AppState<P>` |
-| `adapters::db` | SQLite / D1 adapters |
-| `adapters::platform` | `NativePlatform`, `CloudflarePlatform` |
-| `auth` | Auth models and schema migrations (WIP) |
+| `traits` | `Platform` (`Database` + `SecretStore`; default `random()` / `clock()`), `DatabaseExecutor`, migrations |
+| `app` | `AppState<P>` (`database`, `secrets`, `random`, `clock`, `password_hasher`) |
+| `adapters` | SQLite / D1, `OsRandom` / `WorkerRandom`, `SystemClock`, `EnvSecretStore` / `WorkerSecretStore` |
+| `auth` | Users + sessions, jwt-compact HS256, Argon2id, HMAC session cookies, register/login handlers |
 
-Application crates define routes, handlers, and HTTP serving. They stay generic over `P: Platform`. Native `serve` lives in `demo/api/src/bin/native.rs`; the Workers `fetch` entry lives in `demo/worker`.
+Application crates own `Platform` impls (`demo/api` native, `demo/worker` Cloudflare). They stay generic over `P: Platform`. Native `serve` lives in `demo/api/src/bin/native.rs`; the Workers `fetch` entry lives in `demo/worker`.
 
 ## Features
 
 | Feature | Enables |
 |---------|---------|
-| *(none)* | Traits, `AppState`, auth models/migrations |
-| `native` | SQLite adapter |
-| `cloudflare` | Workers `Env` platform, D1 executor stub |
+| *(none)* | Traits, `AppState`, auth (JWT / Argon2id / sessions) |
+| `sqlite` | SQLite adapter (`sqlx`) |
+| `d1` | Workers D1 executor, `WorkerRandom`, `WorkerSecretStore`, `getrandom/wasm_js` |
 
 Default features are empty so a WASM build does not pull Tokio.
 
@@ -31,8 +30,16 @@ Row types are `#[derive(Serialize, Deserialize)]` structs (`DbRecord`). The same
 ## Native
 
 ```rust
-use rundtisch::adapters::platform::native::NativePlatform;
-use rundtisch::AppState;
+use rundtisch::adapters::db::sqlite::SqliteExecutor;
+use rundtisch::adapters::secrets::EnvSecretStore;
+use rundtisch::{AppState, Platform};
+
+impl Platform for NativePlatform {
+    type Database = SqliteExecutor;
+    type SecretStore = EnvSecretStore;
+    fn database(&self) -> Arc<Self::Database> { self.db.clone() }
+    fn secrets(&self) -> Arc<Self::SecretStore> { self.secrets.clone() }
+}
 
 #[tokio::main]
 async fn main() {
@@ -47,7 +54,6 @@ async fn main() {
 Keep a thin `cdylib` with `#[event(fetch)]`. Construct `CloudflarePlatform` from the Worker `env` and dispatch through your Axum router:
 
 ```rust
-use rundtisch::adapters::platform::cloudflare::CloudflarePlatform;
 use rundtisch::AppState;
 use tower_service::Service;
 use worker::{Context, Env, HttpRequest};
@@ -72,10 +78,12 @@ async fn fetch(
 From the repository root:
 
 ```bash
-cargo test -p rundtisch --features native
+cargo test -p rundtisch --features sqlite
+cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown
 ```
 
 ## See also
 
 - [Root README](../../README.md) — monorepo layout, demo Worker, CI
 - [Demo API](../../demo/api/README.md) — example routes using this crate
+- [JWT / WASM / RNG port plan](doc/20260921-JWT_WASM_dependencies_and_RNG_port.md) — locked v1: jwt-compact HS256, default Clock/Random, `SecretStore` + `AUTH_HASH_PEPPER`, same Argon2id on Worker and native, `auth_sessions`, opaque `public_id` UUIDv4

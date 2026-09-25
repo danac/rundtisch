@@ -47,8 +47,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Test rundtisch (native)
-        run: cargo test -p rundtisch
+      - name: Test rundtisch (sqlite)
+        run: cargo test -p rundtisch --features sqlite
+
+      - name: Check rundtisch WASM (d1)
+        run: cargo check -p rundtisch --features d1 --target wasm32-unknown-unknown
 
       - name: Install dependencies
         working-directory: demo/web

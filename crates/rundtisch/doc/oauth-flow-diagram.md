@@ -348,7 +348,7 @@ Supported `{provider}` values: `google`, `github` (extensible).
 | **users** | `id`, `email`, `display_name`, `email_verified`, `password_hash` (nullable for OAuth-only) |
 | **oauth_accounts** | `provider`, `provider_sub`, `user_id`, `created_at` |
 | **oauth_states** | `state`, `code_verifier`, `intent`, `redirect_uri`, `expires_at` |
-| **refresh_tokens** | `token_hash`, `user_id`, `expires_at`, `revoked` |
+| **auth_sessions** | `token_hash`, `user_id`, `created_at`, `last_used_at`, `expires_at`, `revoked_at`, `user_agent` |
 
 ---
 
@@ -357,7 +357,7 @@ Supported `{provider}` values: `google`, `github` (extensible).
 | Artifact | Lifetime | Where it lives | Used for |
 |----------|----------|----------------|----------|
 | **Access JWT** | Short (5–15 min) | Frontend memory | Every API request |
-| **Refresh token** | Long (days/weeks) | HttpOnly Secure cookie | `/auth/refresh`, `/auth/logout` |
+| **Refresh / session token** | Long (days/weeks) | HttpOnly Secure `SameSite=Strict` cookie | `/auth/refresh`, `/auth/logout` |
 | **OAuth state** | ~10 minutes | Server DB (ephemeral) | CSRF protection; bind callback to start request |
 | **PKCE code_verifier** | ~10 minutes | Server DB (with state) | Prove authorization code exchange is from same client |
 | **Provider id_token** | Minutes | Server only (transient) | Read `sub`, `email`, `email_verified`; not stored long-term |

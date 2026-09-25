@@ -1,0 +1,5 @@
+# Local Wrangler secrets (copy to demo/.dev.vars). Native uses the same names as env vars.
+# AUTH_JWT_* must be at least 32 bytes. AUTH_HASH_PEPPER must be exactly 32 bytes.
+AUTH_JWT_ACCESS_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+AUTH_JWT_VERIFY_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc

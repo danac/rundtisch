@@ -1,25 +1,24 @@
 use rundtisch::adapters::db::sqlite::SqliteExecutor;
+use rundtisch::adapters::secrets::EnvSecretStore;
 use rundtisch::traits::Platform;
 use std::path::Path;
 use std::sync::Arc;
 
 pub struct NativePlatform {
     db: Arc<SqliteExecutor>,
+    secrets: Arc<EnvSecretStore>,
 }
 
-// Secrets will be wired later.
-// pub struct EnvironmentVariableSecrets;
-
 impl Platform for NativePlatform {
-    // type SecretStore = EnvironmentVariableSecrets;
-    // fn secrets(&self) -> Arc<Self::SecretStore> {
-    //     Arc::new(EnvironmentVariableSecrets)
-    // }
-
     type Database = SqliteExecutor;
+    type SecretStore = EnvSecretStore;
 
     fn database(&self) -> Arc<Self::Database> {
         self.db.clone()
+    }
+
+    fn secrets(&self) -> Arc<Self::SecretStore> {
+        self.secrets.clone()
     }
 }
 
@@ -28,6 +27,7 @@ impl NativePlatform {
     pub async fn new(database_path: impl AsRef<Path>) -> Self {
         Self {
             db: Arc::new(SqliteExecutor::new(database_path).await),
+            secrets: Arc::new(EnvSecretStore),
         }
     }
 }
