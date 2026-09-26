@@ -1,0 +1,30 @@
+kind: wasmer.io/App.v0
+name: rundtisch
+package: .
+# Set this to your Wasmer account or namespace, or let `wasmer deploy` prompt.
+# owner: YOUR_WASMER_USERNAME
+#
+# Auth secrets are not committed here. After the first deploy, set them on the
+# app (dashboard or `wasmer app secrets`):
+#   AUTH_JWT_ACCESS_SECRET
+#   AUTH_JWT_VERIFY_SECRET
+#   AUTH_HASH_PEPPER
+debug: false
+capabilities:
+  database:
+    engine: mysql
+# Managed MySQL is only offered in some regions. Apps with a database must
+# name exactly one of those regions.
+locality:
+  regions:
+    - fr-roub1
+health_checks:
+  - http:
+      method: get
+      path: /api/health
+      interval: 30s
+      timeout: 10s
+      unhealthy_threshold: 2
+      healthy_threshold: 1
+      expected_status_codes:
+        - 200

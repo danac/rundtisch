@@ -22,7 +22,9 @@ demo/api/
     handlers.rs
     native_platform.rs    # Database::connect(DATABASE_URL)
     migrator.rs           # MigratorTrait → rundtisch::auth::migrations()
-    bin/native.rs         # listen on 0.0.0.0:8787
+    listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8787
+    static_files.rs       # optional SPA from /app/web or STATIC_DIR
+    bin/native.rs         # listen; serve web/dist when the static dir exists
     bin/migrate.rs        # Migrator::up(&db, None)
 ```
 
@@ -54,6 +56,8 @@ cargo run -p rundtisch-demo --bin migrate
 cargo run -p rundtisch-demo --bin native
 curl -i http://localhost:8787/api/health
 ```
+
+`PORT` and `BIND_ADDR` override the listen address (Wasmer Edge uses `80` / `127.0.0.1`). When `/app/web` exists — the `[fs]` mount in `demo/wasmer.toml` — or `STATIC_DIR` points at `demo/web/dist`, the same process serves the built SPA. Leave both unset for Vite split-dev.
 
 | Secret | Length |
 |--------|--------|
