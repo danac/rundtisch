@@ -50,7 +50,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install wasix
-        run: cargo install wasix
+        run: cargo install cargo-wasix
 
       - name: Install wasmer
         run: cargo install wasmer-cli
