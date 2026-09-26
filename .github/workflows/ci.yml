@@ -1,0 +1,87 @@
+name: Wasmer
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  deploy:
+    name: WASIX release and Edge deploy
+    runs-on: ubuntu-latest
+    environment: Wasmer
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          check-latest: true
+          cache: npm
+          cache-dependency-path: demo/web/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry, git, and WASIX target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.wasix
+            target
+          key: ${{ runner.os }}-wasix-${{ hashFiles('Cargo.wasix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasix-
+
+      - name: Install lld
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install wasix
+        run: cargo install wasix
+
+      - name: Install wasmer
+        run: cargo install wasmer-cli
+
+      - name: Use the WASIX lockfile
+        run: cp Cargo.wasix.lock Cargo.lock
+
+      - name: Install frontend dependencies
+        working-directory: demo/web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: demo/web
+        run: npm run build
+
+      - name: Build WASIX release
+        run: cargo wasix build --release
+
+      - name: Verify WASIX artifacts
+        run: |
+          test -f target/wasm32-wasmer-wasi/release/native.wasi.wasm
+          test -f target/wasm32-wasmer-wasi/release/migrate.wasi.wasm
+          test -f demo/web/dist/index.html
+          ls -lh target/wasm32-wasmer-wasi/release/*.wasm demo/web/dist
+
+      - name: Deploy to Wasmer Edge
+        working-directory: demo
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+        run: |
+          if [ -z "$WASMER_TOKEN" ]; then
+            echo "Add WASMER_TOKEN to the Wasmer GitHub environment."
+            exit 1
+          fi
+          wasmer deploy --non-interactive --bump --no-persist-id --publish-package
