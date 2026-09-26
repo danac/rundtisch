@@ -46,7 +46,7 @@ Then, from `demo/`:
 wasmer deploy --owner YOUR_WASMER_USERNAME --no-persist-id
 ```
 
-Leave `owner` commented in `app.yaml`. CI creates `AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET`, and `AUTH_HASH_PEPPER` on the app if they are missing (or copies them from the Wasmer GitHub environment). Edge injects `DB_*` for the managed MySQL database. A `pre-deployment` job runs the package `migrate` command once per deploy; the server does not migrate on startup or per request.
+Leave `owner` commented in `app.yaml`. Set `AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET`, and `AUTH_HASH_PEPPER` on the app. A commented "Ensure auth secrets" step in `.github/workflows/ci.yml` can generate missing ones; leave it commented so deploys do not rotate or recreate secrets. Edge injects `DB_*` for the managed MySQL database. A `pre-deployment` job runs the package `migrate` command once per deploy; the server does not migrate on startup or per request.
 
 From the repository root, with MySQL running, apply migrations and start the API by running the release WASIX binaries. Run migrate first, then the server. Both need network access and the same database URL and `DB_SSL_MODE=required`. Raw `wasmer run` of the `.wasm` file does not apply `wasmer.toml` `[fs]` or `PORT=80`; Vite can still proxy `/api` to `localhost:8787`.
 
