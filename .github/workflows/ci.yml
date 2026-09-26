@@ -13,6 +13,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # The WASIX crate index sometimes fails over HTTP/2 (nghttp2 PROTOCOL_ERROR).
+  CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
   deploy:
@@ -67,7 +69,17 @@ jobs:
         run: npm run build
 
       - name: Build WASIX release
-        run: cargo wasix build --release
+        run: |
+          n=0
+          until cargo wasix build --release; do
+            n=$((n + 1))
+            if [ "$n" -ge 3 ]; then
+              echo "WASIX build failed after $n attempts"
+              exit 1
+            fi
+            echo "WASIX build failed (attempt $n), retrying..."
+            sleep $((n * 8))
+          done
 
       - name: Verify WASIX artifacts
         run: |
