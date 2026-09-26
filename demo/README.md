@@ -29,7 +29,26 @@ sudo docker exec -it wasmer-mysql mysql -uroot -proot -e "DROP DATABASE rundtisc
 
 ## Wasmer
 
-From the repository root, with MySQL running, apply migrations and start the API by running the release WASIX binaries. Run migrate first, then the server. Both need network access and the same database URL and `DB_SSL_MODE=required`.
+`wasmer.toml` and `app.yaml` in this folder are the Edge package and app drafts. The `[fs]` map mounts `web/dist` at `/app/web`. The native binary serves that directory as the SPA when the path exists (Edge, or `STATIC_DIR=...` locally). Split-dev keeps using Vite: `npm run dev` and `npm run dev:wasmer` do not set `STATIC_DIR`, and `/app/web` is not on the host, so Axum stays API-only.
+
+Build the frontend and the WASIX modules before `wasmer deploy` (from the repository root):
+
+```bash
+npm run build --prefix demo/web
+cargo wasix build --release
+```
+
+CI (`.github/workflows/ci.yml`) does the same on pushes to `main`, pushes to the Wasmer PR branch, and on `workflow_dispatch`: it installs cargo-wasix with `cargo binstall` and Wasmer with `curl https://get.wasmer.io -sSfL | sh`, replaces `Cargo.lock` with `Cargo.wasix.lock`, builds the frontend, builds the WASIX release, and deploys from this folder using the `Wasmer` GitHub environment (`WASMER_TOKEN`, `WASMER_OWNER`).
+
+Then, from `demo/`:
+
+```bash
+wasmer deploy --owner YOUR_WASMER_USERNAME --no-persist-id
+```
+
+Leave `owner` commented in `app.yaml`. Set `AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET`, and `AUTH_HASH_PEPPER` on the app. A commented "Ensure auth secrets" step in `.github/workflows/ci.yml` can generate missing ones; leave it commented so deploys do not rotate or recreate secrets. Edge injects `DB_*` for the managed MySQL database. A `pre-deployment` job runs the package `migrate` command once per deploy; the server does not migrate on startup or per request.
+
+From the repository root, with MySQL running, apply migrations and start the API by running the release WASIX binaries. Run migrate first, then the server. Both need network access and the same database URL and `DB_SSL_MODE=required`. Raw `wasmer run` of the `.wasm` file does not apply `wasmer.toml` `[fs]` or `PORT=80`; Vite can still proxy `/api` to `localhost:8787`.
 
 ```bash
 wasmer run target/wasm32-wasmer-wasi/release/migrate.wasi.wasm \

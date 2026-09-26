@@ -1,0 +1,38 @@
+[package]
+name = "rundtisch"
+version = "0.1.0"
+description = "Rundtisch demo: Axum API and React SPA on Wasmer Edge"
+license = "MIT"
+readme = "./README.md"
+repository = "https://github.com/danac/rundtisch"
+entrypoint = "native"
+wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
+
+# Guest path /app/web is what the native binary serves as the SPA.
+# Build the frontend first: `npm run build --prefix demo/web`.
+[fs]
+"/app/web" = "./web/dist"
+
+[[module]]
+name = "native"
+source = "../target/wasm32-wasmer-wasi/release/native.wasi.wasm"
+abi = "wasi"
+
+[[module]]
+name = "migrate"
+source = "../target/wasm32-wasmer-wasi/release/migrate.wasi.wasm"
+abi = "wasi"
+
+[[command]]
+name = "native"
+module = "native"
+runner = "wasi"
+
+[command.annotations.wasi]
+env = ["PORT=80", "BIND_ADDR=127.0.0.1"]
+
+# Edge `jobs` in app.yaml run this command once per deploy.
+[[command]]
+name = "migrate"
+module = "migrate"
+runner = "wasi"
