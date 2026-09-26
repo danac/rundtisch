@@ -104,3 +104,61 @@ jobs:
           fi
           wasmer --version
           wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
+
+      - name: Ensure auth secrets
+        working-directory: demo
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+          WASMER_OWNER: ${{ secrets.WASMER_OWNER || vars.WASMER_OWNER }}
+          AUTH_JWT_ACCESS_SECRET: ${{ secrets.AUTH_JWT_ACCESS_SECRET }}
+          AUTH_JWT_VERIFY_SECRET: ${{ secrets.AUTH_JWT_VERIFY_SECRET }}
+          AUTH_HASH_PEPPER: ${{ secrets.AUTH_HASH_PEPPER }}
+        run: |
+          set +x
+          APP="$WASMER_OWNER/rundtisch"
+          list="$(wasmer app secret list --app "$APP" --non-interactive --format json)"
+          missing=""
+          for name in AUTH_JWT_ACCESS_SECRET AUTH_JWT_VERIFY_SECRET AUTH_HASH_PEPPER; do
+            if printf '%s' "$list" | grep -q "$name"; then
+              echo "App already has $name"
+            else
+              missing="$missing $name"
+            fi
+          done
+          missing="${missing# }"
+          if [ -z "$missing" ]; then
+            echo "All auth secrets already exist on $APP"
+            exit 0
+          fi
+          tmp="$(mktemp)"
+          chmod 600 "$tmp"
+          cleanup() { rm -f "$tmp"; }
+          trap cleanup EXIT
+          for name in $missing; do
+            case "$name" in
+              AUTH_JWT_ACCESS_SECRET) value="${AUTH_JWT_ACCESS_SECRET}" ;;
+              AUTH_JWT_VERIFY_SECRET) value="${AUTH_JWT_VERIFY_SECRET}" ;;
+              AUTH_HASH_PEPPER) value="${AUTH_HASH_PEPPER}" ;;
+            esac
+            if [ -z "$value" ]; then
+              if [ "$name" = "AUTH_HASH_PEPPER" ]; then
+                value="$(openssl rand -hex 16)"
+              else
+                value="$(openssl rand -base64 32)"
+              fi
+              echo "Generating $name"
+            else
+              echo "Using GitHub environment value for $name"
+            fi
+            if [ "$name" = "AUTH_HASH_PEPPER" ] && [ "${#value}" -ne 32 ]; then
+              echo "AUTH_HASH_PEPPER must be exactly 32 bytes"
+              exit 1
+            fi
+            if [ "$name" != "AUTH_HASH_PEPPER" ] && [ "${#value}" -lt 32 ]; then
+              echo "$name must be at least 32 bytes"
+              exit 1
+            fi
+            printf '%s="%s"\n' "$name" "$value" >> "$tmp"
+          done
+          wasmer app secret create --non-interactive --app "$APP" --from-file "$tmp" --redeploy
+          echo "Created auth secret(s) on $APP and redeployed"

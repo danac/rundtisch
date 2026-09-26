@@ -4,8 +4,8 @@ package: .
 # Set this to your Wasmer account or namespace, or let `wasmer deploy` prompt.
 # owner: YOUR_WASMER_USERNAME
 #
-# Auth secrets are not committed here. After the first deploy, set them on the
-# app (dashboard or `wasmer app secrets`):
+# Auth secrets are not committed here. CI creates them on the app if missing
+# (or uses AUTH_* secrets from the Wasmer GitHub environment):
 #   AUTH_JWT_ACCESS_SECRET
 #   AUTH_JWT_VERIFY_SECRET
 #   AUTH_HASH_PEPPER
