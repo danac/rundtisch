@@ -1,21 +1,19 @@
 use axum::Router;
 use rundtisch::AppState;
 use rundtisch_demo::build_router;
-use rundtisch_demo::native_platform::NativePlatform;
+use rundtisch_demo::native_platform;
 use tokio::signal;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
-    let database_path =
-        std::env::var("SQLITE_PATH").unwrap_or_else(|_| "rundtisch.sqlite".to_string());
-    let platform = NativePlatform::new(database_path).await;
-    let state = AppState::from_platform(&platform);
+    let db = native_platform::connect()
+        .await
+        .expect("DATABASE_URL connection");
+    let state = AppState { db };
     serve(build_router(state)).await;
 }
 
-/// Bind `0.0.0.0:8080` and serve `router` until Ctrl+C or SIGTERM.
-///
-/// `router` must already have state applied (Axum `Router::with_state`).
+/// Bind `0.0.0.0:8787` and serve `router` until Ctrl+C or SIGTERM.
 async fn serve(router: Router) {
     serve_at(router, "0.0.0.0:8787").await;
 }

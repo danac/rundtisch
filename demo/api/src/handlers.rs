@@ -2,13 +2,10 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::IntoResponse;
-use rundtisch::{AppState, Platform};
+use rundtisch::AppState;
 use serde_json::{Value, json};
 
-pub async fn health<P: Platform>(
-    State(_): State<AppState<P>>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+pub async fn health(State(_): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     let headers_map = headers
         .iter()
         .map(|(k, v)| {

@@ -1,33 +1,11 @@
-use rundtisch::adapters::db::sqlite::SqliteExecutor;
-use rundtisch::adapters::secrets::EnvSecretStore;
-use rundtisch::traits::Platform;
-use std::path::Path;
-use std::sync::Arc;
+use sea_orm::DatabaseConnection;
+use sea_orm::DbErr;
 
-pub struct NativePlatform {
-    db: Arc<SqliteExecutor>,
-    secrets: Arc<EnvSecretStore>,
-}
-
-impl Platform for NativePlatform {
-    type Database = SqliteExecutor;
-    type SecretStore = EnvSecretStore;
-
-    fn database(&self) -> Arc<Self::Database> {
-        self.db.clone()
-    }
-
-    fn secrets(&self) -> Arc<Self::SecretStore> {
-        self.secrets.clone()
-    }
-}
-
-impl NativePlatform {
-    /// Open (or create) the SQLite database at `database_path` and panic on failure.
-    pub async fn new(database_path: impl AsRef<Path>) -> Self {
-        Self {
-            db: Arc::new(SqliteExecutor::new(database_path).await),
-            secrets: Arc::new(EnvSecretStore),
-        }
-    }
+/// Open the database named by `DATABASE_URL`.
+///
+/// `sqlite://`, `mysql://`, and `postgres://` are all valid. This is the only
+/// place the demo chooses a backend.
+pub async fn connect() -> Result<DatabaseConnection, DbErr> {
+    let url = std::env::var("DATABASE_URL").expect("DATABASE_URL");
+    sea_orm::Database::connect(&url).await
 }

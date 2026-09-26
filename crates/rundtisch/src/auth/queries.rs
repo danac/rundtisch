@@ -1,473 +1,241 @@
-use crate::auth::models::{NewUser, SessionTable, UserTable, datetime_to_rfc3339};
-use sea_query::{
-    Asterisk, DeleteStatement, Expr, ExprTrait, InsertStatement, Query, SelectStatement,
-    UpdateStatement,
+use sea_orm::ActiveValue::Set;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
 use uuid::Uuid;
 
-pub fn user_list_query() -> SelectStatement {
-    Query::select()
-        .column(Asterisk)
-        .from(UserTable::Table)
-        .to_owned()
+use crate::auth::entities::{session, user};
+use crate::auth::error::DbError;
+use crate::auth::models::{NewUser, Session, User};
+
+pub async fn list_users(db: &DatabaseConnection) -> Result<Vec<User>, DbError> {
+    let rows = user::Entity::find()
+        .order_by_asc(user::Column::Id)
+        .all(db)
+        .await
+        .map_err(DbError::from)?;
+    rows.into_iter().map(User::try_from).collect()
 }
 
-pub fn user_get_query(public_id: Uuid) -> SelectStatement {
-    Query::select()
-        .column(Asterisk)
-        .from(UserTable::Table)
-        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
-        .to_owned()
+pub async fn get_user_by_public_id(db: &DatabaseConnection, public_id: Uuid) -> Result<User, DbError> {
+    let row = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    User::try_from(row)
 }
 
-pub fn user_insert_query(user: &NewUser) -> InsertStatement {
-    Query::insert()
-        .into_table(UserTable::Table)
-        .columns([
-            UserTable::PublicId,
-            UserTable::Email,
-            UserTable::Alias,
-            UserTable::Role,
-            UserTable::PasswordHash,
-            UserTable::CreatedAt,
-            UserTable::UpdatedAt,
-        ])
-        .values_panic([
-            user.public_id.to_string().into(),
-            user.email.to_string().into(),
-            user.alias.clone().into(),
-            user.role.as_str().into(),
-            user.password_hash.clone().into(),
-            datetime_to_rfc3339(user.created_at).into(),
-            datetime_to_rfc3339(user.updated_at).into(),
-        ])
-        .to_owned()
+pub async fn get_user_by_email(
+    db: &DatabaseConnection,
+    email: &str,
+) -> Result<Option<User>, DbError> {
+    let row = user::Entity::find()
+        .filter(user::Column::Email.eq(email))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    row.map(User::try_from).transpose()
 }
 
-pub fn user_update_alias_query(
+pub async fn get_user_by_id(db: &DatabaseConnection, id: i64) -> Result<User, DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    User::try_from(row)
+}
+
+pub async fn insert_user(db: &DatabaseConnection, new_user: &NewUser) -> Result<i64, DbError> {
+    let model = user::ActiveModel {
+        public_id: Set(new_user.public_id),
+        email: Set(new_user.email.to_string()),
+        alias: Set(new_user.alias.clone()),
+        role: Set(new_user.role),
+        password_hash: Set(new_user.password_hash.clone()),
+        created_at: Set(new_user.created_at),
+        updated_at: Set(new_user.updated_at),
+        ..Default::default()
+    };
+    let inserted = model.insert(db).await.map_err(DbError::from)?;
+    Ok(inserted.id)
+}
+
+pub async fn update_user_alias(
+    db: &DatabaseConnection,
     public_id: Uuid,
     alias: &str,
     updated_at: time::OffsetDateTime,
-) -> UpdateStatement {
-    Query::update()
-        .table(UserTable::Table)
-        .values([
-            (UserTable::Alias, alias.into()),
-            (UserTable::UpdatedAt, datetime_to_rfc3339(updated_at).into()),
-        ])
-        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
-        .to_owned()
+) -> Result<u64, DbError> {
+    let row = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.alias = Set(alias.to_owned());
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(1)
 }
 
-pub fn user_delete_query(public_id: Uuid) -> DeleteStatement {
-    Query::delete()
-        .from_table(UserTable::Table)
-        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
-        .to_owned()
+pub async fn delete_user(db: &DatabaseConnection, public_id: Uuid) -> Result<u64, DbError> {
+    let result = user::Entity::delete_many()
+        .filter(user::Column::PublicId.eq(public_id))
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(result.rows_affected)
 }
 
-pub fn user_get_by_email_query(email: &str) -> SelectStatement {
-    Query::select()
-        .column(Asterisk)
-        .from(UserTable::Table)
-        .and_where(Expr::col(UserTable::Email).eq(email))
-        .to_owned()
-}
-
-pub fn user_get_by_id_query(id: i64) -> SelectStatement {
-    Query::select()
-        .column(Asterisk)
-        .from(UserTable::Table)
-        .and_where(Expr::col(UserTable::Id).eq(id))
-        .to_owned()
-}
-
-pub fn user_verify_email_query(
+pub async fn verify_email(
+    db: &DatabaseConnection,
     public_id: Uuid,
     email: &str,
     verified_at: time::OffsetDateTime,
-) -> UpdateStatement {
-    Query::update()
-        .table(UserTable::Table)
-        .values([
-            (
-                UserTable::EmailVerifiedAt,
-                datetime_to_rfc3339(verified_at).into(),
-            ),
-            (
-                UserTable::UpdatedAt,
-                datetime_to_rfc3339(verified_at).into(),
-            ),
-        ])
-        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
-        .and_where(Expr::col(UserTable::Email).eq(email))
-        .to_owned()
+) -> Result<u64, DbError> {
+    let Some(row) = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .filter(user::Column::Email.eq(email))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+    else {
+        return Ok(0);
+    };
+    let mut active: user::ActiveModel = row.into();
+    active.email_verified_at = Set(Some(verified_at));
+    active.updated_at = Set(verified_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(1)
 }
 
-pub fn user_touch_last_login_query(
+pub async fn touch_last_login(
+    db: &DatabaseConnection,
     public_id: Uuid,
     last_login_at: time::OffsetDateTime,
-) -> UpdateStatement {
-    Query::update()
-        .table(UserTable::Table)
-        .values([
-            (
-                UserTable::LastLoginAt,
-                datetime_to_rfc3339(last_login_at).into(),
-            ),
-            (
-                UserTable::UpdatedAt,
-                datetime_to_rfc3339(last_login_at).into(),
-            ),
-        ])
-        .and_where(Expr::col(UserTable::PublicId).eq(public_id.to_string()))
-        .to_owned()
+) -> Result<(), DbError> {
+    let Some(row) = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+    else {
+        return Ok(());
+    };
+    let mut active: user::ActiveModel = row.into();
+    active.last_login_at = Set(Some(last_login_at));
+    active.updated_at = Set(last_login_at);
+    let _ = active.update(db).await.map_err(DbError::from)?;
+    Ok(())
 }
 
-pub fn session_insert_query(
+pub async fn insert_session(
+    db: &DatabaseConnection,
     user_id: i64,
     token_hash: &str,
     created_at: time::OffsetDateTime,
     expires_at: time::OffsetDateTime,
     user_agent: Option<&str>,
-) -> InsertStatement {
-    Query::insert()
-        .into_table(SessionTable::Table)
-        .columns([
-            SessionTable::UserId,
-            SessionTable::TokenHash,
-            SessionTable::CreatedAt,
-            SessionTable::LastUsedAt,
-            SessionTable::ExpiresAt,
-            SessionTable::UserAgent,
-        ])
-        .values_panic([
-            user_id.into(),
-            token_hash.into(),
-            datetime_to_rfc3339(created_at).into(),
-            datetime_to_rfc3339(created_at).into(),
-            datetime_to_rfc3339(expires_at).into(),
-            user_agent.map(str::to_string).into(),
-        ])
-        .to_owned()
+) -> Result<(), DbError> {
+    let model = session::ActiveModel {
+        user_id: Set(user_id),
+        token_hash: Set(token_hash.to_owned()),
+        created_at: Set(created_at),
+        last_used_at: Set(created_at),
+        expires_at: Set(expires_at),
+        user_agent: Set(user_agent.map(str::to_owned)),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
 }
 
-pub fn session_get_by_token_hash_query(token_hash: &str) -> SelectStatement {
-    Query::select()
-        .column(Asterisk)
-        .from(SessionTable::Table)
-        .and_where(Expr::col(SessionTable::TokenHash).eq(token_hash))
-        .to_owned()
+pub async fn get_session_by_token_hash(
+    db: &DatabaseConnection,
+    token_hash: &str,
+) -> Result<Option<Session>, DbError> {
+    let row = session::Entity::find()
+        .filter(session::Column::TokenHash.eq(token_hash))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(Session::from))
 }
 
-pub fn session_rotate_query(
+pub async fn rotate_session(
+    db: &DatabaseConnection,
     id: i64,
     token_hash: &str,
     last_used_at: time::OffsetDateTime,
-) -> UpdateStatement {
-    Query::update()
-        .table(SessionTable::Table)
-        .values([
-            (SessionTable::TokenHash, token_hash.into()),
-            (
-                SessionTable::LastUsedAt,
-                datetime_to_rfc3339(last_used_at).into(),
-            ),
-        ])
-        .and_where(Expr::col(SessionTable::Id).eq(id))
-        .to_owned()
+) -> Result<(), DbError> {
+    let row = session::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: session::ActiveModel = row.into();
+    active.token_hash = Set(token_hash.to_owned());
+    active.last_used_at = Set(last_used_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
 }
 
-pub fn session_revoke_query(id: i64, revoked_at: time::OffsetDateTime) -> UpdateStatement {
-    Query::update()
-        .table(SessionTable::Table)
-        .values([(
-            SessionTable::RevokedAt,
-            datetime_to_rfc3339(revoked_at).into(),
-        )])
-        .and_where(Expr::col(SessionTable::Id).eq(id))
-        .to_owned()
+pub async fn revoke_session(
+    db: &DatabaseConnection,
+    id: i64,
+    revoked_at: time::OffsetDateTime,
+) -> Result<(), DbError> {
+    let Some(row) = session::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+    else {
+        return Ok(());
+    };
+    let mut active: session::ActiveModel = row.into();
+    active.revoked_at = Set(Some(revoked_at));
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::auth::migrations::auth_migration_001::AuthMigration001;
-    use crate::auth::models::Role;
-    use crate::traits::db::{Dialect, Error, Migration, Value, query_to_sql, schema_to_sql};
-    use email_address::EmailAddress;
+impl TryFrom<user::Model> for User {
+    type Error = DbError;
 
-    fn sample_user() -> NewUser {
-        let created = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
-        let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_100).unwrap();
-        NewUser {
-            public_id: uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
-            email: "alice@example.com".parse().unwrap(),
-            alias: "alice".into(),
-            role: Role::Admin,
-            password_hash: Some("hash".into()),
-            created_at: created,
-            updated_at: updated,
+    fn try_from(model: user::Model) -> Result<Self, Self::Error> {
+        let email = model
+            .email
+            .parse()
+            .map_err(|_| DbError::Backend(format!("invalid stored email {}", model.email)))?;
+        Ok(Self {
+            id: model.id,
+            public_id: model.public_id,
+            email,
+            alias: model.alias,
+            role: model.role,
+            password_hash: model.password_hash,
+            email_verified_at: model.email_verified_at,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+            last_login_at: model.last_login_at,
+        })
+    }
+}
+
+impl From<session::Model> for Session {
+    fn from(model: session::Model) -> Self {
+        Self {
+            id: model.id,
+            user_id: model.user_id,
+            token_hash: model.token_hash,
+            created_at: model.created_at,
+            last_used_at: model.last_used_at,
+            expires_at: model.expires_at,
+            revoked_at: model.revoked_at,
+            user_agent: model.user_agent,
         }
-    }
-
-    fn bind<'q>(
-        sql: &'q str,
-        values: &'q [Value],
-    ) -> sqlx::query::Query<'q, sqlx::Sqlite, sqlx::sqlite::SqliteArguments> {
-        let mut q = sqlx::query(sqlx::AssertSqlSafe(sql));
-        for v in values {
-            q = match v {
-                Value::Int(x) => q.bind(*x),
-                Value::Float(x) => q.bind(*x),
-                Value::Text(x) => q.bind(x.as_str()),
-                Value::Bool(x) => q.bind(*x),
-                Value::Bytes(x) => q.bind(x.as_slice()),
-                Value::Null => q.bind(Option::<i64>::None),
-            };
-        }
-        q
-    }
-
-    async fn migrated_pool() -> sqlx::SqlitePool {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:")
-            .await
-            .expect("connect to in-memory sqlite");
-        for stmt in AuthMigration001.up() {
-            let sql = schema_to_sql(&stmt, Dialect::Sqlite);
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .execute(&pool)
-                .await
-                .expect("execute migration statement");
-        }
-        pool
-    }
-
-    #[test]
-    fn user_insert_query_sql() {
-        let (sql, values) = query_to_sql(&user_insert_query(&sample_user()), Dialect::Sqlite)
-            .expect("render insert");
-        assert_eq!(
-            sql,
-            "INSERT INTO \"auth_users\" (\"public_id\", \"email\", \"alias\", \"role\", \"password_hash\", \"created_at\", \"updated_at\") VALUES (?, ?, ?, ?, ?, ?, ?)"
-        );
-        assert_eq!(
-            values
-                .iter()
-                .map(|v| match v {
-                    Value::Text(s) => s.as_str(),
-                    Value::Null => "NULL",
-                    _ => panic!("unexpected bind {v:?}"),
-                })
-                .collect::<Vec<_>>(),
-            [
-                "11111111-1111-4111-8111-111111111111",
-                "alice@example.com",
-                "alice",
-                "Admin",
-                "hash",
-                "2023-11-14T22:13:20Z",
-                "2023-11-14T22:15:00Z",
-            ]
-        );
-    }
-
-    #[test]
-    fn user_delete_query_sql() {
-        let public_id = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
-        let (sql, values) =
-            query_to_sql(&user_delete_query(public_id), Dialect::Sqlite).expect("render delete");
-        assert_eq!(sql, "DELETE FROM \"auth_users\" WHERE \"public_id\" = ?");
-        match values.as_slice() {
-            [Value::Text(s)] if s == "11111111-1111-4111-8111-111111111111" => {}
-            other => panic!("unexpected binds: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn user_get_query_sql() {
-        let public_id = uuid::Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
-        let (sql, values) =
-            query_to_sql(&user_get_query(public_id), Dialect::Sqlite).expect("render get");
-        assert_eq!(sql, "SELECT * FROM \"auth_users\" WHERE \"public_id\" = ?");
-        match values.as_slice() {
-            [Value::Text(s)] if s == "22222222-2222-4222-8222-222222222222" => {}
-            other => panic!("unexpected binds: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn user_update_alias_query_sql() {
-        let public_id = uuid::Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
-        let updated = time::OffsetDateTime::from_unix_timestamp(1_700_000_200).unwrap();
-        let (sql, values) = query_to_sql(
-            &user_update_alias_query(public_id, "bob", updated),
-            Dialect::Sqlite,
-        )
-        .expect("render update");
-        assert_eq!(
-            sql,
-            "UPDATE \"auth_users\" SET \"alias\" = ?, \"updated_at\" = ? WHERE \"public_id\" = ?"
-        );
-        assert_eq!(
-            values
-                .iter()
-                .map(|v| match v {
-                    Value::Text(s) => s.as_str(),
-                    other => panic!("unexpected bind {other:?}"),
-                })
-                .collect::<Vec<_>>(),
-            [
-                "bob",
-                "2023-11-14T22:16:40Z",
-                "33333333-3333-4333-8333-333333333333"
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn insert_list_delete_round_trip() {
-        let pool = migrated_pool().await;
-        let user = sample_user();
-        let (sql, values) =
-            query_to_sql(&user_insert_query(&user), Dialect::Sqlite).expect("render insert");
-        bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect("insert user");
-
-        let (sql, values) = query_to_sql(&user_list_query(), Dialect::Sqlite).expect("render list");
-        let row = bind(&sql, &values)
-            .fetch_one(&pool)
-            .await
-            .expect("list users");
-        let email: String = sqlx::Row::try_get(&row, "email").unwrap();
-        let alias: String = sqlx::Row::try_get(&row, "alias").unwrap();
-        let role: String = sqlx::Row::try_get(&row, "role").unwrap();
-        assert_eq!(email, "alice@example.com");
-        assert_eq!(alias, "alice");
-        assert_eq!(role, "Admin");
-
-        let (sql, values) = query_to_sql(&user_delete_query(user.public_id), Dialect::Sqlite)
-            .expect("render delete");
-        let deleted = bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect("delete user");
-        assert_eq!(deleted.rows_affected(), 1);
-
-        let remaining: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM auth_users")
-            .fetch_one(&pool)
-            .await
-            .expect("count users");
-        assert_eq!(remaining, 0);
-    }
-
-    #[tokio::test]
-    async fn delete_missing_user_affects_no_rows() {
-        let pool = migrated_pool().await;
-        let missing = uuid::Uuid::parse_str("99999999-9999-4999-8999-999999999999").unwrap();
-        let (sql, values) =
-            query_to_sql(&user_delete_query(missing), Dialect::Sqlite).expect("render delete");
-        let deleted = bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect("delete missing");
-        assert_eq!(deleted.rows_affected(), 0);
-    }
-
-    #[tokio::test]
-    async fn insert_duplicate_public_id_is_unique_violation() {
-        let pool = migrated_pool().await;
-        let first = sample_user();
-        let (sql, values) =
-            query_to_sql(&user_insert_query(&first), Dialect::Sqlite).expect("render insert");
-        bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect("insert first user");
-
-        let mut second = sample_user();
-        second.email = "other@example.com".parse().unwrap();
-        let (sql, values) =
-            query_to_sql(&user_insert_query(&second), Dialect::Sqlite).expect("render insert");
-        let err = bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect_err("duplicate public_id");
-        assert!(err.to_string().to_ascii_lowercase().contains("unique"));
-    }
-
-    #[tokio::test]
-    async fn insert_duplicate_email_is_unique_violation() {
-        let pool = migrated_pool().await;
-        let user = sample_user();
-        let (sql, values) =
-            query_to_sql(&user_insert_query(&user), Dialect::Sqlite).expect("render insert");
-        bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect("insert first user");
-        let err = bind(&sql, &values)
-            .execute(&pool)
-            .await
-            .expect_err("duplicate email");
-        assert!(err.to_string().to_ascii_lowercase().contains("unique"));
-    }
-
-    #[cfg(feature = "sqlite")]
-    #[tokio::test]
-    async fn sqlite_executor_decodes_inserted_user() {
-        use crate::adapters::db::sqlite::SqliteExecutor;
-        use crate::auth::models::User;
-        use crate::traits::db::DatabaseExecutor;
-        use time::format_description::well_known::Rfc3339;
-
-        let pool = migrated_pool().await;
-        let exec = SqliteExecutor::from_pool(pool);
-        let new_user = sample_user();
-        let id = exec
-            .insert(user_insert_query(&new_user))
-            .await
-            .expect("insert");
-        let users: Vec<User> = exec.fetch_all(user_list_query()).await.expect("list");
-        assert_eq!(users.len(), 1);
-        assert_eq!(users[0].id, id);
-        assert_eq!(users[0].public_id, new_user.public_id);
-        assert_eq!(users[0].email, new_user.email);
-        assert_eq!(users[0].alias, new_user.alias);
-        assert_eq!(users[0].role, Role::Admin);
-        assert_eq!(users[0].password_hash.as_deref(), Some("hash"));
-        assert_eq!(users[0].email_verified_at, None);
-        assert_eq!(
-            users[0].created_at.format(&Rfc3339).unwrap(),
-            datetime_to_rfc3339(new_user.created_at)
-        );
-        assert_eq!(users[0].last_login_at, None);
-
-        let deleted = exec
-            .execute(user_delete_query(new_user.public_id))
-            .await
-            .expect("delete");
-        assert_eq!(deleted.rows_affected, 1);
-        let users: Vec<User> = exec.fetch_all(user_list_query()).await.expect("list empty");
-        assert!(users.is_empty());
-    }
-
-    #[test]
-    fn new_user_parses_email() {
-        let email: EmailAddress = "bob@example.com".parse().unwrap();
-        let user = NewUser::new(email.clone(), "bob", Role::User, None);
-        assert_eq!(user.email, email);
-        assert_eq!(user.alias, "bob");
-        assert_eq!(user.role, Role::User);
-        assert_eq!(user.password_hash, None);
-        assert_ne!(user.public_id, uuid::Uuid::nil());
-    }
-
-    #[test]
-    fn conflict_error_display() {
-        assert_eq!(Error::Conflict.to_string(), "conflict");
-        assert_eq!(Error::NotFound.to_string(), "not found");
     }
 }
