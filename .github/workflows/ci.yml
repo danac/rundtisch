@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - cursor/wasmer-edge-demo-6266
   workflow_dispatch:
 
 permissions:
