@@ -38,7 +38,7 @@ npm run build --prefix demo/web
 cargo wasix build --release
 ```
 
-CI (`.github/workflows/ci.yml`) does the same on pushes to `main`, pushes to the Wasmer PR branch, and on `workflow_dispatch`: it installs wasix and wasmer-cli, replaces `Cargo.lock` with `Cargo.wasix.lock`, builds the frontend, builds the WASIX release, and deploys from this folder using the `Wasmer` GitHub environment (`WASMER_TOKEN`, `WASMER_OWNER`).
+CI (`.github/workflows/ci.yml`) does the same on pushes to `main`, pushes to the Wasmer PR branch, and on `workflow_dispatch`: it installs cargo-wasix and wasmer-cli, replaces `Cargo.lock` with `Cargo.wasix.lock`, builds the frontend, builds the WASIX release, and deploys from this folder using the `Wasmer` GitHub environment (`WASMER_TOKEN`, `WASMER_OWNER`).
 
 Then, from `demo/`:
 
