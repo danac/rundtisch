@@ -18,13 +18,16 @@ capabilities:
 locality:
   regions:
     - fr-roub1
+# HealthCheckV1 is an externally tagged serde enum. serde_yaml 0.9 expects a
+# YAML tag (`!http`), not a map (`http:`). Nested `expect` matches HttpRequest.
 health_checks:
-  - http:
-      method: get
-      path: /api/health
-      interval: 30s
-      timeout: 10s
-      unhealthy_threshold: 2
-      healthy_threshold: 1
-      expected_status_codes:
+  - !http
+    method: GET
+    path: /api/health
+    interval: 30s
+    timeout: 10s
+    unhealthy_threshold: 2
+    healthy_threshold: 1
+    expect:
+      status_codes:
         - 200

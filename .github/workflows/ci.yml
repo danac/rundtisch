@@ -90,4 +90,5 @@ jobs:
             echo "Add WASMER_OWNER to the Wasmer GitHub environment."
             exit 1
           fi
-          wasmer deploy --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
+          wasmer --version
+          wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
