@@ -52,10 +52,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y lld
 
       - name: Install wasix
-        run: cargo install cargo-wasix
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall cargo-wasix --no-confirm
 
       - name: Install wasmer
-        run: cargo install wasmer-cli
+        run: |
+          curl https://get.wasmer.io -sSfL | sh
+          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
 
       - name: Use the WASIX lockfile
         run: cp Cargo.wasix.lock Cargo.lock
