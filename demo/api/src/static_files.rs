@@ -136,6 +136,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn built_frontend_dist_is_servable_when_present() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../web/dist");
+        if !dir.join("index.html").is_file() {
+            return;
+        }
+        let app = with_frontend(Router::new(), &dir);
+        let res = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let body = to_bytes(res.into_body(), usize::MAX).await.unwrap();
+        let html = String::from_utf8_lossy(&body);
+        assert!(
+            html.contains("rundtisch") || html.contains("root"),
+            "expected the Vite index shell, got {html}"
+        );
+    }
+
+    #[tokio::test]
     async fn api_routes_win_over_static_fallback() {
         let dir = unique_temp_dir();
         std::fs::write(dir.join("index.html"), "<html>spa</html>").unwrap();
