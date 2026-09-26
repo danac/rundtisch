@@ -7,7 +7,7 @@ use sea_orm::DbErr;
 /// valid. On Edge, managed MySQL injects `DB_HOST`, `DB_PORT`, `DB_NAME`,
 /// `DB_USERNAME`, and `DB_PASSWORD` instead of a single URL.
 pub async fn connect() -> Result<DatabaseConnection, DbErr> {
-    let url = database_url().expect("DATABASE_URL or Wasmer DB_* variables");
+    let url = database_url().map_err(DbErr::Custom)?;
     sea_orm::Database::connect(&url).await
 }
 

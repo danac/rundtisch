@@ -2,7 +2,7 @@
 
 ## Cursor Cloud specific instructions
 
-This repo is **rundtisch** — a monorepo with a reusable Rust lib crate (`crates/rundtisch`) and a demo website: React 19 + Vite + TypeScript + Tailwind CSS v4 SPA in `demo/web/`, plus a small Axum API in `demo/api/`. Persistence is SeaORM on a `DatabaseConnection`. The process entry point opens `DATABASE_URL` (sqlite, mysql, or postgres). Schema changes are applied by `cargo run -p rundtisch-demo --bin migrate`, not on server startup.
+This repo is **rundtisch** — a monorepo with a reusable Rust lib crate (`crates/rundtisch`) and a demo website: React 19 + Vite + TypeScript + Tailwind CSS v4 SPA in `demo/web/`, plus a small Axum API in `demo/api/`. Persistence is SeaORM on a `DatabaseConnection`. The process entry point opens `DATABASE_URL` (sqlite, mysql, or postgres). Schema changes are applied by `cargo run -p rundtisch-demo --bin migrate` locally, and by a Wasmer Edge `pre-deployment` job that runs the same `migrate` command once per deploy — not on server startup or per request.
 
 Standard commands:
 

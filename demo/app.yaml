@@ -18,6 +18,17 @@ capabilities:
 locality:
   regions:
     - fr-roub1
+# Run the package `migrate` command once per deploy, before the new version
+# is created. The job gets the app's DB_* env. SeaORM applies pending
+# migrations only. Do not call migrate from native startup or HTTP handlers.
+jobs:
+  - name: migrate-database
+    trigger: pre-deployment
+    timeout: 5m
+    retries: 2
+    action:
+      execute:
+        command: migrate
 # HealthCheckV1 is an externally tagged serde enum. serde_yaml 0.9 expects a
 # YAML tag (`!http`), not a map (`http:`). Nested `expect` matches HttpRequest.
 health_checks:

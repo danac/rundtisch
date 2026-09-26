@@ -44,7 +44,7 @@ demo/api/
 
 ## Run
 
-`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate on startup.
+`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `pre-deployment` job.
 
 ```bash
 export DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc
