@@ -1,6 +1,7 @@
 use crate::auth::config::{AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET};
 use crate::auth::error::AuthError;
 use crate::auth::jwt::{AccessClaims, verify_access_token};
+use crate::auth::models::Role;
 use crate::AppState;
 use axum::extract::FromRequestParts;
 use axum::http::header::AUTHORIZATION;
@@ -30,6 +31,24 @@ impl FromRequestParts<AppState> for BearerUser {
             .map_err(AuthError::from)
             .map_err(IntoResponse::into_response)?;
         Ok(BearerUser(claims))
+    }
+}
+
+/// Logged-in user whose access token role is `Admin`.
+pub struct AdminUser(pub AccessClaims);
+
+impl FromRequestParts<AppState> for AdminUser {
+    type Rejection = Response;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let BearerUser(claims) = BearerUser::from_request_parts(parts, state).await?;
+        if claims.role != Role::Admin {
+            return Err(AuthError::Forbidden.into_response());
+        }
+        Ok(AdminUser(claims))
     }
 }
 

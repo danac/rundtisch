@@ -1,8 +1,37 @@
-import { LoginForm } from './LoginForm.tsx'
+import { LoginForm, LogoutButton, TokenPanel } from './LoginForm.tsx'
+import { SessionProvider, useSession } from './session.tsx'
 import { UsersPanel } from './UsersPanel.tsx'
+
+function SessionGate() {
+  const { status, user } = useSession()
+  if (status === 'checking') {
+    return <p className="mt-10 text-sm text-ink-muted">Checking session…</p>
+  }
+  if (!user) {
+    return (
+      <div className="mt-10 w-full max-w-md">
+        <LoginForm />
+      </div>
+    )
+  }
+  if (user.role === 'Admin') {
+    return (
+      <div className="mt-10 flex w-full max-w-md flex-col items-end gap-4">
+        <LogoutButton />
+        <UsersPanel />
+      </div>
+    )
+  }
+  return (
+    <div className="mt-10 w-full max-w-md">
+      <TokenPanel />
+    </div>
+  )
+}
 
 function App() {
   return (
+    <SessionProvider>
     <main className="relative flex min-h-full flex-col items-center justify-center overflow-hidden px-6 py-16">
       {/* Soft paper grain */}
       <div
@@ -39,16 +68,10 @@ function App() {
         <p className="mt-4 text-lg text-ink-muted sm:text-xl">
           a round table for building on the web
         </p>
-        <div className="mt-10 flex w-full flex-col gap-6 lg:flex-row lg:items-start">
-          <div className="w-full lg:w-1/2">
-            <LoginForm />
-          </div>
-          <div className="w-full lg:w-1/2">
-            <UsersPanel />
-          </div>
-        </div>
+        <SessionGate />
       </div>
     </main>
+    </SessionProvider>
   )
 }
 

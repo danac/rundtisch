@@ -3,7 +3,7 @@ use crate::auth::config::{
     SESSION_TTL,
 };
 use crate::auth::error::{AuthError, DbError};
-use crate::auth::extract::{BearerUser, secret_bytes};
+use crate::auth::extract::{AdminUser, BearerUser, secret_bytes};
 use crate::auth::jwt::{issue_access_token, issue_activation_token, verify_activation_token};
 use crate::auth::models::{NewUser, Role, UpdateUserAlias, User};
 use crate::auth::password::{
@@ -72,7 +72,10 @@ fn normalize_alias(alias: String) -> Result<String, DbError> {
     }
 }
 
-pub async fn list_users(State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list_users(
+    State(state): State<AppState>,
+    _admin: AdminUser,
+) -> impl IntoResponse {
     match list_user_rows(&state.db).await {
         Ok(users) => Json(json!({"result": users})).into_response(),
         Err(e) => e.into_response(),
@@ -81,6 +84,7 @@ pub async fn list_users(State(state): State<AppState>) -> impl IntoResponse {
 
 pub async fn create_user(
     State(state): State<AppState>,
+    _admin: AdminUser,
     Json(mut new_user): Json<NewUser>,
 ) -> impl IntoResponse {
     match normalize_alias(new_user.alias) {
@@ -101,6 +105,7 @@ pub async fn create_user(
 
 pub async fn update_user(
     State(state): State<AppState>,
+    _admin: AdminUser,
     Path(public_id): Path<Uuid>,
     Json(body): Json<UpdateUserAlias>,
 ) -> impl IntoResponse {
@@ -120,6 +125,7 @@ pub async fn update_user(
 
 pub async fn delete_user(
     State(state): State<AppState>,
+    _admin: AdminUser,
     Path(public_id): Path<Uuid>,
 ) -> impl IntoResponse {
     match delete_user_row(&state.db, public_id).await {
@@ -394,6 +400,8 @@ pub async fn me(
 mod tests {
     use super::*;
     use crate::auth::migrations;
+    use crate::auth::models::{NewUser, Role};
+    use crate::auth::queries::{insert_user, verify_email};
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
     use sea_orm_migration::MigratorTrait;
@@ -411,7 +419,7 @@ mod tests {
         }
     }
 
-    async fn app() -> axum::Router {
+    async fn app() -> (axum::Router, sea_orm::DatabaseConnection) {
         unsafe {
             std::env::set_var(AUTH_JWT_ACCESS_SECRET, ACCESS_SECRET);
             std::env::set_var(AUTH_JWT_VERIFY_SECRET, VERIFY_SECRET);
@@ -422,8 +430,8 @@ mod tests {
             .await
             .expect("sqlite");
         Migrator::up(&db, None).await.expect("migrate");
-        let state = AppState { db };
-        axum::Router::new()
+        let state = AppState { db: db.clone() };
+        let router = axum::Router::new()
             .route(
                 "/api/auth/users",
                 axum::routing::get(list_users).post(create_user),
@@ -438,7 +446,41 @@ mod tests {
             .route("/api/auth/refresh", axum::routing::post(refresh))
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/me", axum::routing::get(me))
-            .with_state(state)
+            .with_state(state);
+        (router, db)
+    }
+
+    async fn seed_verified_user(db: &sea_orm::DatabaseConnection, email: &str, role: Role) {
+        let mut new_user = NewUser::new(
+            email.parse().unwrap(),
+            email.split('@').next().unwrap(),
+            role,
+            Some("test:unique-passphrase-ok".into()),
+        );
+        new_user.assign_public_id();
+        new_user.stamp_now(OffsetDateTime::now_utc());
+        insert_user(db, &new_user).await.expect("insert");
+        verify_email(db, new_user.public_id, email, OffsetDateTime::now_utc())
+            .await
+            .expect("verify");
+    }
+
+    async fn login_access_token(app: &axum::Router, email: &str) -> String {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post("/api/auth/login")
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!(
+                        r#"{{"email":"{email}","password":"unique-passphrase-ok"}}"#
+                    )))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(response).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        json["access_token"].as_str().unwrap().to_string()
     }
 
     async fn body_json(response: axum::http::Response<Body>) -> (HttpStatus, serde_json::Value) {
@@ -465,12 +507,15 @@ mod tests {
 
     #[tokio::test]
     async fn create_list_delete_users() {
-        let app = app().await;
+        let (app, db) = app().await;
+        seed_verified_user(&db, "admin@example.com", Role::Admin).await;
+        let admin = login_access_token(&app, "admin@example.com").await;
         let created = app
             .clone()
             .oneshot(
                 Request::post("/api/auth/users")
                     .header("content-type", "application/json")
+                    .header("authorization", format!("Bearer {admin}"))
                     .body(Body::from(
                         r#"{"email":"carol@example.com","alias":"carol","role":"User"}"#,
                     ))
@@ -485,16 +530,28 @@ mod tests {
 
         let listed = app
             .clone()
-            .oneshot(Request::get("/api/auth/users").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/api/auth/users")
+                    .header("authorization", format!("Bearer {admin}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         let (status, json) = body_json(listed).await;
         assert_eq!(status, HttpStatus::OK);
-        assert_eq!(json["result"][0]["public_id"], public_id);
+        let listed_ids = json["result"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|user| user["public_id"].as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+        assert!(listed_ids.contains(&public_id), "{listed_ids:?}");
 
         let deleted = app
             .oneshot(
                 Request::delete(format!("/api/auth/users/{public_id}"))
+                    .header("authorization", format!("Bearer {admin}"))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -504,8 +561,34 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn user_management_rejects_missing_and_non_admin_tokens() {
+        let (app, db) = app().await;
+        let missing = app
+            .clone()
+            .oneshot(Request::get("/api/auth/users").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), HttpStatus::UNAUTHORIZED);
+
+        seed_verified_user(&db, "carol@example.com", Role::User).await;
+        let user = login_access_token(&app, "carol@example.com").await;
+        let forbidden = app
+            .oneshot(
+                Request::get("/api/auth/users")
+                    .header("authorization", format!("Bearer {user}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(forbidden).await;
+        assert_eq!(status, HttpStatus::FORBIDDEN);
+        assert_eq!(json["error"], "forbidden");
+    }
+
+    #[tokio::test]
     async fn register_activate_login_me_refresh_logout() {
-        let app = app().await;
+        let (app, _) = app().await;
         let registered = app
             .clone()
             .oneshot(

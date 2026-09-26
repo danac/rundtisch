@@ -8,8 +8,8 @@ publish = false
 rundtisch = { path = "../../crates/rundtisch" }
 axum = { workspace = true, features = ["json", "http1", "tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
-sea-orm = { workspace = true, features = ["sqlx-mysql"] }
-sea-orm-migration.workspace = true
+sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
+sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
 serde_json.workspace = true
 
 [[bin]]

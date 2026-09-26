@@ -65,6 +65,7 @@ pub enum AuthError {
     EmailNotVerified,
     InvalidToken,
     TokenExpired,
+    Forbidden,
     InvalidPassword,
     TypeMismatch,
     Secrets,
@@ -114,6 +115,7 @@ impl AuthError {
             AuthError::EmailNotVerified => (StatusCode::FORBIDDEN, "email_not_verified"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
             AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, "token_expired"),
+            AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::InvalidPassword => (StatusCode::BAD_REQUEST, "invalid_password"),
             AuthError::TypeMismatch => (StatusCode::BAD_REQUEST, "type mismatch"),
             AuthError::Secrets | AuthError::Password(_) | AuthError::Token(_) => {
