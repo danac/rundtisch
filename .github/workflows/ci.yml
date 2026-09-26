@@ -79,9 +79,14 @@ jobs:
         working-directory: demo
         env:
           WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+          WASMER_OWNER: ${{ secrets.WASMER_OWNER || vars.WASMER_OWNER }}
         run: |
           if [ -z "$WASMER_TOKEN" ]; then
             echo "Add WASMER_TOKEN to the Wasmer GitHub environment."
             exit 1
           fi
-          wasmer deploy --non-interactive --bump --no-persist-id --publish-package
+          if [ -z "$WASMER_OWNER" ]; then
+            echo "Add WASMER_OWNER to the Wasmer GitHub environment."
+            exit 1
+          fi
+          wasmer deploy --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
