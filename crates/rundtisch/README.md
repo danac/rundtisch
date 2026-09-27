@@ -13,7 +13,7 @@ The library does not open a database and does not select a backend. Callers pass
 | `app` | `AppState { db }` and `secret()` (`std::env::var`) |
 | `auth` | Users, sessions, jwt-compact HS256, Argon2id, SeaORM entities and migrations |
 
-`auth::Migrator` applies the auth migrations and records them in `rundtisch_migrations`, separate from a host app's `seaql_migrations` table. The demo binary is `migrate`.
+`auth::Migrator` applies the auth migrations and records them in `rundtisch_migrations_auth`, separate from a host app's `seaql_migrations` table. The demo binary is `migrate`.
 
 ## Development
 

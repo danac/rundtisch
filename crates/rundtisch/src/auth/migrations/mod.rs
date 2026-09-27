@@ -4,7 +4,7 @@ mod m20260924_120000_create_auth_tables;
 
 /// Tracking table for auth migrations. A host database can keep its own
 /// SeaORM history in `seaql_migrations`.
-pub const MIGRATION_TABLE: &str = "rundtisch_migrations";
+pub const MIGRATION_TABLE: &str = "rundtisch_migrations_auth";
 
 /// Auth migrations, oldest first.
 pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
