@@ -21,7 +21,7 @@ demo/api/
     routes.rs
     handlers.rs
     native_platform.rs    # Database::connect(DATABASE_URL)
-    migrator.rs           # MigratorTrait → rundtisch::auth::migrations()
+    migrator.rs           # re-exports rundtisch::auth::Migrator
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8787
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists

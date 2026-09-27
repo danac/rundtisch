@@ -266,19 +266,11 @@ fn argon_hasher_from_env() -> Result<Argon2idHasher, BootstrapAdminError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::migrations;
+    use crate::auth::migrations::Migrator;
     use crate::auth::models::{NewUser, Role};
     use crate::auth::password::TestPasswordHasher;
     use crate::auth::queries::{get_user_by_email, insert_user};
     use sea_orm_migration::MigratorTrait;
-
-    struct Migrator;
-
-    impl MigratorTrait for Migrator {
-        fn migrations() -> Vec<Box<dyn sea_orm_migration::MigrationTrait>> {
-            migrations::migrations()
-        }
-    }
 
     async fn db() -> DatabaseConnection {
         let db = sea_orm::Database::connect("sqlite::memory:")

@@ -15,4 +15,4 @@ pub use bootstrap::{
     BOOTSTRAP_ADMIN_ALIAS, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD, BOOTSTRAP_ADMIN_PREFIX,
 };
 pub use config::{AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET};
-pub use migrations::migrations;
+pub use migrations::{Migrator, migrations};
