@@ -12,7 +12,7 @@ React SPA for a private photo library. Collections and image metadata are loaded
 | TanStack Query | Cache and loaders for collection / photo fetches |
 | Tailwind CSS v4 | Styling (`@tailwindcss/vite`) |
 | react-photo-album | Justified photo mosaic |
-| yet-another-react-lightbox | Full-size viewer |
+| yet-another-react-lightbox | Full-size viewer (download + pinch zoom) |
 
 ## Pages
 

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { RowsPhotoAlbum } from 'react-photo-album'
 import Lightbox from 'yet-another-react-lightbox'
 import Download from 'yet-another-react-lightbox/plugins/download'
+import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import type { Photo } from '../api'
 import { useAuth } from '../auth/useAuth'
 import { downloadPhoto } from '../download'
@@ -81,12 +82,13 @@ export function PhotoMosaic({ photos, selecting = false, selectedIds, onToggle }
         />
       </div>
       <Lightbox
-        plugins={[Download]}
+        plugins={[Download, Zoom]}
         open={index >= 0}
         index={index}
         close={() => setIndex(-1)}
         slides={photos}
         controller={{ closeOnBackdropClick: true }}
+        zoom={{ maxZoomPixelRatio: 3 }}
         download={{
           download: ({ slide }) => {
             const photo = photos.find((item) => item.src === slide.src)
