@@ -73,7 +73,8 @@ Browser (localhost:5173)
 │   └── package.json           # concurrently + wrangler; `npm run dev`
 └── crockis/
     ├── web/                   # photo library SPA (frontend first)
-    └── wrangler.jsonc         # Cloudflare Worker crockis (static SPA)
+    ├── wasmer.toml            # Wasmer package (static-web-server + web/dist)
+    └── app.yaml               # Wasmer Edge app crockis
 ```
 
 ## Design decisions
@@ -225,18 +226,19 @@ Workflow: `.github/workflows/deploy-crockis.yml`
 
 | Trigger | Action |
 |---------|--------|
-| Push to `main` | Build `crockis/web` → `wrangler deploy` to Worker `crockis` |
-| Pull request to `main` | Build frontend → preview alias `pr-<N>` |
+| Push to `main` | Build `crockis/web` → `wasmer deploy` to Edge app `crockis` |
+| Pull request to `main` | Same as production deploy |
 | **workflow_dispatch** | Same as production deploy |
 
-There is no Rust/WASM build; the Worker serves the Vite SPA from `crockis/web/dist/` (`crockis/wrangler.jsonc`).
+There is no Rust/WASM build; Wasmer Edge serves the Vite SPA from `crockis/web/dist/` via `wasmer/static-web-server` (`crockis/wasmer.toml`, `crockis/app.yaml`).
 
-Preview URL format: `https://pr-<PR_NUMBER>-crockis.<account>.workers.dev`
+Requires `WASMER_TOKEN` (secret) and `WASMER_OWNER` (variable or secret) in the GitHub **Wasmer** environment.
 
 ```bash
 npm install --prefix crockis/web
 npm run build --prefix crockis/web
-npx wrangler deploy --config crockis/wrangler.jsonc
+# from crockis/; pass --owner if app.yaml has no owner
+wasmer deploy --non-interactive --bump --no-persist-id --publish-package
 ```
 
 ### Manual deploy (demo)

@@ -5,7 +5,9 @@ Private photo library for sharing collections with friends. The product will eve
 ```
 crockis/
 ├── web/              # Vite + React SPA
-├── wrangler.jsonc    # Cloudflare Worker (static SPA, name: crockis)
+├── wasmer.toml       # Wasmer package (static-web-server + web/dist)
+├── app.yaml          # Wasmer Edge app (name: crockis)
+├── wrangler.jsonc    # unused by CI (Cloudflare Worker config)
 └── package.json
 ```
 
@@ -25,11 +27,11 @@ Dev server: http://localhost:5174 (5173 is reserved for the rundtisch demo).
 
 ## Deploy
 
-The Cloudflare Worker is named `crockis` and serves `web/dist/` as a single-page app (no Rust/WASM worker). GitHub Actions workflow **Deploy Crockis** (`.github/workflows/deploy-crockis.yml`) runs on pushes to `main`, pull requests to `main` (preview alias `pr-<N>`), and manual `workflow_dispatch`.
+Wasmer Edge serves `web/dist/` as a static SPA (`wasmer.toml` + `app.yaml`, app name `crockis`). GitHub Actions workflow **Deploy Crockis** (`.github/workflows/deploy-crockis.yml`) runs on pushes to `main`, pull requests to `main`, and manual `workflow_dispatch`. It uses the **Wasmer** GitHub environment (`WASMER_TOKEN` secret, `WASMER_OWNER` variable). There is no Rust/WASM build.
 
 ```bash
-# local
-npm install --prefix crockis
+# local (Wasmer CLI + `wasmer login`; pass --owner if app.yaml has no owner)
+npm run build --prefix crockis/web
 npm run deploy --prefix crockis
 ```
 

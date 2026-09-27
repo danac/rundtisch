@@ -6,7 +6,7 @@
     "build": "npm run build --prefix web",
     "lint": "npm run lint --prefix web",
     "preview": "npm run preview --prefix web",
-    "deploy": "npm run build --prefix web && wrangler deploy"
+    "deploy": "npm run build --prefix web && wasmer deploy --non-interactive --bump --no-persist-id --publish-package"
   },
   "devDependencies": {
     "wrangler": "^4.132.0"
