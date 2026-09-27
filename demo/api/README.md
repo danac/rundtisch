@@ -25,7 +25,7 @@ demo/api/
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8787
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists
-    bin/migrate.rs        # Migrator::up(&db, None)
+    bin/migrate.rs        # Migrator::up, then optional bootstrap Admin insert
 ```
 
 ## Endpoints
@@ -44,13 +44,16 @@ demo/api/
 
 ## Run
 
-`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `pre-deployment` job.
+`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `pre-deployment` job. After `Migrator::up`, that command inserts a verified Admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set and that email is not already in `auth_users`. An existing row is left unchanged.
 
 ```bash
 export DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc
 export AUTH_JWT_ACCESS_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 export AUTH_JWT_VERIFY_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 export AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc
+# optional first admin (inserts only if this email is absent):
+# export RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
+# export RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD=unique-passphrase-ok
 
 cargo run -p rundtisch-demo --bin migrate
 cargo run -p rundtisch-demo --bin native
@@ -64,6 +67,9 @@ curl -i http://localhost:8787/api/health
 | `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
 | `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
 | `AUTH_HASH_PEPPER` | exactly 32 bytes |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; password policy applies on insert |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
 
 ## Check
 

@@ -66,6 +66,9 @@ Auth routes need these environment variables (the dev script sets only `DATABASE
 | `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
 | `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
 | `AUTH_HASH_PEPPER` | exactly 32 bytes |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional migrate seed; skip if unset |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; required with the email; insert only if the email is absent |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
 
 ### Verify
 
