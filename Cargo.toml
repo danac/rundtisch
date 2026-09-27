@@ -30,5 +30,6 @@ subtle = "2"
 base64 = { version = "0.23.1", default-features = false }
 zeroize = { version = "1", default-features = false }
 tower = { version = "0.5", default-features = false }
+tower-http = { version = "0.6", default-features = false }
 async-trait = "0.1"
 

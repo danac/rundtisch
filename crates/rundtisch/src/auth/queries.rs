@@ -17,7 +17,10 @@ pub async fn list_users(db: &DatabaseConnection) -> Result<Vec<User>, DbError> {
     rows.into_iter().map(User::try_from).collect()
 }
 
-pub async fn get_user_by_public_id(db: &DatabaseConnection, public_id: Uuid) -> Result<User, DbError> {
+pub async fn get_user_by_public_id(
+    db: &DatabaseConnection,
+    public_id: Uuid,
+) -> Result<User, DbError> {
     let row = user::Entity::find()
         .filter(user::Column::PublicId.eq(public_id))
         .one(db)
@@ -49,18 +52,55 @@ pub async fn get_user_by_id(db: &DatabaseConnection, id: i64) -> Result<User, Db
 }
 
 pub async fn insert_user(db: &DatabaseConnection, new_user: &NewUser) -> Result<i64, DbError> {
+    insert_user_row(db, new_user, None).await
+}
+
+/// Same as [`insert_user`], but sets `email_verified_at` in the same insert.
+pub async fn insert_verified_user(
+    db: &DatabaseConnection,
+    new_user: &NewUser,
+    email_verified_at: time::OffsetDateTime,
+) -> Result<i64, DbError> {
+    insert_user_row(db, new_user, Some(email_verified_at)).await
+}
+
+async fn insert_user_row(
+    db: &DatabaseConnection,
+    new_user: &NewUser,
+    email_verified_at: Option<time::OffsetDateTime>,
+) -> Result<i64, DbError> {
     let model = user::ActiveModel {
         public_id: Set(new_user.public_id),
         email: Set(new_user.email.to_string()),
         alias: Set(new_user.alias.clone()),
         role: Set(new_user.role),
         password_hash: Set(new_user.password_hash.clone()),
+        email_verified_at: Set(email_verified_at),
         created_at: Set(new_user.created_at),
         updated_at: Set(new_user.updated_at),
         ..Default::default()
     };
     let inserted = model.insert(db).await.map_err(DbError::from)?;
     Ok(inserted.id)
+}
+
+pub async fn update_user_password_hash(
+    db: &DatabaseConnection,
+    public_id: Uuid,
+    password_hash: String,
+    updated_at: time::OffsetDateTime,
+) -> Result<u64, DbError> {
+    let row = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.password_hash = Set(Some(password_hash));
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(1)
 }
 
 pub async fn update_user_alias(

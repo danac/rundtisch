@@ -1,3 +1,4 @@
+pub mod bootstrap;
 pub mod config;
 pub mod entities;
 pub mod error;
@@ -10,5 +11,8 @@ pub mod password;
 pub mod queries;
 pub mod session;
 
+pub use bootstrap::{
+    BOOTSTRAP_ADMIN_ALIAS, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD, BOOTSTRAP_ADMIN_PREFIX,
+};
 pub use config::{AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET};
 pub use migrations::{Migrator, migrations};

@@ -53,12 +53,20 @@ impl FromRequestParts<AppState> for AdminUser {
 }
 
 pub fn secret_bytes(state: &AppState, name: &str, min_len: usize) -> Result<Vec<u8>, AuthError> {
-    let value = state.secret(name)?;
+    let value = match state.secret(name) {
+        Ok(value) => value,
+        Err(err) => {
+            eprintln!("auth secret {name} is not set");
+            return Err(err.into());
+        }
+    };
     let bytes = value.into_bytes();
     if bytes.len() < min_len {
+        eprintln!("auth secret {name} is shorter than {min_len} bytes");
         return Err(AuthError::Secrets);
     }
     if name == AUTH_HASH_PEPPER && bytes.len() != 32 {
+        eprintln!("auth secret {name} must be exactly 32 bytes");
         return Err(AuthError::Secrets);
     }
     Ok(bytes)
