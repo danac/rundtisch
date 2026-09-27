@@ -21,7 +21,7 @@ demo/api/
     routes.rs
     handlers.rs
     native_platform.rs    # Database::connect(DATABASE_URL)
-    migrator.rs           # MigratorTrait → rundtisch::auth::migrations()
+    migrator.rs           # re-exports rundtisch::auth::Migrator
     bin/native.rs         # listen on 0.0.0.0:8787
     bin/migrate.rs        # Migrator::up(&db, None)
 ```

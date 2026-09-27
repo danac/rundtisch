@@ -11,4 +11,4 @@ pub mod queries;
 pub mod session;
 
 pub use config::{AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET};
-pub use migrations::migrations;
+pub use migrations::{Migrator, migrations};

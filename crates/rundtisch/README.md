@@ -13,7 +13,7 @@ The library does not open a database and does not select a backend. Callers pass
 | `app` | `AppState { db }` and `secret()` (`std::env::var`) |
 | `auth` | Users, sessions, jwt-compact HS256, Argon2id, SeaORM entities and migrations |
 
-`auth::migrations()` returns the `MigrationTrait` list. The application implements `MigratorTrait` and applies it (the demo binary is `migrate`).
+`auth::Migrator` applies the auth migrations and records them in `rundtisch_migrations`, separate from a host app's `seaql_migrations` table. The demo binary is `migrate`.
 
 ## Development
 
@@ -23,7 +23,7 @@ From the repository root:
 cargo test -p rundtisch
 ```
 
-Handler tests use an in-memory SQLite connection and apply `auth::migrations()`.
+Handler tests use an in-memory SQLite connection and apply `auth::Migrator`.
 
 ## See also
 

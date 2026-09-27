@@ -399,7 +399,7 @@ pub async fn me(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::migrations;
+    use crate::auth::migrations::Migrator;
     use crate::auth::models::{NewUser, Role};
     use crate::auth::queries::{insert_user, verify_email};
     use axum::body::Body;
@@ -410,14 +410,6 @@ mod tests {
     const ACCESS_SECRET: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const VERIFY_SECRET: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
-
-    struct Migrator;
-
-    impl MigratorTrait for Migrator {
-        fn migrations() -> Vec<Box<dyn sea_orm_migration::MigrationTrait>> {
-            migrations::migrations()
-        }
-    }
 
     async fn app() -> (axum::Router, sea_orm::DatabaseConnection) {
         unsafe {
