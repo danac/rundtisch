@@ -6,6 +6,7 @@ Private photo library for sharing collections with friends. The product will eve
 crockis/
 ├── web/              # Vite + React SPA
 ├── wasmer.toml       # Wasmer package (static-web-server + web/dist)
+├── settings/         # static-web-server config (SPA 404 + cache headers)
 ├── app.yaml          # Wasmer Edge app (name: crockis)
 ├── wrangler.jsonc    # unused by CI (Cloudflare Worker config)
 └── package.json

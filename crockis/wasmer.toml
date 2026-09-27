@@ -14,6 +14,7 @@ entrypoint = "script"
 # Build the frontend first: `npm run build --prefix crockis/web`.
 [fs]
 "/public" = "./web/dist"
+"/settings" = "./settings"
 
 [[command]]
 name = "script"
@@ -21,6 +22,6 @@ module = "wasmer/static-web-server:webserver"
 runner = "wasi"
 
 [command.annotations.wasi]
-# wasmer/static-web-server 1.x has --page404, not --page-fallback.
-# Serving index.html for missing paths keeps React Router routes working.
-main-args = ["--root", "/public", "--page404", "/public/index.html"]
+# --config-file (not -w) is the flag this 1.x build accepts.
+# Cache and SPA 404 fallback live in settings/config.toml.
+main-args = ["--config-file", "/settings/config.toml"]
