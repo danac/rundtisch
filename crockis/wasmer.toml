@@ -21,5 +21,6 @@ module = "wasmer/static-web-server:webserver"
 runner = "wasi"
 
 [command.annotations.wasi]
-# page-fallback keeps React Router paths (/login, /collections/:id) on index.html.
-main-args = ["--root", "/public", "--page-fallback", "/public/index.html"]
+# wasmer/static-web-server 1.x has --page404, not --page-fallback.
+# Serving index.html for missing paths keeps React Router routes working.
+main-args = ["--root", "/public", "--page404", "/public/index.html"]
