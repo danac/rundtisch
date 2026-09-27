@@ -3,16 +3,16 @@ use rundtisch_demo::Migrator;
 use rundtisch_demo::native_platform;
 use sea_orm_migration::MigratorTrait;
 
-/// Apply pending SeaORM migrations, optionally seed a bootstrap admin, and exit.
+/// Apply pending SeaORM migrations, optionally upsert a bootstrap admin, and exit.
 ///
 /// Wasmer Edge runs this as the `migrate` package command from a
 /// `pre-deployment` job. It is a one-shot CLI, not an HTTP handler: do not
-/// call `Migrator::up` or the bootstrap insert from `native` or from a request.
+/// call `Migrator::up` or the bootstrap upsert from `native` or from a request.
 ///
 /// When `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and
 /// `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set, insert a verified Admin
-/// only if that email is not already in `auth_users`. An existing row is left
-/// unchanged.
+/// if that email is absent, or reset the password on the existing row. The
+/// existing `public_id`, role, alias, and verification stay the same.
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("migrate: connecting");
@@ -23,11 +23,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         BootstrapAdminOutcome::SkippedUnset => {
             eprintln!("migrate: bootstrap admin unset, skipping");
         }
-        BootstrapAdminOutcome::SkippedExists { email } => {
-            eprintln!("migrate: bootstrap admin {email} already exists, skipping");
-        }
         BootstrapAdminOutcome::Inserted { email, .. } => {
             eprintln!("migrate: bootstrap admin {email} inserted");
+        }
+        BootstrapAdminOutcome::Updated { email, .. } => {
+            eprintln!("migrate: bootstrap admin {email} password updated");
         }
     }
     db.close().await?;

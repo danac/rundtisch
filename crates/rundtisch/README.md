@@ -13,7 +13,7 @@ The library does not open a database and does not select a backend. Callers pass
 | `app` | `AppState { db }` and `secret()` (`std::env::var`) |
 | `auth` | Users, sessions, jwt-compact HS256, Argon2id, SeaORM entities and migrations |
 
-`auth::migrations()` returns the `MigrationTrait` list. The application implements `MigratorTrait` and applies it (the demo binary is `migrate`). After `Migrator::up`, that binary can insert a verified Admin from `RUNDTISCH_BOOTSTRAP_ADMIN_*` secrets when the email is not already present.
+`auth::migrations()` returns the `MigrationTrait` list. The application implements `MigratorTrait` and applies it (the demo binary is `migrate`). After `Migrator::up`, that binary can upsert a verified Admin from `RUNDTISCH_BOOTSTRAP_ADMIN_*` secrets: insert when the email is absent, or reset the password on the existing user.
 
 ## Development
 

@@ -12,7 +12,7 @@ use crate::auth::models::{NewUser, Role};
 use crate::auth::password::{
     Argon2idHasher, PasswordHashError, PasswordHasher, check_password_policy,
 };
-use crate::auth::queries::{get_user_by_email, insert_verified_user};
+use crate::auth::queries::{get_user_by_email, insert_verified_user, update_user_password_hash};
 
 /// Prefix for optional first-admin secrets read by the migrate binary.
 pub const BOOTSTRAP_ADMIN_PREFIX: &str = "RUNDTISCH_BOOTSTRAP_ADMIN_";
@@ -20,8 +20,8 @@ pub const BOOTSTRAP_ADMIN_EMAIL: &str = "RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL";
 pub const BOOTSTRAP_ADMIN_PASSWORD: &str = "RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD";
 pub const BOOTSTRAP_ADMIN_ALIAS: &str = "RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS";
 
-/// Credentials for a one-shot verified Admin insert. `password` is redacted
-/// in [`Debug`] and zeroized on drop.
+/// Credentials for a bootstrap-admin upsert. `password` is redacted in
+/// [`Debug`] and zeroized on drop.
 pub struct BootstrapAdminSecrets {
     email: String,
     password: String,
@@ -73,8 +73,8 @@ impl Drop for BootstrapAdminSecrets {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BootstrapAdminOutcome {
     SkippedUnset,
-    SkippedExists { email: String },
     Inserted { email: String, public_id: Uuid },
+    Updated { email: String, public_id: Uuid },
 }
 
 #[derive(Debug)]
@@ -150,27 +150,30 @@ pub fn read_bootstrap_admin_from_env() -> Result<Option<BootstrapAdminSecrets>, 
     read_bootstrap_admin_secrets(|name| std::env::var(name).ok())
 }
 
-/// Insert a verified Admin when `secrets.email` is not already in `auth_users`.
+/// Upsert a bootstrap admin for `secrets.email`.
 ///
-/// An existing row with that email is left unchanged (role and password stay
-/// as they are). A unique-constraint race is treated as already exists.
+/// A missing row becomes a verified Admin. An existing row keeps its
+/// `public_id`, role, alias, and verification; only the password hash and
+/// `updated_at` change. A unique-constraint race retries as an update.
 pub async fn seed_bootstrap_admin(
     db: &DatabaseConnection,
     secrets: &BootstrapAdminSecrets,
     hasher: &dyn PasswordHasher,
 ) -> Result<BootstrapAdminOutcome, BootstrapAdminError> {
     let email = parse_email(secrets.email())?;
-    if get_user_by_email(db, email.as_ref()).await?.is_some() {
-        return Ok(BootstrapAdminOutcome::SkippedExists {
-            email: email.to_string(),
-        });
-    }
     if check_password_policy(secrets.password()).is_err() {
         return Err(BootstrapAdminError::InvalidPassword);
     }
-    let alias = resolve_alias(secrets.alias(), &email)?;
     let password_hash = hasher.hash(secrets.password())?;
     let now = OffsetDateTime::now_utc();
+    if let Some(existing) = get_user_by_email(db, email.as_ref()).await? {
+        update_user_password_hash(db, existing.public_id, password_hash, now).await?;
+        return Ok(BootstrapAdminOutcome::Updated {
+            email: email.to_string(),
+            public_id: existing.public_id,
+        });
+    }
+    let alias = resolve_alias(secrets.alias(), &email)?;
     let mut new_user = NewUser::new(email.clone(), alias, Role::Admin, Some(password_hash));
     new_user.assign_public_id();
     new_user.stamp_now(now);
@@ -179,30 +182,42 @@ pub async fn seed_bootstrap_admin(
             email: email.to_string(),
             public_id: new_user.public_id,
         }),
-        Err(DbError::Conflict) => Ok(BootstrapAdminOutcome::SkippedExists {
-            email: email.to_string(),
-        }),
+        Err(DbError::Conflict) => {
+            let hash = new_user
+                .password_hash
+                .ok_or(BootstrapAdminError::Db(DbError::TypeMismatch))?;
+            update_existing_password(db, email.as_ref(), hash, now).await
+        }
         Err(err) => Err(err.into()),
     }
 }
 
+async fn update_existing_password(
+    db: &DatabaseConnection,
+    email: &str,
+    password_hash: String,
+    now: OffsetDateTime,
+) -> Result<BootstrapAdminOutcome, BootstrapAdminError> {
+    let existing = get_user_by_email(db, email)
+        .await?
+        .ok_or_else(|| BootstrapAdminError::Db(DbError::Conflict))?;
+    update_user_password_hash(db, existing.public_id, password_hash, now).await?;
+    Ok(BootstrapAdminOutcome::Updated {
+        email: email.to_string(),
+        public_id: existing.public_id,
+    })
+}
+
 /// Env-driven entry used by the migrate binary.
 ///
-/// Unset secrets are a no-op. If the email already exists, skip without
-/// hashing and without requiring `AUTH_HASH_PEPPER`. Pepper is required only
-/// for the insert path.
+/// Unset secrets are a no-op. When both email and password are set, pepper
+/// is required so the password can be hashed for insert or reset.
 pub async fn seed_bootstrap_admin_from_env(
     db: &DatabaseConnection,
 ) -> Result<BootstrapAdminOutcome, BootstrapAdminError> {
     let Some(secrets) = read_bootstrap_admin_from_env()? else {
         return Ok(BootstrapAdminOutcome::SkippedUnset);
     };
-    let email = parse_email(secrets.email())?;
-    if get_user_by_email(db, email.as_ref()).await?.is_some() {
-        return Ok(BootstrapAdminOutcome::SkippedExists {
-            email: email.to_string(),
-        });
-    }
     let hasher = argon_hasher_from_env()?;
     seed_bootstrap_admin(db, &secrets, &hasher).await
 }
@@ -392,7 +407,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skip_when_email_already_exists_even_if_role_is_user() {
+    async fn upsert_resets_password_and_keeps_the_same_user() {
         let db = db().await;
         let mut existing = NewUser::new(
             "admin@example.com".parse().unwrap(),
@@ -413,40 +428,92 @@ mod tests {
             .expect("seed");
         assert_eq!(
             outcome,
-            BootstrapAdminOutcome::SkippedExists {
+            BootstrapAdminOutcome::Updated {
                 email: "admin@example.com".into(),
+                public_id: existing.public_id,
             }
         );
         let user = get_user_by_email(&db, "admin@example.com")
             .await
             .expect("lookup")
             .expect("row");
+        assert_eq!(user.public_id, existing.public_id);
         assert_eq!(user.role, Role::User);
         assert_eq!(user.alias, "plain");
-        assert_eq!(user.password_hash.as_deref(), Some("test:already-set-pass"));
+        assert_eq!(
+            user.password_hash.as_deref(),
+            Some("test:unique-passphrase-ok")
+        );
         assert!(user.email_verified_at.is_none());
     }
 
     #[tokio::test]
-    async fn skip_does_not_require_a_valid_password() {
+    async fn second_seed_resets_password_without_changing_public_id() {
+        let db = db().await;
+        let first = BootstrapAdminSecrets::new(
+            "admin@example.com",
+            "unique-passphrase-ok",
+            Some("root".into()),
+        );
+        let inserted = seed_bootstrap_admin(&db, &first, &TestPasswordHasher)
+            .await
+            .expect("insert");
+        let BootstrapAdminOutcome::Inserted { public_id, .. } = inserted else {
+            panic!("expected insert, got {inserted:?}");
+        };
+
+        let second = BootstrapAdminSecrets::new(
+            "admin@example.com",
+            "another-passphrase-ok",
+            Some("other".into()),
+        );
+        let updated = seed_bootstrap_admin(&db, &second, &TestPasswordHasher)
+            .await
+            .expect("update");
+        assert_eq!(
+            updated,
+            BootstrapAdminOutcome::Updated {
+                email: "admin@example.com".into(),
+                public_id,
+            }
+        );
+        let user = get_user_by_email(&db, "admin@example.com")
+            .await
+            .expect("lookup")
+            .expect("row");
+        assert_eq!(user.public_id, public_id);
+        assert_eq!(user.alias, "root");
+        assert_eq!(user.role, Role::Admin);
+        assert_eq!(
+            user.password_hash.as_deref(),
+            Some("test:another-passphrase-ok")
+        );
+        assert!(user.email_verified_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn upsert_rejects_invalid_password_without_changing_existing_row() {
         let db = db().await;
         let mut existing = NewUser::new(
             "admin@example.com".parse().unwrap(),
             "plain",
             Role::User,
-            None,
+            Some("test:already-set-pass".into()),
         );
         existing.assign_public_id();
         insert_user(&db, &existing).await.expect("insert user");
 
         let secrets = BootstrapAdminSecrets::new("admin@example.com", "short", None);
-        let outcome = seed_bootstrap_admin(&db, &secrets, &TestPasswordHasher)
+        let err = seed_bootstrap_admin(&db, &secrets, &TestPasswordHasher)
             .await
-            .expect("seed");
-        assert!(matches!(
-            outcome,
-            BootstrapAdminOutcome::SkippedExists { .. }
-        ));
+            .expect_err("invalid password");
+        assert!(matches!(err, BootstrapAdminError::InvalidPassword));
+        let user = get_user_by_email(&db, "admin@example.com")
+            .await
+            .expect("lookup")
+            .expect("row");
+        assert_eq!(user.password_hash.as_deref(), Some("test:already-set-pass"));
+        assert_eq!(user.public_id, existing.public_id);
     }
 
     #[tokio::test]

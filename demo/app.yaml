@@ -10,11 +10,12 @@ package: .
 #   AUTH_JWT_ACCESS_SECRET
 #   AUTH_JWT_VERIFY_SECRET
 #   AUTH_HASH_PEPPER
-# Optional first admin. The pre-deployment migrate job inserts a verified
-# Admin only when this email is not already in auth_users:
+# Optional first admin. The pre-deployment migrate job upserts this email:
+# insert a verified Admin if absent, or reset the password if present
+# (public_id and the rest of the row stay the same):
 #   RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL
 #   RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
-#   RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS   # optional; defaults to the email local-part
+#   RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS   # optional; insert only; defaults to the email local-part
 debug: false
 capabilities:
   database:
@@ -26,9 +27,9 @@ locality:
     - fr-roub1
 # Run the package `migrate` command once per deploy, before the new version
 # is created. The job gets the app's DB_* env and secrets. SeaORM applies
-# pending migrations, then inserts a bootstrap Admin only if
-# RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL is set and that email is absent. Do not
-# call migrate from native startup or HTTP handlers.
+# pending migrations, then upserts a bootstrap Admin when
+# RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL and RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
+# are set. Do not call migrate from native startup or HTTP handlers.
 jobs:
   - name: migrate-database
     trigger: pre-deployment

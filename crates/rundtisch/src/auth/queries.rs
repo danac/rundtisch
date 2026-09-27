@@ -84,6 +84,25 @@ async fn insert_user_row(
     Ok(inserted.id)
 }
 
+pub async fn update_user_password_hash(
+    db: &DatabaseConnection,
+    public_id: Uuid,
+    password_hash: String,
+    updated_at: time::OffsetDateTime,
+) -> Result<u64, DbError> {
+    let row = user::Entity::find()
+        .filter(user::Column::PublicId.eq(public_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.password_hash = Set(Some(password_hash));
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(1)
+}
+
 pub async fn update_user_alias(
     db: &DatabaseConnection,
     public_id: Uuid,
