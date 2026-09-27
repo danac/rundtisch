@@ -1,3 +1,4 @@
+mod auth_handlers;
 mod handlers;
 pub mod migrator;
 pub mod native_platform;

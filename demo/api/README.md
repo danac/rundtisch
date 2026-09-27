@@ -8,7 +8,7 @@ Small Axum app that exercises [`rundtisch`](../../crates/rundtisch/README.md). R
 |-----------|------|
 | Rust (stable) | Source language |
 | Axum 0.8 | HTTP router and handlers |
-| rundtisch | `AppState`, auth handlers |
+| rundtisch | `AppState`, auth primitives |
 | SeaORM 2 | `DatabaseConnection`, migrations |
 
 ## Project structure
@@ -19,7 +19,8 @@ demo/api/
   src/
     lib.rs
     routes.rs
-    handlers.rs
+    handlers.rs              # /api/health
+    auth_handlers.rs         # auth HTTP handlers, including the demo activation token
     native_platform.rs    # Database::connect(DATABASE_URL)
     migrator.rs           # MigratorTrait → rundtisch::auth::migrations()
     bin/native.rs         # listen on 0.0.0.0:8787
@@ -70,7 +71,7 @@ cargo check -p rundtisch-demo
 
 ## Adding a route
 
-1. Add a handler in `src/handlers.rs` (or call one from `rundtisch::auth`).
+1. Add a handler in `src/handlers.rs` or `src/auth_handlers.rs`.
 2. Register it in `src/routes.rs` under `/api/...`.
 3. `curl http://localhost:8787/api/<path>`.
 
