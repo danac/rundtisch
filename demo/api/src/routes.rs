@@ -1,10 +1,10 @@
-use crate::auth_handlers::{
-    activate, create_user, delete_user, list_users, login, logout, me, refresh, register,
-    update_user,
-};
 use crate::handlers::health;
 use axum::Router;
 use axum::routing::{get, patch, post};
+use rundtisch::auth::handlers::{
+    activate, create_user, delete_user, list_users, login, logout, me, refresh, register,
+    update_user,
+};
 use rundtisch::AppState;
 
 pub fn build_router(state: AppState) -> Router {

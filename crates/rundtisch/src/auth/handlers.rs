@@ -1,26 +1,26 @@
-use rundtisch::auth::config::{
+use crate::auth::config::{
     ACCESS_TTL, AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET, SESSION_COOKIE,
     SESSION_TTL,
 };
-use rundtisch::auth::error::{AuthError, DbError};
-use rundtisch::auth::extract::{AdminUser, BearerUser, secret_bytes};
-use rundtisch::auth::jwt::{issue_access_token, issue_activation_token, verify_activation_token};
-use rundtisch::auth::models::{NewUser, Role, UpdateUserAlias, User};
-use rundtisch::auth::password::{
+use crate::auth::error::{AuthError, DbError};
+use crate::auth::extract::{AdminUser, BearerUser, secret_bytes};
+use crate::auth::jwt::{issue_access_token, issue_activation_token, verify_activation_token};
+use crate::auth::models::{NewUser, Role, UpdateUserAlias, User};
+use crate::auth::password::{
     Argon2idHasher, PasswordHasher, check_password_policy, dummy_verify,
 };
 #[cfg(test)]
-use rundtisch::auth::password::TestPasswordHasher;
-use rundtisch::auth::queries::{
+use crate::auth::password::TestPasswordHasher;
+use crate::auth::queries::{
     delete_user as delete_user_row, get_session_by_token_hash, get_user_by_email, get_user_by_id,
     get_user_by_public_id, insert_session, insert_user, list_users as list_user_rows,
     revoke_session, rotate_session, touch_last_login, update_user_alias, verify_email,
 };
-use rundtisch::auth::session::{
+use crate::auth::session::{
     cap_user_agent, clear_session_cookie_header, cookie_value, generate_session_token,
     session_cookie_header, token_hash,
 };
-use rundtisch::AppState;
+use crate::AppState;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -141,7 +141,7 @@ fn user_json(user: &User) -> serde_json::Value {
         "email": user.email,
         "alias": user.alias,
         "role": user.role,
-        "email_verified_at": user.email_verified_at.map(rundtisch::auth::models::datetime_to_rfc3339),
+        "email_verified_at": user.email_verified_at.map(crate::auth::models::datetime_to_rfc3339),
     })
 }
 
@@ -154,9 +154,9 @@ async fn issue_tokens(
     let pepper = secret_bytes(state, AUTH_HASH_PEPPER, 32)?;
     let access_token = issue_access_token(user.public_id, user.role, &access_secret, now())?;
     let raw = generate_session_token()
-        .map_err(|err| AuthError::Token(rundtisch::auth::jwt::TokenError::Backend(err)))?;
+        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     let hash = token_hash(&pepper, &raw)
-        .map_err(|err| AuthError::Token(rundtisch::auth::jwt::TokenError::Backend(err)))?;
+        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     let created = now();
     insert_session(
         &state.db,
@@ -241,7 +241,6 @@ async fn register_inner(
         &verify_secret,
         now(),
     )?;
-    // Demo only: return the activation JWT instead of emailing it.
     Ok((
         StatusCode::CREATED,
         Json(json!({
@@ -339,7 +338,7 @@ async fn refresh_inner(
     let raw = cookie_value(&headers, SESSION_COOKIE).ok_or(AuthError::InvalidToken)?;
     let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
     let hash = token_hash(&pepper, &raw)
-        .map_err(|err| AuthError::Token(rundtisch::auth::jwt::TokenError::Backend(err)))?;
+        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     let session = get_session_by_token_hash(&state.db, &hash)
         .await?
         .ok_or(AuthError::InvalidToken)?;
@@ -349,9 +348,9 @@ async fn refresh_inner(
     }
     let user = get_user_by_id(&state.db, session.user_id).await?;
     let new_raw = generate_session_token()
-        .map_err(|err| AuthError::Token(rundtisch::auth::jwt::TokenError::Backend(err)))?;
+        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     let new_hash = token_hash(&pepper, &new_raw)
-        .map_err(|err| AuthError::Token(rundtisch::auth::jwt::TokenError::Backend(err)))?;
+        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
     rotate_session(&state.db, session.id, &new_hash, created).await?;
     let access_secret = secret_bytes(&state, AUTH_JWT_ACCESS_SECRET, 32)?;
     let access_token = issue_access_token(user.public_id, user.role, &access_secret, now())?;
@@ -400,9 +399,9 @@ pub async fn me(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rundtisch::auth::migrations;
-    use rundtisch::auth::models::{NewUser, Role};
-    use rundtisch::auth::queries::{insert_user, verify_email};
+    use crate::auth::migrations;
+    use crate::auth::models::{NewUser, Role};
+    use crate::auth::queries::{insert_user, verify_email};
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
     use sea_orm_migration::MigratorTrait;
