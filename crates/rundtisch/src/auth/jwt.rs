@@ -1,6 +1,5 @@
 use crate::auth::config::{ACCESS_TTL, ACTIVATION_TTL, JWT_LEEWAY};
 use crate::auth::models::Role;
-use crate::traits::clock::Clock;
 use chrono::{DateTime, Utc};
 use jwt_compact::alg::{Hs256, Hs256Key};
 use jwt_compact::prelude::*;
@@ -61,11 +60,10 @@ fn chrono_utc(now: time::OffsetDateTime) -> DateTime<Utc> {
         .expect("timestamp in chrono range")
 }
 
-fn time_options(clock: &dyn Clock) -> TimeOptions<impl Fn() -> DateTime<Utc> + '_> {
-    TimeOptions::new(
-        chrono::Duration::seconds(JWT_LEEWAY.whole_seconds()),
-        || chrono_utc(clock.now_utc()),
-    )
+fn time_options(now: time::OffsetDateTime) -> TimeOptions<impl Fn() -> DateTime<Utc>> {
+    TimeOptions::new(chrono::Duration::seconds(JWT_LEEWAY.whole_seconds()), move || {
+        chrono_utc(now)
+    })
 }
 
 fn key(secret: &[u8]) -> Result<Hs256Key, TokenError> {
@@ -81,10 +79,10 @@ pub fn issue_access_token(
     sub: Uuid,
     role: Role,
     secret: &[u8],
-    clock: &dyn Clock,
+    now: time::OffsetDateTime,
 ) -> Result<String, TokenError> {
     let key = key(secret)?;
-    let options = time_options(clock);
+    let options = time_options(now);
     let claims = Claims::new(AccessPrivate {
         sub: sub.to_string(),
         role,
@@ -102,7 +100,7 @@ pub fn issue_access_token(
 pub fn verify_access_token(
     token: &str,
     secret: &[u8],
-    clock: &dyn Clock,
+    now: time::OffsetDateTime,
 ) -> Result<AccessClaims, TokenError> {
     let key = key(secret)?;
     let untrusted = UntrustedToken::new(token).map_err(|_| TokenError::Invalid)?;
@@ -111,7 +109,7 @@ pub fn verify_access_token(
         .validate(&untrusted)
         .map_err(|_| TokenError::Invalid)?;
     let claims = token.claims();
-    match claims.validate_expiration(&time_options(clock)) {
+    match claims.validate_expiration(&time_options(now)) {
         Ok(_) => {}
         Err(jwt_compact::ValidationError::Expired) => return Err(TokenError::Expired),
         Err(_) => return Err(TokenError::Invalid),
@@ -130,10 +128,10 @@ pub fn issue_activation_token(
     sub: Uuid,
     email: &str,
     secret: &[u8],
-    clock: &dyn Clock,
+    now: time::OffsetDateTime,
 ) -> Result<String, TokenError> {
     let key = key(secret)?;
-    let options = time_options(clock);
+    let options = time_options(now);
     let claims = Claims::new(ActivationPrivate {
         sub: sub.to_string(),
         email: email.to_string(),
@@ -151,7 +149,7 @@ pub fn issue_activation_token(
 pub fn verify_activation_token(
     token: &str,
     secret: &[u8],
-    clock: &dyn Clock,
+    now: time::OffsetDateTime,
 ) -> Result<ActivationClaims, TokenError> {
     let key = key(secret)?;
     let untrusted = UntrustedToken::new(token).map_err(|_| TokenError::Invalid)?;
@@ -160,7 +158,7 @@ pub fn verify_activation_token(
         .validate(&untrusted)
         .map_err(|_| TokenError::Invalid)?;
     let claims = token.claims();
-    match claims.validate_expiration(&time_options(clock)) {
+    match claims.validate_expiration(&time_options(now)) {
         Ok(_) => {}
         Err(jwt_compact::ValidationError::Expired) => return Err(TokenError::Expired),
         Err(_) => return Err(TokenError::Invalid),
@@ -178,33 +176,31 @@ pub fn verify_activation_token(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapters::clock::FrozenClock;
-
     const ACCESS: &[u8] = b"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const VERIFY: &[u8] = b"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
-    fn clock() -> FrozenClock {
-        FrozenClock(time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap())
+    fn now() -> time::OffsetDateTime {
+        time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap()
     }
 
     #[test]
     fn access_token_round_trip() {
         let sub = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let token = issue_access_token(sub, Role::Admin, ACCESS, &clock()).unwrap();
-        let claims = verify_access_token(&token, ACCESS, &clock()).unwrap();
+        let token = issue_access_token(sub, Role::Admin, ACCESS, now()).unwrap();
+        let claims = verify_access_token(&token, ACCESS, now()).unwrap();
         assert_eq!(claims.sub, sub);
         assert_eq!(claims.role, Role::Admin);
-        assert!(verify_access_token(&token, VERIFY, &clock()).is_err());
+        assert!(verify_access_token(&token, VERIFY, now()).is_err());
     }
 
     #[test]
     fn access_token_expires() {
         let sub = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let issued = clock();
-        let token = issue_access_token(sub, Role::User, ACCESS, &issued).unwrap();
-        let later = FrozenClock(issued.0 + ACCESS_TTL + time::Duration::minutes(1));
+        let issued = now();
+        let token = issue_access_token(sub, Role::User, ACCESS, issued).unwrap();
+        let later = issued + ACCESS_TTL + time::Duration::minutes(1);
         assert_eq!(
-            verify_access_token(&token, ACCESS, &later).unwrap_err(),
+            verify_access_token(&token, ACCESS, later).unwrap_err(),
             TokenError::Expired
         );
     }
@@ -212,10 +208,10 @@ mod tests {
     #[test]
     fn activation_is_not_access() {
         let sub = uuid::Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-        let token = issue_activation_token(sub, "carol@example.com", VERIFY, &clock()).unwrap();
-        assert!(verify_access_token(&token, VERIFY, &clock()).is_err());
-        assert!(verify_access_token(&token, ACCESS, &clock()).is_err());
-        let claims = verify_activation_token(&token, VERIFY, &clock()).unwrap();
+        let token = issue_activation_token(sub, "carol@example.com", VERIFY, now()).unwrap();
+        assert!(verify_access_token(&token, VERIFY, now()).is_err());
+        assert!(verify_access_token(&token, ACCESS, now()).is_err());
+        let claims = verify_activation_token(&token, VERIFY, now()).unwrap();
         assert_eq!(claims.sub, sub);
         assert_eq!(claims.email, "carol@example.com");
     }

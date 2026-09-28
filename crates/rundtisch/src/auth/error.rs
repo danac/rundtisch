@@ -1,12 +1,63 @@
 use crate::auth::jwt::TokenError;
 use crate::auth::password::{PasswordError, PasswordHashError};
-use crate::traits::db::Error as DbError;
-use crate::traits::random::RandomError;
-use crate::traits::secrets::SecretError;
+use crate::app::SecretError;
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use sea_orm::DbErr;
 use serde_json::json;
+
+#[derive(Debug)]
+pub enum DbError {
+    NotFound,
+    Conflict,
+    TypeMismatch,
+    Backend(String),
+}
+
+impl std::fmt::Display for DbError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DbError::NotFound => write!(f, "not found"),
+            DbError::Conflict => write!(f, "conflict"),
+            DbError::TypeMismatch => write!(f, "type mismatch"),
+            DbError::Backend(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+impl std::error::Error for DbError {}
+
+impl From<DbErr> for DbError {
+    fn from(err: DbErr) -> Self {
+        let message = err.to_string();
+        if is_conflict(&message) {
+            DbError::Conflict
+        } else {
+            DbError::Backend(message)
+        }
+    }
+}
+
+fn is_conflict(message: &str) -> bool {
+    message.contains("UNIQUE constraint failed")
+        || message.contains("Duplicate entry")
+        || message.contains("duplicate key")
+        || message.contains("1062")
+        || message.contains("23505")
+}
+
+impl IntoResponse for DbError {
+    fn into_response(self) -> Response {
+        let status = match &self {
+            DbError::NotFound => StatusCode::NOT_FOUND,
+            DbError::Conflict => StatusCode::CONFLICT,
+            DbError::TypeMismatch => StatusCode::BAD_REQUEST,
+            DbError::Backend(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (status, Json(json!({"error": self.to_string()}))).into_response()
+    }
+}
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -14,11 +65,11 @@ pub enum AuthError {
     EmailNotVerified,
     InvalidToken,
     TokenExpired,
+    Forbidden,
     InvalidPassword,
     TypeMismatch,
     Secrets,
     Db(DbError),
-    Random(RandomError),
     Password(PasswordHashError),
     Token(TokenError),
 }
@@ -26,12 +77,6 @@ pub enum AuthError {
 impl From<DbError> for AuthError {
     fn from(value: DbError) -> Self {
         AuthError::Db(value)
-    }
-}
-
-impl From<RandomError> for AuthError {
-    fn from(value: RandomError) -> Self {
-        AuthError::Random(value)
     }
 }
 
@@ -70,12 +115,12 @@ impl AuthError {
             AuthError::EmailNotVerified => (StatusCode::FORBIDDEN, "email_not_verified"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
             AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, "token_expired"),
+            AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::InvalidPassword => (StatusCode::BAD_REQUEST, "invalid_password"),
             AuthError::TypeMismatch => (StatusCode::BAD_REQUEST, "type mismatch"),
-            AuthError::Secrets
-            | AuthError::Random(_)
-            | AuthError::Password(_)
-            | AuthError::Token(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal_error"),
+            AuthError::Secrets | AuthError::Password(_) | AuthError::Token(_) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
+            }
             AuthError::Db(DbError::NotFound) => (StatusCode::NOT_FOUND, "not found"),
             AuthError::Db(DbError::Conflict) => (StatusCode::CONFLICT, "conflict"),
             AuthError::Db(DbError::TypeMismatch) => (StatusCode::BAD_REQUEST, "type mismatch"),

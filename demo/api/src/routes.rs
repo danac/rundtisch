@@ -5,9 +5,9 @@ use rundtisch::auth::handlers::{
     activate, create_user, delete_user, list_users, login, logout, me, refresh, register,
     update_user,
 };
-use rundtisch::{AppState, Platform};
+use rundtisch::AppState;
 
-pub fn build_router<P: Platform>(state: AppState<P>) -> Router {
+pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth/users", get(list_users).post(create_user))
