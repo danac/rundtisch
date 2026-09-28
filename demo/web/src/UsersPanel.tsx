@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useSession } from './session.tsx'
 
 type Role = 'User' | 'Admin'
 
@@ -34,6 +35,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export function UsersPanel() {
+  const { api } = useSession()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -47,7 +49,7 @@ export function UsersPanel() {
     setLoading(true)
     setError(null)
     try {
-      const response = await fetch('/api/auth/users')
+      const response = await api('/api/auth/users')
       if (!response.ok) {
         setError(await readError(response))
         return
@@ -71,9 +73,8 @@ export function UsersPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch('/api/auth/users', {
+      const response = await api('/api/auth/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, alias, role }),
       })
       if (!response.ok) {
@@ -96,9 +97,8 @@ export function UsersPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/auth/users/${publicId}`, {
+      const response = await api(`/api/auth/users/${publicId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alias: nextAlias }),
       })
       if (!response.ok) {
@@ -117,7 +117,7 @@ export function UsersPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await fetch(`/api/auth/users/${publicId}`, { method: 'DELETE' })
+      const response = await api(`/api/auth/users/${publicId}`, { method: 'DELETE' })
       if (!response.ok) {
         setError(await readError(response))
         return

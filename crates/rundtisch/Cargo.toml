@@ -2,39 +2,52 @@
 name = "rundtisch"
 version.workspace = true
 edition.workspace = true
-description = "Micro web framework with hexagonal architecture"
+description = "Axum auth helpers on SeaORM"
 repository = "https://github.com/danac/rundtisch"
 readme = "README.md"
 publish = false
 
 [features]
-default = []
-d1 = ["worker/d1", "time/wasm-bindgen", "getrandom/wasm_js", "dep:js-sys", "dep:wasm-bindgen"]
-sqlite = ["sqlx/sqlite", "sqlx/runtime-tokio"]
+default = ["auth"]
+auth = [
+    "dep:sea-orm-migration",
+    "dep:serde",
+    "dep:email_address",
+    "dep:time",
+    "dep:axum",
+    "dep:serde_json",
+    "dep:uuid",
+    "dep:getrandom",
+    "dep:jwt-compact",
+    "dep:chrono",
+    "dep:argon2",
+    "dep:hmac",
+    "dep:sha2",
+    "dep:subtle",
+    "dep:base64",
+    "dep:zeroize",
+]
 
 [dependencies]
-sea-query.workspace = true
-serde = { workspace = true, features = ["derive", "alloc"] }
-email_address = { workspace = true, features = ["serde"] }
-sqlx = { workspace = true, optional = true }
-worker = { workspace = true, optional = true }
-time = { workspace = true, features = ["std", "formatting", "parsing", "serde", "serde-well-known"] }
-axum = { workspace = true, features = ["json"] }
-serde_json.workspace = true
-uuid = { version = "1.18", default-features = false, features = ["std", "serde"] }
-getrandom = { version = "0.3.4", default-features = false }
-jwt-compact = { version = "0.8", default-features = false, features = ["std"] }
-chrono = { version = "0.4", default-features = false, features = ["alloc"] }
-argon2 = { version = "0.6", default-features = false, features = ["alloc", "password-hash", "zeroize"] }
-hmac = "0.12"
-sha2 = "0.10"
-subtle = "2"
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-zeroize = { version = "1", default-features = false, features = ["alloc"] }
-js-sys = { version = "0.3", optional = true }
-wasm-bindgen = { version = "0.2", optional = true }
+sea-orm.workspace = true
+sea-orm-migration = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+email_address = { workspace = true, optional = true }
+time = { workspace = true, features = ["parsing", "formatting", "serde"], optional = true }
+axum = { workspace = true, features = ["json"], optional = true }
+serde_json = { workspace = true, optional = true }
+uuid = { workspace = true, features = ["serde"], optional = true }
+getrandom = { workspace = true, optional = true }
+jwt-compact = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+argon2 = { workspace = true, features = ["alloc", "password-hash"], optional = true }
+hmac = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
+base64 = { workspace = true, features = ["alloc"], optional = true }
+zeroize = { workspace = true, features = ["alloc"], optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt"] }
-sqlx = { workspace = true, features = ["sqlite", "runtime-tokio"]}
-tower = { version = "0.5", default-features = false, features = ["util"] }
+tower = { workspace = true, features = ["util"] }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }

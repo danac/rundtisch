@@ -1,23 +1,30 @@
 use axum::Router;
 use rundtisch::AppState;
 use rundtisch_demo::build_router;
-use rundtisch_demo::native_platform::NativePlatform;
+use rundtisch_demo::listen_addr;
+use rundtisch_demo::native_platform;
+use rundtisch_demo::static_dir;
+use rundtisch_demo::with_frontend;
 use tokio::signal;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
-    let database_path =
-        std::env::var("SQLITE_PATH").unwrap_or_else(|_| "rundtisch.sqlite".to_string());
-    let platform = NativePlatform::new(database_path).await;
-    let state = AppState::from_platform(&platform);
-    serve(build_router(state)).await;
+    let db = native_platform::connect()
+        .await
+        .expect("database connection");
+    let state = AppState { db };
+    let mut router = build_router(state);
+    if let Some(dir) = static_dir() {
+        println!("Serving frontend from {}", dir.display());
+        router = with_frontend(router, &dir);
+    }
+    serve(router).await;
 }
 
-/// Bind `0.0.0.0:8080` and serve `router` until Ctrl+C or SIGTERM.
-///
-/// `router` must already have state applied (Axum `Router::with_state`).
+/// Bind the listen address and serve `router` until Ctrl+C or SIGTERM.
 async fn serve(router: Router) {
-    serve_at(router, "0.0.0.0:8787").await;
+    let addr = listen_addr();
+    serve_at(router, &addr).await;
 }
 
 async fn serve_at(router: Router, addr: &str) {
