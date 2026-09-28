@@ -5,7 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-rundtisch = { path = "../../crates/rundtisch" }
+rundtisch = { path = "../../crates/rundtisch", features = ["auth"] }
 axum = { workspace = true, features = ["json", "http1", "tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "fs"] }
 sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
