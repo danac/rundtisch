@@ -1,4 +1,12 @@
-import { ApiError, type Collection, type CrockisApi, type Photo, type Session, type User } from './types'
+import {
+  ApiError,
+  type Collection,
+  type CrockisApi,
+  type Photo,
+  type ResetPasswordRequest,
+  type Session,
+  type User,
+} from './types'
 
 const base = import.meta.env.VITE_API_BASE ?? '/api'
 
@@ -33,6 +41,11 @@ export const restApi: CrockisApi = {
     }),
   logout: (token) => request<void>('/auth/logout', token, { method: 'POST' }),
   me: (token) => request<User>('/auth/me', token),
+  resetPassword: (token, body: ResetPasswordRequest) =>
+    request<void>('/auth/password', token, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listCollections: (token) => request<Collection[]>('/collections', token),
   getCollection: (token, id) => request<Collection>(`/collections/${id}`, token),
   listPhotos: (token, collectionId) =>

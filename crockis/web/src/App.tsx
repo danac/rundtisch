@@ -4,6 +4,8 @@ import { CollectionPage } from './pages/CollectionPage'
 import { CollectionsPage } from './pages/CollectionsPage'
 import { LoginPage } from './pages/LoginPage'
 import { RequireAuth } from './pages/RequireAuth'
+import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 export function App() {
   return (
@@ -14,6 +16,8 @@ export function App() {
           <Route element={<RequireAuth />}>
             <Route path="/collections" element={<CollectionsPage />} />
             <Route path="/collections/:collectionId" element={<CollectionPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/password" element={<ResetPasswordPage />} />
           </Route>
           <Route path="/" element={<Navigate to="/collections" replace />} />
           <Route path="*" element={<Navigate to="/collections" replace />} />

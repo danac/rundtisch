@@ -31,6 +31,14 @@ export const mockApi: CrockisApi = {
     return mockUser
   },
 
+  async resetPassword(token, { password }) {
+    await wait()
+    requireToken(token)
+    if (password.length < 1) {
+      throw new ApiError(400, 'Enter a new password.')
+    }
+  },
+
   async listCollections(token) {
     await wait()
     requireToken(token)

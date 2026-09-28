@@ -119,4 +119,8 @@ export const mockUser: User = {
   id: 'user-dana',
   email: 'dana@crockis.test',
   name: 'Dana',
+  authMethods: [
+    { id: 'password', kind: 'password', label: 'Password', enrolled: true },
+    { id: 'passkey', kind: 'passkey', label: 'Passkey', enrolled: false },
+  ],
 }

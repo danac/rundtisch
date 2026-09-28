@@ -9,7 +9,7 @@ export function CollectionsPage() {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      <Header />
+      <Header crumbs={[{ label: 'Collections' }]} />
       <main className="flex-1">
         {isPending ? <StatusState message="Gathering collections" /> : null}
         {error ? (

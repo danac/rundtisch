@@ -1,7 +1,17 @@
+export type AuthMethodKind = 'password' | 'passkey'
+
+export type AuthMethod = {
+  id: string
+  kind: AuthMethodKind
+  label: string
+  enrolled: boolean
+}
+
 export type User = {
   id: string
   email: string
   name: string
+  authMethods: AuthMethod[]
 }
 
 export type Session = {
@@ -37,6 +47,10 @@ export type LoginRequest = {
   password: string
 }
 
+export type ResetPasswordRequest = {
+  password: string
+}
+
 export class ApiError extends Error {
   readonly status: number
 
@@ -51,6 +65,7 @@ export type CrockisApi = {
   login(request: LoginRequest): Promise<Session>
   logout(token: string): Promise<void>
   me(token: string): Promise<User>
+  resetPassword(token: string, request: ResetPasswordRequest): Promise<void>
   listCollections(token: string): Promise<Collection[]>
   getCollection(token: string, id: string): Promise<Collection>
   listPhotos(token: string, collectionId: string): Promise<Photo[]>

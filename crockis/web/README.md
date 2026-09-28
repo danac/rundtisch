@@ -21,6 +21,8 @@ React SPA for a private photo library. Collections and image metadata are loaded
 | `/login` | Email / password sign-in |
 | `/collections` | Tile list of collections |
 | `/collections/:collectionId` | Photo mosaic for one collection |
+| `/settings` | Account email and sign-in methods |
+| `/settings/password` | Reset the signed-in user's password |
 
 Unauthenticated visits to collection routes redirect to `/login`.
 
@@ -38,7 +40,8 @@ Expected REST shape:
 ```
 POST /api/auth/login          { email, password } → { user, token }
 POST /api/auth/logout
-GET  /api/auth/me             → user
+GET  /api/auth/me             → user (id, email, name, authMethods)
+POST /api/auth/password       { password } → 204
 GET  /api/collections         → Collection[]
 GET  /api/collections/:id     → Collection
 GET  /api/collections/:id/photos → Photo[]

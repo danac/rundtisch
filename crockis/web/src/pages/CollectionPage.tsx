@@ -96,7 +96,10 @@ export function CollectionPage() {
   return (
     <div className={selecting ? 'flex min-h-dvh flex-col pb-24' : 'flex min-h-dvh flex-col'}>
       <Header
-        title={collection.data?.name}
+        crumbs={[
+          { label: 'Collections', to: '/collections' },
+          ...(collection.data ? [{ label: collection.data.name }] : []),
+        ]}
         selecting={selecting}
         onToggleSelect={ready ? () => (selecting ? stopSelecting() : setSelecting(true)) : undefined}
       />
