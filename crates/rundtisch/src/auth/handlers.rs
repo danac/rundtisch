@@ -53,8 +53,7 @@ pub struct LoginBody {
 
 #[derive(Debug, Deserialize)]
 pub struct PasskeyLoginOptionsBody {
-    #[serde(default)]
-    pub email: Option<EmailAddress>,
+    pub email: EmailAddress,
 }
 
 #[derive(Debug, Deserialize)]
@@ -252,8 +251,8 @@ pub async fn passkey_login_options(
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
         let ceremony = PasskeyCeremony::from_app(&state)?;
-        let email = body.email.as_ref().map(EmailAddress::as_ref);
-        let (flow_id, options) = start_passkey_login(&state.db, &ceremony, email).await?;
+        let (flow_id, options) =
+            start_passkey_login(&state.db, &ceremony, body.email.as_ref()).await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;

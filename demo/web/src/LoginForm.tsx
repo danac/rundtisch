@@ -34,9 +34,19 @@ function clearAuthQuery() {
 }
 
 function messageFrom(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'NotAllowedError') return 'passkey_cancelled'
+  if (err instanceof DOMException && err.name === 'NotAllowedError') {
+    return 'Passkey cancelled or unavailable. Enter your email and use the same authenticator you registered.'
+  }
   if (err instanceof Error) return err.message
   return 'Network error'
+}
+
+function emailFromForm(form: HTMLFormElement | null, fallback: string): string {
+  if (!form) return fallback.trim()
+  // Read the live input value so browser autofill is picked up even when React
+  // state has not received an onChange yet.
+  const fromDom = String(new FormData(form).get('email') ?? '').trim()
+  return fromDom || fallback.trim()
 }
 
 export function LoginForm() {
@@ -288,7 +298,7 @@ export function LoginForm() {
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
             disabled={busy || !canPasskey || (mode === 'register' && inviteToken.trim() === '')}
-            onClick={() => {
+            onClick={(event) => {
               if (mode === 'register') {
                 void runCeremony(
                   '/api/auth/register/passkey/options',
@@ -298,10 +308,16 @@ export function LoginForm() {
                 )
                 return
               }
+              const loginEmail = emailFromForm(event.currentTarget.form, email)
+              if (!loginEmail) {
+                setError('Enter your email to log in with a passkey.')
+                return
+              }
+              setEmail(loginEmail)
               void runCeremony(
                 '/api/auth/passkeys/login/options',
                 '/api/auth/passkeys/login',
-                email.trim() ? { email } : {},
+                { email: loginEmail },
                 'get',
               )
             }}

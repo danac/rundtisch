@@ -376,23 +376,22 @@ pub async fn finish_session_passkey(
 pub async fn start_passkey_login(
     db: &DatabaseConnection,
     ceremony: &PasskeyCeremony,
-    email: Option<&str>,
+    email: &str,
 ) -> Result<(String, serde_json::Value), AuthError> {
     let created = now();
     let _ = delete_expired_ceremonies(db, created).await;
-    let (user_id, passkeys) = if let Some(email) = email {
-        let email = parse_email(email)?;
-        let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
-            return Err(AuthError::InvalidCredentials);
-        };
-        let rows = list_passkeys_for_user(db, user.id).await?;
-        if rows.is_empty() {
-            return Err(AuthError::InvalidCredentials);
-        }
-        (Some(user.id), decode_passkeys(&rows)?)
-    } else {
-        (None, Vec::new())
+    // Passkey registration uses residentKey=discouraged, so login must include
+    // allowCredentials. That requires the account email; usernameless/discoverable
+    // login is not supported with the current registration policy.
+    let email = parse_email(email)?;
+    let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
+        return Err(AuthError::InvalidCredentials);
     };
+    let rows = list_passkeys_for_user(db, user.id).await?;
+    if rows.is_empty() {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let passkeys = decode_passkeys(&rows)?;
     let (options, state) = ceremony.start_authentication(&passkeys)?;
     let flow_id = new_public_id().to_string();
     insert_ceremony(
@@ -400,7 +399,7 @@ pub async fn start_passkey_login(
         &CeremonyRecord {
             flow_id: flow_id.clone(),
             kind: CEREMONY_LOGIN.into(),
-            user_id,
+            user_id: Some(user.id),
             token_hash: None,
             alias: None,
             public_id: None,
