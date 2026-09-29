@@ -42,7 +42,10 @@ jobs:
     retries: 2
     action:
       execute:
-        package: .
+        # Job package overrides must be registry references; local `.` is sent
+        # literally to Edge. `wasmer deploy --publish-package` publishes this
+        # package before creating the app version.
+        package: danac/rundtisch
         command: migrate
 # HealthCheckV1 is an externally tagged serde enum. serde_yaml 0.9 expects a
 # YAML tag (`!http`), not a map (`http:`). Nested `expect` matches HttpRequest.
