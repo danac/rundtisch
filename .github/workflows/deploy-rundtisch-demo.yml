@@ -1,4 +1,4 @@
-name: Wasmer
+name: Deploy Rundtisch Demo on Wasmer Edge
 
 on:
   push:

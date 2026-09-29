@@ -38,7 +38,7 @@ npm run build --prefix demo/web
 cargo wasix build --release
 ```
 
-CI (`.github/workflows/wasmer.yml`) does the same on pushes to `main` and on `workflow_dispatch`: it installs cargo-wasix with `cargo binstall` and Wasmer with `curl https://get.wasmer.io -sSfL | sh`, replaces `Cargo.lock` with `Cargo.wasix.lock`, builds the frontend, builds the WASIX release, and deploys from this folder using the `Wasmer` GitHub environment (`WASMER_TOKEN`, `WASMER_OWNER`).
+CI (`.github/workflows/deploy-rundtisch-demo.yml`) does the same on pushes to `main` and on `workflow_dispatch`: it installs cargo-wasix with `cargo binstall` and Wasmer with `curl https://get.wasmer.io -sSfL | sh`, replaces `Cargo.lock` with `Cargo.wasix.lock`, builds the frontend, builds the WASIX release, and deploys from this folder using the `Wasmer` GitHub environment (`WASMER_TOKEN`, `WASMER_OWNER`).
 
 Then, from `demo/`:
 
@@ -46,7 +46,7 @@ Then, from `demo/`:
 wasmer deploy --owner YOUR_WASMER_USERNAME --no-persist-id
 ```
 
-Leave `owner` commented in `app.yaml`. Set `AUTH_HASH_PEPPER` (exactly 32 bytes) on the app. A commented "Ensure auth secrets" step in `.github/workflows/wasmer.yml` can generate a missing pepper; leave it commented so deploys do not rotate or recreate it. WebAuthn defaults to RP id `localhost` and origin `http://localhost:5173`; set `AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, and optional `AUTH_WEBAUTHN_RP_NAME` when the public origin is not localhost. Optional first admin: `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` (and optional `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS`). The pre-deployment `migrate` job upserts that email: insert a verified Admin if absent, or reset the password without changing `public_id`, role, alias, or verification. Edge injects `DB_*` for the managed MySQL database. The server does not migrate or seed on startup or per request.
+Leave `owner` commented in `app.yaml`. Set `AUTH_HASH_PEPPER` (exactly 32 bytes) on the app. A commented "Ensure auth secrets" step in `.github/workflows/deploy-rundtisch-demo.yml` can generate a missing pepper; leave it commented so deploys do not rotate or recreate it. WebAuthn defaults to RP id `localhost` and origin `http://localhost:5173`; set `AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, and optional `AUTH_WEBAUTHN_RP_NAME` when the public origin is not localhost. Optional first admin: `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` (and optional `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS`). The pre-deployment `migrate` job upserts that email: insert a verified Admin if absent, or reset the password without changing `public_id`, role, alias, or verification. Edge injects `DB_*` for the managed MySQL database. The server does not migrate or seed on startup or per request.
 
 From the repository root, with MySQL running, apply migrations and start the API by running the release WASIX binaries. Run migrate first, then the server. Both need network access and the same database URL and `DB_SSL_MODE=required`. Raw `wasmer run` of the `.wasm` file does not apply `wasmer.toml` `[fs]` or `PORT=80`; Vite can still proxy `/api` to `localhost:8787`.
 

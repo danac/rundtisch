@@ -102,7 +102,7 @@ cargo test
 npm run build --prefix demo/web
 ```
 
-The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo. CI (`.github/workflows/test.yml`) runs both, then the frontend build.
+The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo. CI (`.github/workflows/ci.yml`) runs both, then the frontend build.
 
 ## Related documentation
 
