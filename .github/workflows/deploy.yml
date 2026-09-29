@@ -36,11 +36,14 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', 'crates/rundtisch/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Test
+      - name: Test library
+        run: cargo test --manifest-path crates/rundtisch/Cargo.toml
+
+      - name: Test demo
         run: cargo test
 
       - name: Install dependencies

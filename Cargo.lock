@@ -1899,7 +1899,6 @@ version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1f111c8c41e7c61a49cd34e44c7619462967221a6443b0ec299e0ac30cfb9b1"
 dependencies = [
- "cc",
  "pkg-config",
  "vcpkg",
 ]
@@ -2648,20 +2647,15 @@ dependencies = [
  "email_address",
  "getrandom 0.4.3",
  "hmac 0.13.0",
- "p256",
  "sea-orm",
  "sea-orm-migration",
  "serde",
- "serde_cbor_2",
  "serde_json",
  "sha2 0.11.0",
  "subtle",
  "time",
- "tokio",
- "tower",
  "uuid",
  "webauthn-rs",
- "webauthn-rs-proto",
  "zeroize",
 ]
 

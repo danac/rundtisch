@@ -13,16 +13,16 @@ The library does not open a database and does not select a backend. Callers pass
 | `app` | `AppState { db }` and `secret()` (`std::env::var`) |
 | `auth` | Users, opaque sessions, invitations, recovery, passkeys, Argon2id, SeaORM entities and migrations |
 
-`auth` is a default feature. `cargo check -p rundtisch --no-default-features` builds only `app`.
+`auth` is a default feature. `cargo check --manifest-path crates/rundtisch/Cargo.toml --no-default-features` builds only `app`.
 
 `auth::Migrator` applies the auth migrations and records them in `rundtisch_migrations_auth`, separate from a host app's `seaql_migrations` table. The demo binary is `migrate`. After `Migrator::up`, that binary can upsert a verified Admin from `RUNDTISCH_BOOTSTRAP_ADMIN_*` secrets: insert when the email is absent, or reset the password on the existing user.
 
 ## Development
 
-From the repository root:
+The crate is excluded from the repository workspace, so test it on its own lockfile:
 
 ```bash
-cargo test -p rundtisch
+cargo test --manifest-path crates/rundtisch/Cargo.toml
 ```
 
 Handler tests use an in-memory SQLite connection and apply `auth::Migrator`.
