@@ -1,6 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useSession, type AuthUser } from './session.tsx'
-import { createPasskey, getPasskey, passkeySupported } from './webauthn.ts'
+import {
+  conditionalMediationAvailable,
+  createPasskey,
+  getPasskey,
+  passkeySupported,
+} from './webauthn.ts'
 
 type ErrorResponse = { error: string }
 type CeremonyStart = { flow_id: string; options: unknown }
@@ -34,19 +39,15 @@ function clearAuthQuery() {
 }
 
 function messageFrom(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'NotAllowedError') {
-    return 'Passkey cancelled or unavailable. Enter your email and use the same authenticator you registered.'
-  }
+  if (err instanceof DOMException && err.name === 'NotAllowedError') return 'Passkey cancelled'
   if (err instanceof Error) return err.message
   return 'Network error'
 }
 
-function emailFromForm(form: HTMLFormElement | null, fallback: string): string {
-  if (!form) return fallback.trim()
-  // Read the live input value so browser autofill is picked up even when React
-  // state has not received an onChange yet.
-  const fromDom = String(new FormData(form).get('email') ?? '').trim()
-  return fromDom || fallback.trim()
+function ignoredPasskeyError(err: unknown): boolean {
+  return (
+    err instanceof DOMException && (err.name === 'AbortError' || err.name === 'NotAllowedError')
+  )
 }
 
 export function LoginForm() {
@@ -60,6 +61,7 @@ export function LoginForm() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canPasskey = passkeySupported()
+  const conditionalAbort = useRef<AbortController | null>(null)
 
   function begin() {
     setBusy(true)
@@ -72,18 +74,60 @@ export function LoginForm() {
       return
     }
     const body = (await response.json()) as { user: AuthUser }
+    setEmail(body.user.email)
     setPassword('')
     clearAuthQuery()
     establish(body.user)
   }
 
+  useEffect(() => {
+    if (mode !== 'login' || recovering || !canPasskey) return
+    const controller = new AbortController()
+    conditionalAbort.current = controller
+    let cancelled = false
+    void (async () => {
+      if (!(await conditionalMediationAvailable()) || controller.signal.aborted) return
+      try {
+        const started = await api('/api/auth/passkeys/login/options', {
+          method: 'POST',
+          body: '{}',
+          signal: controller.signal,
+        })
+        if (!started.ok || cancelled) return
+        const ceremony = (await started.json()) as CeremonyStart
+        const credential = await getPasskey(ceremony.options, {
+          mediation: 'conditional',
+          signal: controller.signal,
+        })
+        if (cancelled) return
+        const finished = await api('/api/auth/passkeys/login', {
+          method: 'POST',
+          body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
+        })
+        if (cancelled) return
+        await finishSession(finished)
+      } catch (err) {
+        if (cancelled || controller.signal.aborted || ignoredPasskeyError(err)) return
+        setError(messageFrom(err))
+      }
+    })()
+    return () => {
+      cancelled = true
+      controller.abort()
+      if (conditionalAbort.current === controller) conditionalAbort.current = null
+    }
+  }, [mode, recovering, canPasskey])
+
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    conditionalAbort.current?.abort()
     begin()
+    const loginEmail =
+      String(new FormData(event.currentTarget).get('email') ?? '').trim() || email.trim()
     try {
       const response = await api('/api/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: loginEmail, password }),
       })
       await finishSession(response)
     } catch (err) {
@@ -252,7 +296,7 @@ export function LoginForm() {
                 <input
                   type="email"
                   name="email"
-                  autoComplete="username"
+                  autoComplete="username webauthn"
                   required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
@@ -298,7 +342,7 @@ export function LoginForm() {
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
             disabled={busy || !canPasskey || (mode === 'register' && inviteToken.trim() === '')}
-            onClick={(event) => {
+            onClick={() => {
               if (mode === 'register') {
                 void runCeremony(
                   '/api/auth/register/passkey/options',
@@ -308,16 +352,11 @@ export function LoginForm() {
                 )
                 return
               }
-              const loginEmail = emailFromForm(event.currentTarget.form, email)
-              if (!loginEmail) {
-                setError('Enter your email to log in with a passkey.')
-                return
-              }
-              setEmail(loginEmail)
+              conditionalAbort.current?.abort()
               void runCeremony(
                 '/api/auth/passkeys/login/options',
                 '/api/auth/passkeys/login',
-                { email: loginEmail },
+                {},
                 'get',
               )
             }}

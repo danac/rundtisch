@@ -53,6 +53,20 @@ export function passkeySupported(): boolean {
   return typeof PublicKeyCredential !== 'undefined'
 }
 
+export async function conditionalMediationAvailable(): Promise<boolean> {
+  if (
+    !passkeySupported() ||
+    typeof PublicKeyCredential.isConditionalMediationAvailable !== 'function'
+  ) {
+    return false
+  }
+  try {
+    return await PublicKeyCredential.isConditionalMediationAvailable()
+  } catch {
+    return false
+  }
+}
+
 export async function createPasskey(options: unknown): Promise<unknown> {
   const { publicKey } = options as { publicKey: CreationPublicKey }
   const credential = asPublicKeyCredential(
@@ -90,19 +104,27 @@ export async function createPasskey(options: unknown): Promise<unknown> {
   }
 }
 
-export async function getPasskey(options: unknown): Promise<unknown> {
+export async function getPasskey(
+  options: unknown,
+  extra?: { mediation?: CredentialMediationRequirement; signal?: AbortSignal },
+): Promise<unknown> {
   const { publicKey } = options as { publicKey: RequestPublicKey }
+  const allowCredentials = publicKey.allowCredentials?.length
+    ? publicKey.allowCredentials.map((item) => ({
+        type: item.type,
+        id: base64UrlToBytes(item.id),
+        transports: item.transports,
+      }))
+    : undefined
   const credential = asPublicKeyCredential(
     await navigator.credentials.get({
+      mediation: extra?.mediation,
+      signal: extra?.signal,
       publicKey: {
         challenge: base64UrlToBytes(publicKey.challenge),
         timeout: publicKey.timeout,
         rpId: publicKey.rpId,
-        allowCredentials: publicKey.allowCredentials?.map((item) => ({
-          type: item.type,
-          id: base64UrlToBytes(item.id),
-          transports: item.transports,
-        })),
+        allowCredentials,
         userVerification: publicKey.userVerification,
         extensions: publicKey.extensions,
       },

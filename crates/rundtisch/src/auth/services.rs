@@ -1,30 +1,27 @@
-use email_address::EmailAddress;
-use sea_orm::{DatabaseConnection, TransactionTrait};
-use time::OffsetDateTime;
-use webauthn_rs::prelude::Passkey;
-
 use crate::auth::config::{CEREMONY_TTL, RECOVERY_MIN_INTERVAL, SESSION_TTL};
 use crate::auth::error::{AuthError, DbError};
 use crate::auth::models::{
-    alias_from_email, new_public_id, CeremonyRecord, NewUser, PasskeyInfo, Role, SessionGrant,
-    User, CEREMONY_INVITE_REGISTER, CEREMONY_LOGIN, CEREMONY_RECOVERY_REGISTER,
-    CEREMONY_SESSION_REGISTER,
+    CEREMONY_INVITE_REGISTER, CEREMONY_LOGIN, CEREMONY_RECOVERY_REGISTER,
+    CEREMONY_SESSION_REGISTER, CeremonyRecord, NewUser, PasskeyInfo, Role, SessionGrant, User,
+    alias_from_email, new_public_id,
 };
-use crate::auth::password::{dummy_verify, PasswordHasher};
+use crate::auth::password::{PasswordHasher, dummy_verify};
 use crate::auth::queries::{
     consume_ceremony, consume_invitation, consume_recovery_token, count_passkeys_for_user,
-    delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation,
-    find_open_recovery_user, get_ceremony, get_passkey_by_credential_id, get_passkey_for_user,
-    get_session_by_token_hash, get_user_by_email, get_user_by_id, insert_ceremony, insert_invitation,
-    insert_passkey, insert_recovery_token, insert_session, list_passkeys_for_user, lock_user_row,
+    delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation, find_open_recovery_user,
+    get_ceremony, get_passkey_by_credential_id, get_passkey_for_user, get_session_by_token_hash,
+    get_user_by_email, get_user_by_id, insert_ceremony, insert_invitation, insert_passkey,
+    insert_recovery_token, insert_session, list_passkeys_for_user, lock_user_row,
     recovery_issued_since, revoke_all_sessions, revoke_session, set_password_hash_by_id,
     touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
 };
-use crate::auth::session::{generate_session_token, token_hash};
+use crate::auth::session::{credential_id_key, generate_session_token, token_hash};
 use crate::auth::webauthn::{
-    authentication_credential_id, passkey_from_json, passkey_json, stored_credential_id,
-    PasskeyCeremony,
+    PasskeyCeremony, passkey_from_json, passkey_json, stored_credential_id,
 };
+use email_address::EmailAddress;
+use sea_orm::{DatabaseConnection, TransactionTrait};
+use time::OffsetDateTime;
 
 fn now() -> OffsetDateTime {
     OffsetDateTime::now_utc()
@@ -239,8 +236,7 @@ pub async fn start_invite_passkey(
         None => alias_from_email(email.as_ref()),
     };
     let public_id = crate::auth::models::new_public_id();
-    let (options, state) =
-        ceremony.start_registration(public_id, email.as_ref(), &alias, &[])?;
+    let (options, state) = ceremony.start_registration(public_id, email.as_ref(), &alias, &[])?;
     let flow_id = new_public_id().to_string();
     insert_ceremony(
         db,
@@ -288,7 +284,9 @@ pub async fn finish_invite_passkey(
                 .alias
                 .clone()
                 .unwrap_or_else(|| alias_from_email(email.as_ref()));
-            let public_id = record.public_id.unwrap_or_else(crate::auth::models::new_public_id);
+            let public_id = record
+                .public_id
+                .unwrap_or_else(crate::auth::models::new_public_id);
             let mut new_user = NewUser::new(email, alias, Role::User, None);
             new_user.public_id = public_id;
             new_user.stamp_now(created);
@@ -313,12 +311,8 @@ pub async fn start_session_passkey(
     let _ = delete_expired_ceremonies(db, created).await;
     let existing = list_passkeys_for_user(db, user.id).await?;
     let exclude = credential_ids(&existing)?;
-    let (options, state) = ceremony.start_registration(
-        user.public_id,
-        user.email.as_ref(),
-        &user.alias,
-        &exclude,
-    )?;
+    let (options, state) =
+        ceremony.start_registration(user.public_id, user.email.as_ref(), &user.alias, &exclude)?;
     let flow_id = new_public_id().to_string();
     insert_ceremony(
         db,
@@ -376,30 +370,18 @@ pub async fn finish_session_passkey(
 pub async fn start_passkey_login(
     db: &DatabaseConnection,
     ceremony: &PasskeyCeremony,
-    email: &str,
 ) -> Result<(String, serde_json::Value), AuthError> {
     let created = now();
     let _ = delete_expired_ceremonies(db, created).await;
-    // Passkey registration uses residentKey=discouraged, so login must include
-    // allowCredentials. That requires the account email; usernameless/discoverable
-    // login is not supported with the current registration policy.
-    let email = parse_email(email)?;
-    let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
-        return Err(AuthError::InvalidCredentials);
-    };
-    let rows = list_passkeys_for_user(db, user.id).await?;
-    if rows.is_empty() {
-        return Err(AuthError::InvalidCredentials);
-    }
-    let passkeys = decode_passkeys(&rows)?;
-    let (options, state) = ceremony.start_authentication(&passkeys)?;
+    // No account lookup: an empty allow list does not reveal who has a passkey.
+    let (options, state) = ceremony.start_discoverable_authentication()?;
     let flow_id = new_public_id().to_string();
     insert_ceremony(
         db,
         &CeremonyRecord {
             flow_id: flow_id.clone(),
             kind: CEREMONY_LOGIN.into(),
-            user_id: Some(user.id),
+            user_id: None,
             token_hash: None,
             alias: None,
             public_id: None,
@@ -421,33 +403,43 @@ pub async fn finish_passkey_login(
     user_agent: Option<&str>,
 ) -> Result<SessionGrant, AuthError> {
     let record = load_live_ceremony(db, flow_id, CEREMONY_LOGIN).await?;
-    let auth_result = ceremony.finish_authentication(credential, &record.state)?;
-    let credential_id = authentication_credential_id(&auth_result);
+    let identified = ceremony.identify_discoverable(credential)?;
+    let credential_id = credential_id_key(&identified.credential_id);
+    let passkey_row = get_passkey_by_credential_id(db, &credential_id)
+        .await?
+        .ok_or(AuthError::InvalidCredentials)?;
+    let user = match get_user_by_id(db, passkey_row.user_id).await {
+        Ok(user) => user,
+        Err(DbError::NotFound) => return Err(AuthError::InvalidCredentials),
+        Err(err) => return Err(err.into()),
+    };
+    if user.public_id != identified.public_id {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let mut stored = passkey_from_json(&passkey_row.passkey)?;
+    let auth_result = ceremony.finish_discoverable(&identified, &record.state, &stored)?;
+    let updated_json = if auth_result_needs_update(&auth_result) {
+        let _ = stored.update_credential(&auth_result);
+        Some(passkey_json(&stored)?)
+    } else {
+        None
+    };
+    let passkey_id = passkey_row.id;
+    let user_id = user.id;
     let ua = user_agent.map(str::to_owned);
     transaction(db, |txn| {
         let record = record.clone();
-        let credential_id = credential_id.clone();
+        let updated_json = updated_json.clone();
         let ua = ua.clone();
         async move {
             let created = now();
             invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
-            let passkey_row = get_passkey_by_credential_id(&txn, &credential_id)
-                .await?
-                .ok_or(AuthError::InvalidCredentials)?;
-            if let Some(expected) = record.user_id {
-                if passkey_row.user_id != expected {
-                    return Err(AuthError::InvalidCredentials);
-                }
-            }
-            let mut stored = passkey_from_json(&passkey_row.passkey)?;
-            if auth_result_needs_update(&auth_result) {
-                let _ = stored.update_credential(&auth_result);
-                let json = passkey_json(&stored)?;
-                update_passkey_json(&txn, passkey_row.id, &json, created).await?;
+            if let Some(json) = updated_json {
+                update_passkey_json(&txn, passkey_id, &json, created).await?;
             } else {
-                touch_passkey_last_used(&txn, passkey_row.id, created).await?;
+                touch_passkey_last_used(&txn, passkey_id, created).await?;
             }
-            let user = get_user_by_id(&txn, passkey_row.user_id).await?;
+            let user = get_user_by_id(&txn, user_id).await?;
             let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
             touch_last_login_by_id(&txn, user.id, created).await?;
             Ok((txn, grant))
@@ -530,12 +522,8 @@ pub async fn start_recovery_passkey(
     let user = get_user_by_id(db, user_id).await?;
     let existing = list_passkeys_for_user(db, user.id).await?;
     let exclude = credential_ids(&existing)?;
-    let (options, state) = ceremony.start_registration(
-        user.public_id,
-        user.email.as_ref(),
-        &user.alias,
-        &exclude,
-    )?;
+    let (options, state) =
+        ceremony.start_registration(user.public_id, user.email.as_ref(), &user.alias, &exclude)?;
     let flow_id = new_public_id().to_string();
     insert_ceremony(
         db,
@@ -625,10 +613,7 @@ async fn load_live_ceremony(
 }
 
 fn parse_email(email: &str) -> Result<EmailAddress, AuthError> {
-    let parsed: EmailAddress = email
-        .trim()
-        .parse()
-        .map_err(|_| AuthError::TypeMismatch)?;
+    let parsed: EmailAddress = email.trim().parse().map_err(|_| AuthError::TypeMismatch)?;
     let normalized = crate::auth::models::normalize_email(&parsed);
     normalized.parse().map_err(|_| AuthError::TypeMismatch)
 }
@@ -639,12 +624,6 @@ fn credential_ids(rows: &[crate::auth::models::PasskeyRecord]) -> Result<Vec<Vec
             let passkey = passkey_from_json(&row.passkey)?;
             Ok(passkey.cred_id().to_vec())
         })
-        .collect()
-}
-
-fn decode_passkeys(rows: &[crate::auth::models::PasskeyRecord]) -> Result<Vec<Passkey>, AuthError> {
-    rows.iter()
-        .map(|row| passkey_from_json(&row.passkey))
         .collect()
 }
 

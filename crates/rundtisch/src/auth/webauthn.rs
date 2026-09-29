@@ -1,19 +1,20 @@
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
-    AuthenticationResult, CredentialID, Passkey, PasskeyAuthentication, PasskeyRegistration,
-    PublicKeyCredential, RegisterPublicKeyCredential, Url, Webauthn, WebauthnBuilder,
+    AuthenticationResult, CredentialID, DiscoverableAuthentication, DiscoverableKey, Passkey,
+    PasskeyAuthentication, PasskeyRegistration, PublicKeyCredential, RegisterPublicKeyCredential,
+    Url, Webauthn, WebauthnBuilder,
 };
 
+use crate::AppState;
 use crate::auth::config::{
-    DEFAULT_WEBAUTHN_RP_ID, DEFAULT_WEBAUTHN_RP_NAME, DEFAULT_WEBAUTHN_RP_ORIGIN,
-    AUTH_WEBAUTHN_RP_ID, AUTH_WEBAUTHN_RP_NAME, AUTH_WEBAUTHN_RP_ORIGIN,
+    AUTH_WEBAUTHN_RP_ID, AUTH_WEBAUTHN_RP_NAME, AUTH_WEBAUTHN_RP_ORIGIN, DEFAULT_WEBAUTHN_RP_ID,
+    DEFAULT_WEBAUTHN_RP_NAME, DEFAULT_WEBAUTHN_RP_ORIGIN,
 };
 use crate::auth::error::AuthError;
 use crate::auth::session::credential_id_key;
-use crate::AppState;
 
 pub struct PasskeyCeremony {
     webauthn: Webauthn,
@@ -66,12 +67,13 @@ impl PasskeyCeremony {
             .webauthn
             .start_passkey_registration(user_id, user_name, display_name, exclude)
             .map_err(ceremony_err)?;
-        let options_json = serde_json::to_value(&options).map_err(|err| {
-            AuthError::Backend(format!("webauthn options: {err}"))
-        })?;
-        let state_json = serde_json::to_string(&state).map_err(|err| {
-            AuthError::Backend(format!("webauthn state: {err}"))
-        })?;
+        let mut options_json = serde_json::to_value(&options)
+            .map_err(|err| AuthError::Backend(format!("webauthn options: {err}")))?;
+        // webauthn-rs passkey registration hardcodes residentKey=discouraged.
+        // Discoverable login needs a resident credential, so require one here.
+        require_discoverable_credential(&mut options_json);
+        let state_json = serde_json::to_string(&state)
+            .map_err(|err| AuthError::Backend(format!("webauthn state: {err}")))?;
         Ok((options_json, state_json))
     }
 
@@ -80,8 +82,8 @@ impl PasskeyCeremony {
         credential: &Value,
         state_json: &str,
     ) -> Result<Passkey, AuthError> {
-        let reg: RegisterPublicKeyCredential =
-            serde_json::from_value(credential.clone()).map_err(|_| AuthError::InvalidCredentials)?;
+        let reg: RegisterPublicKeyCredential = serde_json::from_value(credential.clone())
+            .map_err(|_| AuthError::InvalidCredentials)?;
         let state: PasskeyRegistration =
             serde_json::from_str(state_json).map_err(|_| AuthError::InvalidToken)?;
         self.webauthn
@@ -89,20 +91,15 @@ impl PasskeyCeremony {
             .map_err(ceremony_err)
     }
 
-    pub fn start_authentication(
-        &self,
-        passkeys: &[Passkey],
-    ) -> Result<(Value, String), AuthError> {
+    pub fn start_authentication(&self, passkeys: &[Passkey]) -> Result<(Value, String), AuthError> {
         let (options, state) = self
             .webauthn
             .start_passkey_authentication(passkeys)
             .map_err(ceremony_err)?;
-        let options_json = serde_json::to_value(&options).map_err(|err| {
-            AuthError::Backend(format!("webauthn options: {err}"))
-        })?;
-        let state_json = serde_json::to_string(&state).map_err(|err| {
-            AuthError::Backend(format!("webauthn state: {err}"))
-        })?;
+        let options_json = serde_json::to_value(&options)
+            .map_err(|err| AuthError::Backend(format!("webauthn options: {err}")))?;
+        let state_json = serde_json::to_string(&state)
+            .map_err(|err| AuthError::Backend(format!("webauthn state: {err}")))?;
         Ok((options_json, state_json))
     }
 
@@ -111,14 +108,87 @@ impl PasskeyCeremony {
         credential: &Value,
         state_json: &str,
     ) -> Result<AuthenticationResult, AuthError> {
-        let assertion: PublicKeyCredential =
-            serde_json::from_value(credential.clone()).map_err(|_| AuthError::InvalidCredentials)?;
+        let assertion: PublicKeyCredential = serde_json::from_value(credential.clone())
+            .map_err(|_| AuthError::InvalidCredentials)?;
         let state: PasskeyAuthentication =
             serde_json::from_str(state_json).map_err(|_| AuthError::InvalidToken)?;
         self.webauthn
             .finish_passkey_authentication(&assertion, &state)
             .map_err(ceremony_err)
     }
+
+    /// Usernameless login. Options carry an empty allow list so the response
+    /// does not reveal which accounts have passkeys. `mediation` is cleared so
+    /// the client chooses conditional autofill or a modal prompt.
+    pub fn start_discoverable_authentication(&self) -> Result<(Value, String), AuthError> {
+        let (mut options, state) = self
+            .webauthn
+            .start_discoverable_authentication()
+            .map_err(ceremony_err)?;
+        options.mediation = None;
+        let options_json = serde_json::to_value(&options)
+            .map_err(|err| AuthError::Backend(format!("webauthn options: {err}")))?;
+        let state_json = serde_json::to_string(&state)
+            .map_err(|err| AuthError::Backend(format!("webauthn state: {err}")))?;
+        Ok((options_json, state_json))
+    }
+
+    pub fn identify_discoverable(
+        &self,
+        credential: &Value,
+    ) -> Result<IdentifiedPasskey, AuthError> {
+        let assertion: PublicKeyCredential = serde_json::from_value(credential.clone())
+            .map_err(|_| AuthError::InvalidCredentials)?;
+        let (public_id, credential_id) = self
+            .webauthn
+            .identify_discoverable_authentication(&assertion)
+            .map_err(ceremony_err)?;
+        Ok(IdentifiedPasskey {
+            public_id,
+            credential_id: credential_id.to_vec(),
+            assertion,
+        })
+    }
+
+    pub fn finish_discoverable(
+        &self,
+        identified: &IdentifiedPasskey,
+        state_json: &str,
+        passkey: &Passkey,
+    ) -> Result<AuthenticationResult, AuthError> {
+        if passkey.cred_id().as_slice() != identified.credential_id.as_slice() {
+            return Err(AuthError::InvalidCredentials);
+        }
+        let state: DiscoverableAuthentication =
+            serde_json::from_str(state_json).map_err(|_| AuthError::InvalidToken)?;
+        let key = DiscoverableKey::from(passkey);
+        self.webauthn
+            .finish_discoverable_authentication(&identified.assertion, state, &[key])
+            .map_err(ceremony_err)
+    }
+}
+
+pub struct IdentifiedPasskey {
+    pub public_id: Uuid,
+    pub credential_id: Vec<u8>,
+    assertion: PublicKeyCredential,
+}
+
+fn require_discoverable_credential(options: &mut Value) {
+    let Some(public_key) = options.get_mut("publicKey").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let selection = public_key
+        .entry("authenticatorSelection")
+        .or_insert_with(|| Value::Object(Map::new()));
+    let Some(selection) = selection.as_object_mut() else {
+        return;
+    };
+    selection.insert(
+        "residentKey".to_string(),
+        Value::String("required".to_string()),
+    );
+    selection.insert("requireResidentKey".to_string(), Value::Bool(true));
 }
 
 pub fn passkey_json(passkey: &Passkey) -> Result<String, AuthError> {

@@ -51,10 +51,11 @@ pub struct LoginBody {
     pub password: String,
 }
 
+/// Usernameless passkey login. An email would let the options response
+/// reveal whether that account has a credential.
 #[derive(Debug, Deserialize)]
-pub struct PasskeyLoginOptionsBody {
-    pub email: EmailAddress,
-}
+#[serde(deny_unknown_fields)]
+pub struct PasskeyLoginOptionsBody {}
 
 #[derive(Debug, Deserialize)]
 pub struct RequestResetBody {
@@ -247,12 +248,11 @@ pub async fn login(
 
 pub async fn passkey_login_options(
     State(state): State<AppState>,
-    Json(body): Json<PasskeyLoginOptionsBody>,
+    Json(_body): Json<PasskeyLoginOptionsBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
         let ceremony = PasskeyCeremony::from_app(&state)?;
-        let (flow_id, options) =
-            start_passkey_login(&state.db, &ceremony, body.email.as_ref()).await?;
+        let (flow_id, options) = start_passkey_login(&state.db, &ceremony).await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;
@@ -515,9 +515,12 @@ mod tests {
     use serde_json::json;
     use time::Duration;
     use tower::ServiceExt;
+    use uuid::Uuid;
     use webauthn_authenticator_rs::WebauthnAuthenticator;
     use webauthn_authenticator_rs::softpasskey::SoftPasskey;
-    use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse, Url};
+    use webauthn_rs::prelude::{
+        CreationChallengeResponse, PublicKeyCredential, RequestChallengeResponse, Url,
+    };
 
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
 
@@ -649,6 +652,57 @@ mod tests {
 
     fn origin() -> Url {
         Url::parse("http://localhost:5173").unwrap()
+    }
+
+    /// SoftPasskey rejects requireResidentKey. The server still advertises it;
+    /// the test authenticator only clears the flag on its local copy.
+    fn register_soft(
+        authenticator: &mut SoftPasskey,
+        mut options: CreationChallengeResponse,
+    ) -> webauthn_rs::prelude::RegisterPublicKeyCredential {
+        if let Some(selection) = options.public_key.authenticator_selection.as_mut() {
+            selection.require_resident_key = false;
+        }
+        authenticator
+            .do_registration(origin(), options)
+            .expect("soft register")
+    }
+
+    fn assert_resident_key_required(json: &serde_json::Value) {
+        let selection = &json["options"]["publicKey"]["authenticatorSelection"];
+        assert_eq!(selection["residentKey"], "required");
+        assert_eq!(selection["requireResidentKey"], true);
+    }
+
+    fn assert_discoverable_request(json: &serde_json::Value) {
+        let allow = &json["options"]["publicKey"]["allowCredentials"];
+        assert!(
+            allow.is_null() || allow.as_array().is_some_and(|items| items.is_empty()),
+            "{allow}"
+        );
+    }
+
+    /// SoftPasskey needs an allow list and does not return a user handle.
+    /// The signature does not cover userHandle, so attach the account public_id
+    /// after signing to exercise discoverable verification.
+    fn login_soft(
+        authenticator: &mut SoftPasskey,
+        request: RequestChallengeResponse,
+        credential_id: &str,
+        public_id: Uuid,
+    ) -> PublicKeyCredential {
+        let mut request = serde_json::to_value(&request).expect("request json");
+        request["publicKey"]["allowCredentials"] = json!([{
+            "type": "public-key",
+            "id": credential_id,
+        }]);
+        let request: RequestChallengeResponse =
+            serde_json::from_value(request).expect("request with allow list");
+        let mut assertion = authenticator
+            .do_authentication(origin(), request)
+            .expect("soft login");
+        assertion.response.user_handle = Some(public_id.as_bytes().to_vec());
+        assertion
     }
 
     #[tokio::test]
@@ -894,12 +948,12 @@ mod tests {
         .await;
         let (status, json) = body_json(started).await;
         assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_resident_key_required(&json);
         let flow_id = json["flow_id"].as_str().unwrap().to_string();
         let options: CreationChallengeResponse =
             serde_json::from_value(json["options"].clone()).expect("creation options");
-        let credential = authenticator
-            .do_registration(origin(), options)
-            .expect("soft register");
+        let credential = register_soft(&mut authenticator, options);
+        let credential_id = credential.id.clone();
         let finished = post_json(
             &app,
             "/api/auth/register/passkey",
@@ -915,23 +969,35 @@ mod tests {
         let (status, json) = body_json(finished).await;
         assert_eq!(status, HttpStatus::CREATED, "{json}");
         assert_eq!(json["user"]["has_password"], false);
+        let public_id = Uuid::parse_str(json["user"]["public_id"].as_str().unwrap()).unwrap();
+
+        let anonymous = post_json(
+            &app,
+            "/api/auth/passkeys/login/options",
+            json!({}),
+            None,
+            None,
+        )
+        .await;
+        let (status, login_json) = body_json(anonymous).await;
+        assert_eq!(status, HttpStatus::OK, "{login_json}");
+        assert_discoverable_request(&login_json);
 
         let login_started = post_json(
             &app,
             "/api/auth/passkeys/login/options",
-            json!({"email": "pk@example.com"}),
+            json!({}),
             None,
             None,
         )
         .await;
         let (status, login_json) = body_json(login_started).await;
         assert_eq!(status, HttpStatus::OK, "{login_json}");
+        assert_discoverable_request(&login_json);
         let login_flow = login_json["flow_id"].as_str().unwrap().to_string();
         let request: RequestChallengeResponse =
             serde_json::from_value(login_json["options"].clone()).expect("request options");
-        let assertion = authenticator
-            .do_authentication(origin(), request)
-            .expect("soft login");
+        let assertion = login_soft(&mut authenticator, request, &credential_id, public_id);
         let logged_in = post_json(
             &app,
             "/api/auth/passkeys/login",
@@ -1002,9 +1068,10 @@ mod tests {
         let (status, json) = body_json(started).await;
         assert_eq!(status, HttpStatus::OK, "{json}");
         let flow_id = json["flow_id"].as_str().unwrap().to_string();
+        assert_resident_key_required(&json);
         let options: CreationChallengeResponse =
             serde_json::from_value(json["options"].clone()).unwrap();
-        let credential = authenticator.do_registration(origin(), options).unwrap();
+        let credential = register_soft(&mut authenticator, options);
         let finished = post_json(
             &app,
             "/api/auth/reset/passkey",

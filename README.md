@@ -59,7 +59,7 @@ npm run dev --prefix demo
 | Vite | `fe` | http://localhost:5173 | SPA with HMR — **open this in the browser** |
 | API | `api` | http://localhost:8787 | Native Axum server |
 
-Auth routes need `AUTH_HASH_PEPPER` (exactly 32 bytes). The dev script sets `DATABASE_URL` and a local pepper. WebAuthn uses RP id `localhost`, origin `http://localhost:5173`, and name `rundtisch` unless `AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, or `AUTH_WEBAUTHN_RP_NAME` is set.
+Auth routes need `AUTH_HASH_PEPPER` (exactly 32 bytes). The dev script sets `DATABASE_URL` and a local pepper. WebAuthn uses RP id `localhost`, origin `http://localhost:5173`, and name `rundtisch` unless `AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, or `AUTH_WEBAUTHN_RP_NAME` is set. Passkey registration requires a discoverable credential. Login does not ask for an email: the browser fills it from the passkey. Credentials created before that requirement must be registered again.
 
 | Name | Length |
 |------|--------|
