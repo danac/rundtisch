@@ -42,6 +42,7 @@ jobs:
     retries: 2
     action:
       execute:
+        package: .
         command: migrate
 # HealthCheckV1 is an externally tagged serde enum. serde_yaml 0.9 expects a
 # YAML tag (`!http`), not a map (`http:`). Nested `expect` matches HttpRequest.
