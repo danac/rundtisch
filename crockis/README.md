@@ -28,7 +28,7 @@ Dev server: http://localhost:5174 (5173 is reserved for the rundtisch demo).
 
 ## Deploy
 
-Wasmer Edge serves `web/dist/` as a static SPA (`wasmer.toml` + `app.yaml`, app name `crockis`). GitHub Actions workflow **Deploy Crockis** (`.github/workflows/deploy-crockis.yml`) runs on pushes to `main`, pull requests to `main`, and manual `workflow_dispatch`. It uses the **Wasmer** GitHub environment (`WASMER_TOKEN` secret, `WASMER_OWNER` variable). There is no Rust/WASM build.
+Wasmer Edge serves `web/dist/` as a static SPA (`wasmer.toml` + `app.yaml`, app name `crockis`). GitHub Actions workflow **Deploy Crockis on Wasmer Edge** (`.github/workflows/deploy-crockis.yml`) runs on pushes to `main`, pull requests to `main`, and manual `workflow_dispatch`. It uses the **Wasmer** GitHub environment (`WASMER_TOKEN` secret, `WASMER_OWNER` variable). There is no Rust/WASM build.
 
 ```bash
 # local (Wasmer CLI + `wasmer login`; pass --owner if app.yaml has no owner)

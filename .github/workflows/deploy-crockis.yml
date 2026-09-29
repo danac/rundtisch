@@ -1,4 +1,4 @@
-name: Deploy Crockis
+name: Deploy Crockis on Wasmer Edge
 
 on:
   push:
