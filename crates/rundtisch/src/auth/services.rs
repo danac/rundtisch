@@ -223,6 +223,7 @@ pub async fn start_invite_passkey(
     ceremony: &PasskeyCeremony,
     invitation_token: &str,
     alias: Option<String>,
+    passkey_label: Option<String>,
 ) -> Result<(String, serde_json::Value), AuthError> {
     let token_hash = token_hash(pepper, invitation_token).map_err(AuthError::Backend)?;
     let created = now();
@@ -246,6 +247,7 @@ pub async fn start_invite_passkey(
             user_id: None,
             token_hash: Some(token_hash),
             alias: Some(alias),
+            passkey_label,
             public_id: Some(public_id),
             state,
             created_at: created,
@@ -293,7 +295,16 @@ pub async fn finish_invite_passkey(
             let id = crate::auth::queries::insert_verified_user(&txn, &new_user, created).await?;
             let mut user = User::from_new(id, new_user);
             user.email_verified_at = Some(created);
-            insert_passkey(&txn, user.id, &credential_id, &passkey_body, created).await?;
+            insert_passkey(
+                &txn,
+                new_public_id(),
+                user.id,
+                &credential_id,
+                &passkey_body,
+                record.passkey_label.as_deref(),
+                created,
+            )
+            .await?;
             let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
             touch_last_login_by_id(&txn, user.id, created).await?;
             Ok((txn, grant))
@@ -306,6 +317,7 @@ pub async fn start_session_passkey(
     db: &DatabaseConnection,
     ceremony: &PasskeyCeremony,
     user: &User,
+    passkey_label: Option<String>,
 ) -> Result<(String, serde_json::Value), AuthError> {
     let created = now();
     let _ = delete_expired_ceremonies(db, created).await;
@@ -322,6 +334,7 @@ pub async fn start_session_passkey(
             user_id: Some(user.id),
             token_hash: None,
             alias: Some(user.alias.clone()),
+            passkey_label,
             public_id: Some(user.public_id),
             state,
             created_at: created,
@@ -353,11 +366,22 @@ pub async fn finish_session_passkey(
         async move {
             let created = now();
             invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
-            let id = insert_passkey(&txn, user_id, &credential_id, &passkey_body, created).await?;
+            let public_id = new_public_id();
+            insert_passkey(
+                &txn,
+                public_id,
+                user_id,
+                &credential_id,
+                &passkey_body,
+                record.passkey_label.as_deref(),
+                created,
+            )
+            .await?;
             Ok((
                 txn,
                 PasskeyInfo {
-                    id,
+                    public_id,
+                    label: record.passkey_label,
                     created_at: created,
                     last_used_at: None,
                 },
@@ -384,6 +408,7 @@ pub async fn start_passkey_login(
             user_id: None,
             token_hash: None,
             alias: None,
+            passkey_label: None,
             public_id: None,
             state,
             created_at: created,
@@ -459,19 +484,19 @@ pub async fn list_passkey_info(
 pub async fn delete_passkey(
     db: &DatabaseConnection,
     user_id: i64,
-    passkey_id: i64,
+    passkey_public_id: uuid::Uuid,
 ) -> Result<(), AuthError> {
     transaction(db, |txn| async move {
         let created = now();
         let user = lock_user_row(&txn, user_id, created).await?;
-        let Some(_row) = get_passkey_for_user(&txn, user_id, passkey_id).await? else {
+        let Some(row) = get_passkey_for_user(&txn, user_id, passkey_public_id).await? else {
             return Err(AuthError::Db(DbError::NotFound));
         };
         let count = count_passkeys_for_user(&txn, user_id).await?;
         if !user.has_password() && count <= 1 {
             return Err(AuthError::LastCredential);
         }
-        let deleted = delete_passkey_by_id(&txn, passkey_id).await?;
+        let deleted = delete_passkey_by_id(&txn, row.id).await?;
         if deleted == 0 {
             return Err(AuthError::Db(DbError::NotFound));
         }
@@ -512,6 +537,7 @@ pub async fn start_recovery_passkey(
     pepper: &[u8],
     ceremony: &PasskeyCeremony,
     recovery_token: &str,
+    passkey_label: Option<String>,
 ) -> Result<(String, serde_json::Value), AuthError> {
     let token_hash = token_hash(pepper, recovery_token).map_err(AuthError::Backend)?;
     let created = now();
@@ -533,6 +559,7 @@ pub async fn start_recovery_passkey(
             user_id: Some(user.id),
             token_hash: Some(token_hash),
             alias: Some(user.alias.clone()),
+            passkey_label,
             public_id: Some(user.public_id),
             state,
             created_at: created,
@@ -569,7 +596,16 @@ pub async fn finish_recovery_passkey(
             if record.user_id != Some(user_id) {
                 return Err(AuthError::InvalidToken);
             }
-            insert_passkey(&txn, user_id, &credential_id, &passkey_body, created).await?;
+            insert_passkey(
+                &txn,
+                new_public_id(),
+                user_id,
+                &credential_id,
+                &passkey_body,
+                record.passkey_label.as_deref(),
+                created,
+            )
+            .await?;
             revoke_all_sessions(&txn, user_id, created).await?;
             let user = get_user_by_id(&txn, user_id).await?;
             let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;

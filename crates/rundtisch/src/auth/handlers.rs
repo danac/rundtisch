@@ -21,6 +21,7 @@ use axum::response::IntoResponse;
 use email_address::EmailAddress;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use uuid::Uuid;
 use zeroize::Zeroize;
 
 #[cfg(test)]
@@ -37,6 +38,8 @@ pub struct RegisterPasswordBody {
 pub struct InvitePasskeyOptionsBody {
     pub token: String,
     pub alias: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,6 +74,15 @@ pub struct ResetPasswordBody {
 #[derive(Debug, Deserialize)]
 pub struct RecoveryTokenBody {
     pub token: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasskeyOptionsBody {
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 fn hasher(state: &AppState) -> Result<Box<dyn PasswordHasher>, AuthError> {
@@ -93,6 +105,20 @@ fn normalize_alias(alias: String) -> Result<String, AuthError> {
     } else {
         Ok(trimmed)
     }
+}
+
+fn normalize_passkey_label(label: Option<String>) -> Result<Option<String>, AuthError> {
+    let Some(label) = label else {
+        return Ok(None);
+    };
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return Ok(None);
+    }
+    if label.chars().count() > 64 {
+        return Err(AuthError::TypeMismatch);
+    }
+    Ok(Some(label))
 }
 
 fn session_response(status: StatusCode, grant: SessionGrant) -> axum::response::Response {
@@ -180,10 +206,18 @@ pub async fn register_passkey_options(
             Some(alias) => Some(normalize_alias(alias)?),
             None => None,
         };
+        let passkey_label = normalize_passkey_label(body.label)?;
         let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
         let ceremony = PasskeyCeremony::from_app(&state)?;
-        let (flow_id, options) =
-            start_invite_passkey(&state.db, &pepper, &ceremony, &body.token, alias).await?;
+        let (flow_id, options) = start_invite_passkey(
+            &state.db,
+            &pepper,
+            &ceremony,
+            &body.token,
+            alias,
+            passkey_label,
+        )
+        .await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;
@@ -382,10 +416,12 @@ pub async fn reset_passkey_options(
     Json(body): Json<RecoveryTokenBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
+        let passkey_label = normalize_passkey_label(body.label)?;
         let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
         let ceremony = PasskeyCeremony::from_app(&state)?;
         let (flow_id, options) =
-            start_recovery_passkey(&state.db, &pepper, &ceremony, &body.token).await?;
+            start_recovery_passkey(&state.db, &pepper, &ceremony, &body.token, passkey_label)
+                .await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;
@@ -434,10 +470,13 @@ pub async fn list_passkeys(
 pub async fn passkey_register_options(
     State(state): State<AppState>,
     SessionUser(user): SessionUser,
+    Json(body): Json<PasskeyOptionsBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
+        let passkey_label = normalize_passkey_label(body.label)?;
         let ceremony = PasskeyCeremony::from_app(&state)?;
-        let (flow_id, options) = start_session_passkey(&state.db, &ceremony, &user).await?;
+        let (flow_id, options) =
+            start_session_passkey(&state.db, &ceremony, &user, passkey_label).await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;
@@ -474,9 +513,9 @@ pub async fn passkey_register(
 pub async fn passkey_delete(
     State(state): State<AppState>,
     SessionUser(user): SessionUser,
-    Path(id): Path<i64>,
+    Path(public_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match delete_passkey(&state.db, user.id, id).await {
+    match delete_passkey(&state.db, user.id, public_id).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(err) => err.into_response(),
     }
@@ -515,7 +554,6 @@ mod tests {
     use serde_json::json;
     use time::Duration;
     use tower::ServiceExt;
-    use uuid::Uuid;
     use webauthn_authenticator_rs::WebauthnAuthenticator;
     use webauthn_authenticator_rs::softpasskey::SoftPasskey;
     use webauthn_rs::prelude::{
@@ -588,7 +626,7 @@ mod tests {
                 axum::routing::post(passkey_register),
             )
             .route(
-                "/api/auth/passkeys/{id}",
+                "/api/auth/passkeys/{public_id}",
                 axum::routing::delete(passkey_delete),
             )
             .with_state(state);
@@ -652,6 +690,17 @@ mod tests {
 
     fn origin() -> Url {
         Url::parse("http://localhost:5173").unwrap()
+    }
+
+    #[test]
+    fn passkey_labels_are_optional_trimmed_and_limited() {
+        assert_eq!(normalize_passkey_label(None).unwrap(), None);
+        assert_eq!(normalize_passkey_label(Some("   ".into())).unwrap(), None);
+        assert_eq!(
+            normalize_passkey_label(Some("  MacBook Touch ID  ".into())).unwrap(),
+            Some("MacBook Touch ID".into())
+        );
+        assert!(normalize_passkey_label(Some("x".repeat(65))).is_err());
     }
 
     /// SoftPasskey rejects requireResidentKey. The server still advertises it;
@@ -941,7 +990,7 @@ mod tests {
         let started = post_json(
             &app,
             "/api/auth/register/passkey/options",
-            json!({"token": token, "alias": "pk"}),
+            json!({"token": token, "alias": "pk", "label": "Security key"}),
             None,
             None,
         )
@@ -1020,10 +1069,12 @@ mod tests {
             .unwrap();
         let (status, listed_json) = body_json(listed).await;
         assert_eq!(status, HttpStatus::OK, "{listed_json}");
-        let id = listed_json["passkeys"][0]["id"].as_i64().unwrap();
+        assert_eq!(listed_json["passkeys"][0]["label"], "Security key");
+        assert!(listed_json["passkeys"][0].get("id").is_none());
+        let public_id = listed_json["passkeys"][0]["public_id"].as_str().unwrap();
         let deleted = app
             .oneshot(
-                Request::delete(format!("/api/auth/passkeys/{id}"))
+                Request::delete(format!("/api/auth/passkeys/{public_id}"))
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -1060,7 +1111,7 @@ mod tests {
         let started = post_json(
             &app,
             "/api/auth/reset/passkey/options",
-            json!({"token": recovery}),
+            json!({"token": recovery, "label": "Recovery passkey"}),
             None,
             None,
         )

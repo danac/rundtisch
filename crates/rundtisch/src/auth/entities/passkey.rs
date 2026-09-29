@@ -5,10 +5,13 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
+    #[sea_orm(unique)]
+    pub public_id: Uuid,
     pub user_id: i64,
     #[sea_orm(unique)]
     pub credential_id: String,
     pub passkey: String,
+    pub label: Option<String>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
 }

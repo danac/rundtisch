@@ -142,7 +142,9 @@ impl User {
     }
 
     pub fn has_password(&self) -> bool {
-        self.password_hash.as_ref().is_some_and(|hash| !hash.is_empty())
+        self.password_hash
+            .as_ref()
+            .is_some_and(|hash| !hash.is_empty())
     }
 }
 
@@ -203,16 +205,19 @@ impl Session {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasskeyRecord {
     pub id: i64,
+    pub public_id: uuid::Uuid,
     pub user_id: i64,
     pub credential_id: String,
     pub passkey: String,
+    pub label: Option<String>,
     pub created_at: DateTime,
     pub last_used_at: Option<DateTime>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PasskeyInfo {
-    pub id: i64,
+    pub public_id: uuid::Uuid,
+    pub label: Option<String>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: DateTime,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -222,7 +227,8 @@ pub struct PasskeyInfo {
 impl From<&PasskeyRecord> for PasskeyInfo {
     fn from(row: &PasskeyRecord) -> Self {
         Self {
-            id: row.id,
+            public_id: row.public_id,
+            label: row.label.clone(),
             created_at: row.created_at,
             last_used_at: row.last_used_at,
         }
@@ -246,6 +252,7 @@ pub struct CeremonyRecord {
     pub user_id: Option<i64>,
     pub token_hash: Option<String>,
     pub alias: Option<String>,
+    pub passkey_label: Option<String>,
     pub public_id: Option<uuid::Uuid>,
     pub state: String,
     pub created_at: DateTime,

@@ -9,6 +9,7 @@ pub struct Model {
     pub user_id: Option<i64>,
     pub token_hash: Option<String>,
     pub alias: Option<String>,
+    pub passkey_label: Option<String>,
     pub public_id: Option<Uuid>,
     pub state: String,
     pub created_at: TimeDateTimeWithTimeZone,

@@ -44,6 +44,9 @@ pub fn build_router(state: AppState) -> Router {
             post(passkey_register_options),
         )
         .route("/api/auth/passkeys/register", post(passkey_register))
-        .route("/api/auth/passkeys/{id}", delete(passkey_delete))
+        .route(
+            "/api/auth/passkeys/{public_id}",
+            delete(passkey_delete),
+        )
         .with_state(state)
 }

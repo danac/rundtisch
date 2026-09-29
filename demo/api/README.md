@@ -46,7 +46,7 @@ demo/api/
 | POST | `/api/auth/reset/passkey/options`, `/api/auth/reset/passkey` | Passkey recovery |
 | GET | `/api/auth/passkeys` | List passkeys |
 | POST | `/api/auth/passkeys/register/options`, `/api/auth/passkeys/register` | Add a passkey |
-| DELETE | `/api/auth/passkeys/{id}` | Remove a passkey, unless it is the last credential |
+| DELETE | `/api/auth/passkeys/{public_id}` | Remove a passkey by opaque UUID, unless it is the last credential |
 
 ## Run
 

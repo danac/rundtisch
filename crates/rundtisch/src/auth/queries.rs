@@ -33,10 +33,7 @@ pub async fn get_user_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<User,
     User::try_from(row)
 }
 
-pub async fn insert_user<C: ConnectionTrait>(
-    db: &C,
-    new_user: &NewUser,
-) -> Result<i64, DbError> {
+pub async fn insert_user<C: ConnectionTrait>(db: &C, new_user: &NewUser) -> Result<i64, DbError> {
     insert_user_row(db, new_user, None).await
 }
 
@@ -358,15 +355,19 @@ pub async fn find_open_recovery_user<C: ConnectionTrait>(
 
 pub async fn insert_passkey<C: ConnectionTrait>(
     db: &C,
+    public_id: Uuid,
     user_id: i64,
     credential_id: &str,
     passkey_json: &str,
+    label: Option<&str>,
     created_at: OffsetDateTime,
 ) -> Result<i64, DbError> {
     let model = passkey::ActiveModel {
+        public_id: Set(public_id),
         user_id: Set(user_id),
         credential_id: Set(credential_id.to_owned()),
         passkey: Set(passkey_json.to_owned()),
+        label: Set(label.map(str::to_owned)),
         created_at: Set(created_at),
         ..Default::default()
     };
@@ -413,9 +414,10 @@ pub async fn get_passkey_by_credential_id<C: ConnectionTrait>(
 pub async fn get_passkey_for_user<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
-    id: i64,
+    public_id: Uuid,
 ) -> Result<Option<PasskeyRecord>, DbError> {
-    let row = passkey::Entity::find_by_id(id)
+    let row = passkey::Entity::find()
+        .filter(passkey::Column::PublicId.eq(public_id))
         .filter(passkey::Column::UserId.eq(user_id))
         .one(db)
         .await
@@ -479,6 +481,7 @@ pub async fn insert_ceremony<C: ConnectionTrait>(
         user_id: Set(record.user_id),
         token_hash: Set(record.token_hash.clone()),
         alias: Set(record.alias.clone()),
+        passkey_label: Set(record.passkey_label.clone()),
         public_id: Set(record.public_id),
         state: Set(record.state.clone()),
         created_at: Set(record.created_at),
@@ -571,9 +574,11 @@ impl From<passkey::Model> for PasskeyRecord {
     fn from(model: passkey::Model) -> Self {
         Self {
             id: model.id,
+            public_id: model.public_id,
             user_id: model.user_id,
             credential_id: model.credential_id,
             passkey: model.passkey,
+            label: model.label,
             created_at: model.created_at,
             last_used_at: model.last_used_at,
         }
@@ -601,6 +606,7 @@ impl From<webauthn_state::Model> for CeremonyRecord {
             user_id: model.user_id,
             token_hash: model.token_hash,
             alias: model.alias,
+            passkey_label: model.passkey_label,
             public_id: model.public_id,
             state: model.state,
             created_at: model.created_at,

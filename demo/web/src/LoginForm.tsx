@@ -9,7 +9,12 @@ import {
 
 type ErrorResponse = { error: string }
 type CeremonyStart = { flow_id: string; options: unknown }
-type PasskeyRow = { id: number; created_at: string; last_used_at: string | null }
+type PasskeyRow = {
+  public_id: string
+  label: string | null
+  created_at: string
+  last_used_at: string | null
+}
 
 const inputClassName =
   'mt-1.5 block w-full rounded-lg border border-ring/80 bg-paper px-3 py-2 text-ink outline-none transition focus:border-ink/40 focus:ring-2 focus:ring-ring/60'
@@ -57,6 +62,7 @@ export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [alias, setAlias] = useState('')
+  const [passkeyLabel, setPasskeyLabel] = useState('')
   const [inviteToken, setInviteToken] = useState(inviteFromQuery)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -254,6 +260,18 @@ export function LoginForm() {
           <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
             Save password
           </button>
+          <label className="mt-4 block text-sm text-ink-muted">
+            Passkey label (optional)
+            <input
+              type="text"
+              maxLength={64}
+              value={passkeyLabel}
+              onChange={(event) => setPasskeyLabel(event.target.value)}
+              placeholder="MacBook Touch ID"
+              className={inputClassName}
+              disabled={busy}
+            />
+          </label>
           <button
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
@@ -262,7 +280,7 @@ export function LoginForm() {
               void runCeremony(
                 '/api/auth/reset/passkey/options',
                 '/api/auth/reset/passkey',
-                { token: recoverFromQuery },
+                { token: recoverFromQuery, label: passkeyLabel.trim() || undefined },
                 'create',
               )
             }
@@ -306,18 +324,32 @@ export function LoginForm() {
               </label>
             )}
             {mode === 'register' ? (
-              <label className="block text-sm text-ink-muted">
-                Alias
-                <input
-                  type="text"
-                  name="alias"
-                  autoComplete="nickname"
-                  value={alias}
-                  onChange={(event) => setAlias(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
+              <>
+                <label className="block text-sm text-ink-muted">
+                  Alias
+                  <input
+                    type="text"
+                    name="alias"
+                    autoComplete="nickname"
+                    value={alias}
+                    onChange={(event) => setAlias(event.target.value)}
+                    className={inputClassName}
+                    disabled={busy}
+                  />
+                </label>
+                <label className="block text-sm text-ink-muted">
+                  Passkey label (optional)
+                  <input
+                    type="text"
+                    maxLength={64}
+                    value={passkeyLabel}
+                    onChange={(event) => setPasskeyLabel(event.target.value)}
+                    placeholder="MacBook Touch ID"
+                    className={inputClassName}
+                    disabled={busy}
+                  />
+                </label>
+              </>
             ) : null}
             <label className="block text-sm text-ink-muted">
               Password
@@ -347,7 +379,11 @@ export function LoginForm() {
                 void runCeremony(
                   '/api/auth/register/passkey/options',
                   '/api/auth/register/passkey',
-                  { token: inviteToken.trim(), alias: alias.trim() || undefined },
+                  {
+                    token: inviteToken.trim(),
+                    alias: alias.trim() || undefined,
+                    label: passkeyLabel.trim() || undefined,
+                  },
                   'create',
                 )
                 return
@@ -376,6 +412,7 @@ export function LoginForm() {
 export function AccountPanel() {
   const { api, user, logout, logoutAll } = useSession()
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
+  const [passkeyLabel, setPasskeyLabel] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canPasskey = passkeySupported()
@@ -398,7 +435,10 @@ export function AccountPanel() {
     setBusy(true)
     setError(null)
     try {
-      const started = await api('/api/auth/passkeys/register/options', { method: 'POST' })
+      const started = await api('/api/auth/passkeys/register/options', {
+        method: 'POST',
+        body: JSON.stringify({ label: passkeyLabel.trim() || undefined }),
+      })
       if (!started.ok) {
         setError(await readError(started))
         return
@@ -413,6 +453,7 @@ export function AccountPanel() {
         setError(await readError(finished))
         return
       }
+      setPasskeyLabel('')
       await loadPasskeys()
     } catch (err) {
       setError(messageFrom(err))
@@ -421,11 +462,11 @@ export function AccountPanel() {
     }
   }
 
-  async function removePasskey(id: number) {
+  async function removePasskey(publicId: string) {
     setBusy(true)
     setError(null)
     try {
-      const response = await api(`/api/auth/passkeys/${id}`, { method: 'DELETE' })
+      const response = await api(`/api/auth/passkeys/${publicId}`, { method: 'DELETE' })
       if (!response.ok) {
         setError(await readError(response))
         return
@@ -464,27 +505,49 @@ export function AccountPanel() {
       <div className="mt-5 border-t border-ring/50 pt-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Passkeys</h3>
-          <button
-            type="button"
-            className={secondaryButtonClassName}
-            disabled={busy || !canPasskey}
-            onClick={() => void addPasskey()}
-          >
-            Add
-          </button>
+          <div className="flex items-end gap-2">
+            <label className="text-xs text-ink-muted">
+              Label (optional)
+              <input
+                type="text"
+                maxLength={64}
+                value={passkeyLabel}
+                onChange={(event) => setPasskeyLabel(event.target.value)}
+                placeholder="MacBook Touch ID"
+                className={`${inputClassName} min-w-48`}
+                disabled={busy}
+              />
+            </label>
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              disabled={busy || !canPasskey}
+              onClick={() => void addPasskey()}
+            >
+              Add
+            </button>
+          </div>
         </div>
         {passkeys.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No passkeys yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {passkeys.map((passkey) => (
-              <li key={passkey.id} className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-ink-muted">{passkey.created_at.slice(0, 10)}</span>
+              <li
+                key={passkey.public_id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span>
+                  <span className="block text-ink">{passkey.label || 'Passkey'}</span>
+                  <span className="block text-xs text-ink-muted">
+                    Added {passkey.created_at.slice(0, 10)}
+                  </span>
+                </span>
                 <button
                   type="button"
                   className={secondaryButtonClassName}
                   disabled={busy}
-                  onClick={() => void removePasskey(passkey.id)}
+                  onClick={() => void removePasskey(passkey.public_id)}
                 >
                   Remove
                 </button>
