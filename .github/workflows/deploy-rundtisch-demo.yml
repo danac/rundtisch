@@ -109,10 +109,8 @@ jobs:
           wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
 
       # One-shot: create a missing AUTH_HASH_PEPPER app secret and redeploy.
-      # Uncomment when a new Edge app has no pepper yet. WebAuthn RP settings
-      # have defaults (localhost / http://localhost:5173 / rundtisch); set
-      # AUTH_WEBAUTHN_RP_ID, AUTH_WEBAUTHN_RP_ORIGIN, and AUTH_WEBAUTHN_RP_NAME
-      # on the app when the public origin is not localhost.
+      # Uncomment when a new Edge app has no pepper yet. WebAuthn RP id/origin
+      # for this demo are set in demo/app.yaml `env` (not secrets).
       # - name: Ensure auth secrets
       #   working-directory: demo
       #   env:

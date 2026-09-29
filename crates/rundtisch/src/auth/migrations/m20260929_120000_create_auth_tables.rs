@@ -59,7 +59,8 @@ impl MigrationTrait for Migration {
                     .col(pk_big_auto(Passkey::Id))
                     .col(big_integer(Passkey::UserId))
                     .col(string_len(Passkey::CredentialId, 512).unique_key())
-                    .col(string(Passkey::Passkey))
+                    // Serialized Passkey JSON exceeds MySQL's default VARCHAR(255).
+                    .col(text(Passkey::Passkey))
                     .col(timestamp(Passkey::CreatedAt))
                     .col(timestamp_null(Passkey::LastUsedAt))
                     .foreign_key(
@@ -143,7 +144,8 @@ impl MigrationTrait for Migration {
                     .col(string_null(Ceremony::TokenHash))
                     .col(string_null(Ceremony::Alias))
                     .col(uuid_null(Ceremony::PublicId))
-                    .col(string(Ceremony::State))
+                    // PasskeyRegistration / PasskeyAuthentication JSON is >255 bytes.
+                    .col(text(Ceremony::State))
                     .col(timestamp(Ceremony::CreatedAt))
                     .col(timestamp(Ceremony::ExpiresAt))
                     .to_owned(),

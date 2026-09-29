@@ -6,18 +6,21 @@ package: .
 #
 # Auth secrets are not committed here. Set them on the app (dashboard or
 # `wasmer app secret`). The commented "Ensure auth secrets" step in
-# `.github/workflows/ci.yml` can create missing ones:
+# `.github/workflows/deploy-rundtisch-demo.yml` can create missing ones:
 #   AUTH_HASH_PEPPER
-# Optional WebAuthn RP overrides (defaults: localhost, http://localhost:5173, rundtisch):
-#   AUTH_WEBAUTHN_RP_ID
-#   AUTH_WEBAUTHN_RP_ORIGIN
-#   AUTH_WEBAUTHN_RP_NAME
 # Optional first admin. The pre-deployment migrate job upserts this email:
 # insert a verified Admin if absent, or reset the password if present
 # (public_id and the rest of the row stay the same):
 #   RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL
 #   RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
 #   RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS   # optional; insert only; defaults to the email local-part
+#
+# Public WebAuthn RP settings for this Edge hostname (not secrets).
+# Local Vite still uses the localhost defaults when these env vars are unset.
+env:
+  AUTH_WEBAUTHN_RP_ID: rundtisch.wasmer.app
+  AUTH_WEBAUTHN_RP_ORIGIN: https://rundtisch.wasmer.app
+  AUTH_WEBAUTHN_RP_NAME: rundtisch
 debug: false
 capabilities:
   database:
