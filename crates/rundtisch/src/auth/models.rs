@@ -30,8 +30,8 @@ impl Role {
     }
 }
 
-/// Opaque UUIDv4 for JWT `sub` and `/api/auth/users/{public_id}`. Integer [`User::id`]
-/// stays the row id / FK target and is not a public identifier.
+/// Opaque UUIDv4. Integer [`User::id`] stays the row id / FK target and is not
+/// a public identifier. `public_id` is also the WebAuthn user handle.
 pub fn public_id_from_bytes(mut bytes: [u8; 16]) -> uuid::Uuid {
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
@@ -44,7 +44,20 @@ pub fn new_public_id() -> uuid::Uuid {
     public_id_from_bytes(bytes)
 }
 
-/// Row to insert into [`UserTable`]. Timestamps default to now so JSON
+pub fn normalize_email(email: &EmailAddress) -> String {
+    email.as_ref().trim().to_ascii_lowercase()
+}
+
+pub fn alias_from_email(email: &str) -> String {
+    email
+        .split('@')
+        .next()
+        .filter(|part| !part.is_empty())
+        .unwrap_or("user")
+        .to_string()
+}
+
+/// Row to insert into `auth_users`. Timestamps default to now so JSON
 /// clients can omit them; handlers overwrite both with a single clock read.
 /// `public_id` is assigned server-side (never accepted from JSON).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,10 +89,8 @@ impl NewUser {
         password_hash: Option<String>,
     ) -> Self {
         let now = now_utc();
-        let mut bytes = [0u8; 16];
-        getrandom::fill(&mut bytes).expect("CSPRNG available for UUIDv4");
         Self {
-            public_id: public_id_from_bytes(bytes),
+            public_id: new_public_id(),
             email,
             alias: alias.into(),
             role,
@@ -101,7 +112,7 @@ impl NewUser {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct User {
-    /// SQLite rowid; FK target for `auth_sessions`. Not serialized.
+    /// Integer row id; FK target. Not serialized.
     #[serde(skip_serializing)]
     pub id: i64,
     pub public_id: uuid::Uuid,
@@ -135,6 +146,35 @@ impl User {
             last_login_at: None,
         }
     }
+
+    pub fn has_password(&self) -> bool {
+        self.password_hash.as_ref().is_some_and(|hash| !hash.is_empty())
+    }
+}
+
+/// Public account fields returned by login, recovery, and `GET /auth/me`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AccountView {
+    pub public_id: uuid::Uuid,
+    pub email: EmailAddress,
+    pub alias: String,
+    pub role: Role,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: DateTime,
+    pub has_password: bool,
+}
+
+impl From<&User> for AccountView {
+    fn from(user: &User) -> Self {
+        Self {
+            public_id: user.public_id,
+            email: user.email.clone(),
+            alias: user.alias.clone(),
+            role: user.role,
+            created_at: user.created_at,
+            has_password: user.has_password(),
+        }
+    }
 }
 
 pub fn datetime_to_rfc3339(dt: DateTime) -> String {
@@ -142,8 +182,8 @@ pub fn datetime_to_rfc3339(dt: DateTime) -> String {
         .expect("OffsetDateTime is always a valid RFC 3339 timestamp")
 }
 
-/// Row in `auth_sessions`. `token_hash` is HMAC-SHA-256 of the raw cookie
-/// with `AUTH_HASH_PEPPER`; the raw token is never stored.
+/// Row in `auth_sessions`. `token_hash` is HMAC-SHA-256 of the raw bearer
+/// token with `AUTH_HASH_PEPPER`; the raw token is never stored.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: i64,
@@ -158,6 +198,77 @@ pub struct Session {
     #[serde(with = "time::serde::rfc3339::option")]
     pub revoked_at: Option<DateTime>,
     pub user_agent: Option<String>,
+}
+
+impl Session {
+    pub fn is_active(&self, now: DateTime) -> bool {
+        self.revoked_at.is_none() && self.expires_at > now
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PasskeyRecord {
+    pub id: i64,
+    pub user_id: i64,
+    pub credential_id: String,
+    pub passkey: String,
+    pub created_at: DateTime,
+    pub last_used_at: Option<DateTime>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PasskeyInfo {
+    pub id: i64,
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: DateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub last_used_at: Option<DateTime>,
+}
+
+impl From<&PasskeyRecord> for PasskeyInfo {
+    fn from(row: &PasskeyRecord) -> Self {
+        Self {
+            id: row.id,
+            created_at: row.created_at,
+            last_used_at: row.last_used_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct InvitationRecord {
+    pub id: i64,
+    pub token_hash: String,
+    pub email: String,
+    pub created_at: DateTime,
+    pub expires_at: DateTime,
+    pub used_at: Option<DateTime>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CeremonyRecord {
+    pub flow_id: String,
+    pub kind: String,
+    pub user_id: Option<i64>,
+    pub token_hash: Option<String>,
+    pub alias: Option<String>,
+    pub public_id: Option<uuid::Uuid>,
+    pub state: String,
+    pub created_at: DateTime,
+    pub expires_at: DateTime,
+}
+
+pub const CEREMONY_INVITE_REGISTER: &str = "invite_register";
+pub const CEREMONY_RECOVERY_REGISTER: &str = "recovery_register";
+pub const CEREMONY_SESSION_REGISTER: &str = "session_register";
+pub const CEREMONY_LOGIN: &str = "login";
+
+/// Successful authentication result. `token` is the raw bearer secret.
+#[derive(Debug, Clone)]
+pub struct SessionGrant {
+    pub token: String,
+    pub expires_in: i64,
+    pub user: User,
 }
 
 #[cfg(test)]

@@ -1,8 +1,11 @@
 use crate::handlers::health;
 use axum::Router;
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use rundtisch::auth::handlers::{
-    activate, create_user, delete_user, list_users, login, logout, me, refresh, register,
+    create_user, delete_user, list_passkeys, list_users, login, logout, logout_all, me,
+    passkey_delete, passkey_login, passkey_login_options, passkey_register,
+    passkey_register_options, register_passkey, register_passkey_options, register_password,
+    register_with_token, request_reset, reset_passkey, reset_passkey_options, reset_password,
     update_user,
 };
 use rundtisch::AppState;
@@ -15,11 +18,38 @@ pub fn build_router(state: AppState) -> Router {
             "/api/auth/users/{public_id}",
             patch(update_user).delete(delete_user),
         )
-        .route("/api/auth/register", post(register))
-        .route("/api/auth/activate", post(activate))
+        .route(
+            "/api/auth/register_with_token",
+            post(register_with_token),
+        )
+        .route("/api/auth/register/password", post(register_password))
+        .route(
+            "/api/auth/register/passkey/options",
+            post(register_passkey_options),
+        )
+        .route("/api/auth/register/passkey", post(register_passkey))
         .route("/api/auth/login", post(login))
-        .route("/api/auth/refresh", post(refresh))
+        .route(
+            "/api/auth/passkeys/login/options",
+            post(passkey_login_options),
+        )
+        .route("/api/auth/passkeys/login", post(passkey_login))
         .route("/api/auth/logout", post(logout))
+        .route("/api/auth/logout_all", post(logout_all))
         .route("/api/auth/me", get(me))
+        .route("/api/auth/request_reset", post(request_reset))
+        .route("/api/auth/reset", post(reset_password))
+        .route(
+            "/api/auth/reset/passkey/options",
+            post(reset_passkey_options),
+        )
+        .route("/api/auth/reset/passkey", post(reset_passkey))
+        .route("/api/auth/passkeys", get(list_passkeys))
+        .route(
+            "/api/auth/passkeys/register/options",
+            post(passkey_register_options),
+        )
+        .route("/api/auth/passkeys/register", post(passkey_register))
+        .route("/api/auth/passkeys/{id}", delete(passkey_delete))
         .with_state(state)
 }

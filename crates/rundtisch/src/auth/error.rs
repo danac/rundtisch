@@ -1,4 +1,3 @@
-use crate::auth::jwt::TokenError;
 use crate::auth::password::{PasswordError, PasswordHashError};
 use crate::app::SecretError;
 use axum::Json;
@@ -62,16 +61,15 @@ impl IntoResponse for DbError {
 #[derive(Debug)]
 pub enum AuthError {
     InvalidCredentials,
-    EmailNotVerified,
     InvalidToken,
-    TokenExpired,
     Forbidden,
     InvalidPassword,
+    LastCredential,
     TypeMismatch,
     Secrets,
     Db(DbError),
     Password(PasswordHashError),
-    Token(TokenError),
+    Backend(String),
 }
 
 impl From<DbError> for AuthError {
@@ -83,16 +81,6 @@ impl From<DbError> for AuthError {
 impl From<PasswordHashError> for AuthError {
     fn from(value: PasswordHashError) -> Self {
         AuthError::Password(value)
-    }
-}
-
-impl From<TokenError> for AuthError {
-    fn from(value: TokenError) -> Self {
-        match value {
-            TokenError::Expired => AuthError::TokenExpired,
-            TokenError::Invalid => AuthError::InvalidToken,
-            other => AuthError::Token(other),
-        }
     }
 }
 
@@ -108,17 +96,29 @@ impl From<PasswordError> for AuthError {
     }
 }
 
+impl std::fmt::Display for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (_, code) = self.status_and_code();
+        match self {
+            AuthError::Backend(message) => write!(f, "{code}: {message}"),
+            AuthError::Db(err) => write!(f, "{code}: {err}"),
+            _ => write!(f, "{code}"),
+        }
+    }
+}
+
+impl std::error::Error for AuthError {}
+
 impl AuthError {
     fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
             AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
-            AuthError::EmailNotVerified => (StatusCode::FORBIDDEN, "email_not_verified"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
-            AuthError::TokenExpired => (StatusCode::UNAUTHORIZED, "token_expired"),
             AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::InvalidPassword => (StatusCode::BAD_REQUEST, "invalid_password"),
+            AuthError::LastCredential => (StatusCode::CONFLICT, "last_credential"),
             AuthError::TypeMismatch => (StatusCode::BAD_REQUEST, "type mismatch"),
-            AuthError::Secrets | AuthError::Password(_) | AuthError::Token(_) => {
+            AuthError::Secrets | AuthError::Password(_) | AuthError::Backend(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
             }
             AuthError::Db(DbError::NotFound) => (StatusCode::NOT_FOUND, "not found"),

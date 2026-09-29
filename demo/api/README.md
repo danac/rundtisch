@@ -26,6 +26,7 @@ demo/api/
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists
     bin/migrate.rs        # Migrator::up, then optional bootstrap Admin upsert
+    bin/auth_link.rs      # mint invitation and recovery links
 ```
 
 ## Endpoints
@@ -35,12 +36,19 @@ demo/api/
 | GET | `/api/health` | `{ "status": "ok", "headers": [...] }` |
 | GET / POST | `/api/auth/users` | Playground list / create |
 | PATCH / DELETE | `/api/auth/users/{public_id}` | Alias update / delete |
-| POST | `/api/auth/register` | Creates user, returns `activation_token` |
-| POST | `/api/auth/activate` | Email-verify JWT |
-| POST | `/api/auth/login` | Access JWT + `session` cookie |
-| POST | `/api/auth/refresh` | Rotate session cookie, new access JWT |
-| POST | `/api/auth/logout` | Revoke session, clear cookie |
-| GET | `/api/auth/me` | Bearer access JWT |
+| POST | `/api/auth/register/password`, `/api/auth/register_with_token` | Consume an invitation and set a password |
+| POST | `/api/auth/register/passkey/options`, `/api/auth/register/passkey` | Invitation passkey ceremony |
+| POST | `/api/auth/login` | Password login; `session` cookie and opaque bearer |
+| POST | `/api/auth/passkeys/login/options`, `/api/auth/passkeys/login` | Passkey login |
+| POST | `/api/auth/logout` | Revoke this session, clear cookie |
+| POST | `/api/auth/logout_all` | Revoke every session for the account |
+| GET | `/api/auth/me` | Cookie or `Authorization: Bearer` |
+| POST | `/api/auth/request_reset` | `202`; does not return a token |
+| POST | `/api/auth/reset` | Password recovery |
+| POST | `/api/auth/reset/passkey/options`, `/api/auth/reset/passkey` | Passkey recovery |
+| GET | `/api/auth/passkeys` | List passkeys |
+| POST | `/api/auth/passkeys/register/options`, `/api/auth/passkeys/register` | Add a passkey |
+| DELETE | `/api/auth/passkeys/{id}` | Remove a passkey, unless it is the last credential |
 
 ## Run
 
@@ -48,9 +56,11 @@ demo/api/
 
 ```bash
 export DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc
-export AUTH_JWT_ACCESS_SECRET=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-export AUTH_JWT_VERIFY_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 export AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc
+# optional WebAuthn overrides (defaults suit Vite on localhost:5173):
+# export AUTH_WEBAUTHN_RP_ID=localhost
+# export AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:5173
+# export AUTH_WEBAUTHN_RP_NAME=rundtisch
 # optional first admin (insert if absent, or reset the password):
 # export RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 # export RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD=unique-passphrase-ok
@@ -64,12 +74,22 @@ curl -i http://localhost:8787/api/health
 
 | Secret | Length |
 |--------|--------|
-| `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
-| `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
 | `AUTH_HASH_PEPPER` | exactly 32 bytes |
+| `AUTH_WEBAUTHN_RP_ID` | optional; default `localhost` |
+| `AUTH_WEBAUTHN_RP_ORIGIN` | optional; default `http://localhost:5173` |
+| `AUTH_WEBAUTHN_RP_NAME` | optional; default `rundtisch` |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
+
+`auth-link` prints an invitation or recovery URL. `recover` exits non-zero when the email has no user. The raw token is not stored.
+
+```bash
+cargo run -p rundtisch-demo --bin auth-link -- invite \
+  --email user@example.com [--ttl-hours 24] [--base-url http://localhost:5173]
+cargo run -p rundtisch-demo --bin auth-link -- recover \
+  --email user@example.com [--ttl-hours 1] [--base-url http://localhost:5173]
+```
 
 ## Check
 

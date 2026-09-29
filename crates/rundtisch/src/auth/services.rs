@@ -1,0 +1,654 @@
+use email_address::EmailAddress;
+use sea_orm::{DatabaseConnection, TransactionTrait};
+use time::OffsetDateTime;
+use webauthn_rs::prelude::Passkey;
+
+use crate::auth::config::{CEREMONY_TTL, RECOVERY_MIN_INTERVAL, SESSION_TTL};
+use crate::auth::error::{AuthError, DbError};
+use crate::auth::models::{
+    alias_from_email, new_public_id, CeremonyRecord, NewUser, PasskeyInfo, Role, SessionGrant,
+    User, CEREMONY_INVITE_REGISTER, CEREMONY_LOGIN, CEREMONY_RECOVERY_REGISTER,
+    CEREMONY_SESSION_REGISTER,
+};
+use crate::auth::password::{dummy_verify, PasswordHasher};
+use crate::auth::queries::{
+    consume_ceremony, consume_invitation, consume_recovery_token, count_passkeys_for_user,
+    delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation,
+    find_open_recovery_user, get_ceremony, get_passkey_by_credential_id, get_passkey_for_user,
+    get_session_by_token_hash, get_user_by_email, get_user_by_id, insert_ceremony, insert_invitation,
+    insert_passkey, insert_recovery_token, insert_session, list_passkeys_for_user, lock_user_row,
+    recovery_issued_since, revoke_all_sessions, revoke_session, set_password_hash_by_id,
+    touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
+};
+use crate::auth::session::{generate_session_token, token_hash};
+use crate::auth::webauthn::{
+    authentication_credential_id, passkey_from_json, passkey_json, stored_credential_id,
+    PasskeyCeremony,
+};
+
+fn now() -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
+fn invalid_token<T>(result: Result<T, DbError>) -> Result<T, AuthError> {
+    match result {
+        Ok(value) => Ok(value),
+        Err(DbError::NotFound) => Err(AuthError::InvalidToken),
+        Err(err) => Err(err.into()),
+    }
+}
+
+/// Run `body` inside a transaction. The future returns the transaction so this
+/// helper can commit it. Dropping the transaction rolls the work back.
+async fn transaction<T, F, Fut>(db: &DatabaseConnection, body: F) -> Result<T, AuthError>
+where
+    F: FnOnce(sea_orm::DatabaseTransaction) -> Fut,
+    Fut: std::future::Future<Output = Result<(sea_orm::DatabaseTransaction, T), AuthError>>,
+{
+    let txn = db.begin().await.map_err(DbError::from)?;
+    match body(txn).await {
+        Ok((txn, value)) => {
+            txn.commit().await.map_err(DbError::from)?;
+            Ok(value)
+        }
+        Err(err) => Err(err),
+    }
+}
+
+pub async fn mint_invitation(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    email: &str,
+    ttl: time::Duration,
+) -> Result<String, AuthError> {
+    let email = parse_email(email)?;
+    let raw = generate_session_token().map_err(AuthError::Backend)?;
+    let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
+    let created = now();
+    insert_invitation(db, &hash, email.as_ref(), created, created + ttl).await?;
+    Ok(raw)
+}
+
+/// Insert a recovery token when the account exists. `Ok(None)` means no such user.
+pub async fn create_recovery_token(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    email: &str,
+    ttl: time::Duration,
+) -> Result<Option<String>, AuthError> {
+    let email = parse_email(email)?;
+    let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
+        let _ = generate_session_token().map_err(AuthError::Backend)?;
+        return Ok(None);
+    };
+    let raw = generate_session_token().map_err(AuthError::Backend)?;
+    let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
+    let created = now();
+    insert_recovery_token(db, user.id, &hash, created, created + ttl).await?;
+    Ok(Some(raw))
+}
+
+pub async fn request_recovery(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    email: &str,
+    ttl: time::Duration,
+) -> Result<(), AuthError> {
+    let email = parse_email(email)?;
+    let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
+        let _ = generate_session_token().map_err(AuthError::Backend)?;
+        return Ok(());
+    };
+    let since = now() - RECOVERY_MIN_INTERVAL;
+    if recovery_issued_since(db, user.id, since).await? > 0 {
+        return Ok(());
+    }
+    let raw = generate_session_token().map_err(AuthError::Backend)?;
+    let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
+    let _ = raw;
+    let created = now();
+    insert_recovery_token(db, user.id, &hash, created, created + ttl).await?;
+    Ok(())
+}
+
+pub async fn complete_password_registration(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    invitation_token: &str,
+    password_hash: String,
+    alias: Option<String>,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let token_hash = token_hash(pepper, invitation_token).map_err(AuthError::Backend)?;
+    let alias_owned = alias;
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let password_hash = password_hash.clone();
+        let token_hash = token_hash.clone();
+        let alias_owned = alias_owned.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            let invitation = invalid_token(consume_invitation(&txn, &token_hash, created).await)?;
+            let email = parse_email(&invitation.email)?;
+            let alias = match alias_owned {
+                Some(alias) => alias,
+                None => alias_from_email(email.as_ref()),
+            };
+            let mut new_user = NewUser::new(email, alias, Role::User, Some(password_hash));
+            new_user.stamp_now(created);
+            let id = crate::auth::queries::insert_verified_user(&txn, &new_user, created).await?;
+            let mut user = User::from_new(id, new_user);
+            user.email_verified_at = Some(created);
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+pub async fn login_with_password(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    hasher: &dyn PasswordHasher,
+    email: &str,
+    password: &str,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let email = parse_email(email)?;
+    let user = get_user_by_email(db, email.as_ref()).await?;
+    let Some(user) = user else {
+        dummy_verify(hasher, password);
+        return Err(AuthError::InvalidCredentials);
+    };
+    let Some(password_hash) = user.password_hash.clone() else {
+        dummy_verify(hasher, password);
+        return Err(AuthError::InvalidCredentials);
+    };
+    if !hasher.verify(password, &password_hash)? {
+        return Err(AuthError::InvalidCredentials);
+    }
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let user = user.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+pub async fn authenticate_token(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    raw_token: &str,
+) -> Result<(User, i64), AuthError> {
+    let hash = token_hash(pepper, raw_token).map_err(AuthError::Backend)?;
+    let session = get_session_by_token_hash(db, &hash)
+        .await?
+        .ok_or(AuthError::InvalidToken)?;
+    let created = now();
+    if !session.is_active(created) {
+        return Err(AuthError::InvalidToken);
+    }
+    let user = get_user_by_id(db, session.user_id).await?;
+    if created - session.last_used_at >= crate::auth::config::LAST_USED_MIN_INTERVAL {
+        let _ = touch_session_last_used(db, session.id, created).await;
+    }
+    Ok((user, session.id))
+}
+
+pub async fn logout_current(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    raw_token: &str,
+) -> Result<(), AuthError> {
+    let hash = token_hash(pepper, raw_token).map_err(AuthError::Backend)?;
+    if let Some(session) = get_session_by_token_hash(db, &hash).await? {
+        revoke_session(db, session.id, now()).await?;
+    }
+    Ok(())
+}
+
+pub async fn logout_all_for_user(db: &DatabaseConnection, user_id: i64) -> Result<(), AuthError> {
+    revoke_all_sessions(db, user_id, now()).await?;
+    Ok(())
+}
+
+pub async fn start_invite_passkey(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    ceremony: &PasskeyCeremony,
+    invitation_token: &str,
+    alias: Option<String>,
+) -> Result<(String, serde_json::Value), AuthError> {
+    let token_hash = token_hash(pepper, invitation_token).map_err(AuthError::Backend)?;
+    let created = now();
+    let _ = delete_expired_ceremonies(db, created).await;
+    let invitation = find_open_invitation(db, &token_hash, created)
+        .await?
+        .ok_or(AuthError::InvalidToken)?;
+    let email = parse_email(&invitation.email)?;
+    let alias = match alias {
+        Some(alias) => alias,
+        None => alias_from_email(email.as_ref()),
+    };
+    let public_id = crate::auth::models::new_public_id();
+    let (options, state) =
+        ceremony.start_registration(public_id, email.as_ref(), &alias, &[])?;
+    let flow_id = new_public_id().to_string();
+    insert_ceremony(
+        db,
+        &CeremonyRecord {
+            flow_id: flow_id.clone(),
+            kind: CEREMONY_INVITE_REGISTER.into(),
+            user_id: None,
+            token_hash: Some(token_hash),
+            alias: Some(alias),
+            public_id: Some(public_id),
+            state,
+            created_at: created,
+            expires_at: created + CEREMONY_TTL,
+        },
+    )
+    .await?;
+    Ok((flow_id, options))
+}
+
+pub async fn finish_invite_passkey(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    ceremony: &PasskeyCeremony,
+    flow_id: &str,
+    credential: &serde_json::Value,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let record = load_live_ceremony(db, flow_id, CEREMONY_INVITE_REGISTER).await?;
+    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let passkey_body = passkey_json(&passkey)?;
+    let credential_id = stored_credential_id(&passkey);
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let record = record.clone();
+        let passkey_body = passkey_body.clone();
+        let credential_id = credential_id.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
+            let token_hash = record.token_hash.ok_or(AuthError::InvalidToken)?;
+            let invitation = invalid_token(consume_invitation(&txn, &token_hash, created).await)?;
+            let email = parse_email(&invitation.email)?;
+            let alias = record
+                .alias
+                .clone()
+                .unwrap_or_else(|| alias_from_email(email.as_ref()));
+            let public_id = record.public_id.unwrap_or_else(crate::auth::models::new_public_id);
+            let mut new_user = NewUser::new(email, alias, Role::User, None);
+            new_user.public_id = public_id;
+            new_user.stamp_now(created);
+            let id = crate::auth::queries::insert_verified_user(&txn, &new_user, created).await?;
+            let mut user = User::from_new(id, new_user);
+            user.email_verified_at = Some(created);
+            insert_passkey(&txn, user.id, &credential_id, &passkey_body, created).await?;
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+pub async fn start_session_passkey(
+    db: &DatabaseConnection,
+    ceremony: &PasskeyCeremony,
+    user: &User,
+) -> Result<(String, serde_json::Value), AuthError> {
+    let created = now();
+    let _ = delete_expired_ceremonies(db, created).await;
+    let existing = list_passkeys_for_user(db, user.id).await?;
+    let exclude = credential_ids(&existing)?;
+    let (options, state) = ceremony.start_registration(
+        user.public_id,
+        user.email.as_ref(),
+        &user.alias,
+        &exclude,
+    )?;
+    let flow_id = new_public_id().to_string();
+    insert_ceremony(
+        db,
+        &CeremonyRecord {
+            flow_id: flow_id.clone(),
+            kind: CEREMONY_SESSION_REGISTER.into(),
+            user_id: Some(user.id),
+            token_hash: None,
+            alias: Some(user.alias.clone()),
+            public_id: Some(user.public_id),
+            state,
+            created_at: created,
+            expires_at: created + CEREMONY_TTL,
+        },
+    )
+    .await?;
+    Ok((flow_id, options))
+}
+
+pub async fn finish_session_passkey(
+    db: &DatabaseConnection,
+    ceremony: &PasskeyCeremony,
+    user_id: i64,
+    flow_id: &str,
+    credential: &serde_json::Value,
+) -> Result<PasskeyInfo, AuthError> {
+    let record = load_live_ceremony(db, flow_id, CEREMONY_SESSION_REGISTER).await?;
+    if record.user_id != Some(user_id) {
+        return Err(AuthError::InvalidToken);
+    }
+    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let passkey_body = passkey_json(&passkey)?;
+    let credential_id = stored_credential_id(&passkey);
+    transaction(db, |txn| {
+        let record = record.clone();
+        let passkey_body = passkey_body.clone();
+        let credential_id = credential_id.clone();
+        async move {
+            let created = now();
+            invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
+            let id = insert_passkey(&txn, user_id, &credential_id, &passkey_body, created).await?;
+            Ok((
+                txn,
+                PasskeyInfo {
+                    id,
+                    created_at: created,
+                    last_used_at: None,
+                },
+            ))
+        }
+    })
+    .await
+}
+
+pub async fn start_passkey_login(
+    db: &DatabaseConnection,
+    ceremony: &PasskeyCeremony,
+    email: Option<&str>,
+) -> Result<(String, serde_json::Value), AuthError> {
+    let created = now();
+    let _ = delete_expired_ceremonies(db, created).await;
+    let (user_id, passkeys) = if let Some(email) = email {
+        let email = parse_email(email)?;
+        let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
+            return Err(AuthError::InvalidCredentials);
+        };
+        let rows = list_passkeys_for_user(db, user.id).await?;
+        if rows.is_empty() {
+            return Err(AuthError::InvalidCredentials);
+        }
+        (Some(user.id), decode_passkeys(&rows)?)
+    } else {
+        (None, Vec::new())
+    };
+    let (options, state) = ceremony.start_authentication(&passkeys)?;
+    let flow_id = new_public_id().to_string();
+    insert_ceremony(
+        db,
+        &CeremonyRecord {
+            flow_id: flow_id.clone(),
+            kind: CEREMONY_LOGIN.into(),
+            user_id,
+            token_hash: None,
+            alias: None,
+            public_id: None,
+            state,
+            created_at: created,
+            expires_at: created + CEREMONY_TTL,
+        },
+    )
+    .await?;
+    Ok((flow_id, options))
+}
+
+pub async fn finish_passkey_login(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    ceremony: &PasskeyCeremony,
+    flow_id: &str,
+    credential: &serde_json::Value,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let record = load_live_ceremony(db, flow_id, CEREMONY_LOGIN).await?;
+    let auth_result = ceremony.finish_authentication(credential, &record.state)?;
+    let credential_id = authentication_credential_id(&auth_result);
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let record = record.clone();
+        let credential_id = credential_id.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
+            let passkey_row = get_passkey_by_credential_id(&txn, &credential_id)
+                .await?
+                .ok_or(AuthError::InvalidCredentials)?;
+            if let Some(expected) = record.user_id {
+                if passkey_row.user_id != expected {
+                    return Err(AuthError::InvalidCredentials);
+                }
+            }
+            let mut stored = passkey_from_json(&passkey_row.passkey)?;
+            if auth_result_needs_update(&auth_result) {
+                let _ = stored.update_credential(&auth_result);
+                let json = passkey_json(&stored)?;
+                update_passkey_json(&txn, passkey_row.id, &json, created).await?;
+            } else {
+                touch_passkey_last_used(&txn, passkey_row.id, created).await?;
+            }
+            let user = get_user_by_id(&txn, passkey_row.user_id).await?;
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+pub async fn list_passkey_info(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<Vec<PasskeyInfo>, AuthError> {
+    let rows = list_passkeys_for_user(db, user_id).await?;
+    Ok(rows.iter().map(PasskeyInfo::from).collect())
+}
+
+pub async fn delete_passkey(
+    db: &DatabaseConnection,
+    user_id: i64,
+    passkey_id: i64,
+) -> Result<(), AuthError> {
+    transaction(db, |txn| async move {
+        let created = now();
+        let user = lock_user_row(&txn, user_id, created).await?;
+        let Some(_row) = get_passkey_for_user(&txn, user_id, passkey_id).await? else {
+            return Err(AuthError::Db(DbError::NotFound));
+        };
+        let count = count_passkeys_for_user(&txn, user_id).await?;
+        if !user.has_password() && count <= 1 {
+            return Err(AuthError::LastCredential);
+        }
+        let deleted = delete_passkey_by_id(&txn, passkey_id).await?;
+        if deleted == 0 {
+            return Err(AuthError::Db(DbError::NotFound));
+        }
+        Ok((txn, ()))
+    })
+    .await
+}
+
+pub async fn complete_password_recovery(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    recovery_token: &str,
+    password_hash: String,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let token_hash = token_hash(pepper, recovery_token).map_err(AuthError::Backend)?;
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let password_hash = password_hash.clone();
+        let token_hash = token_hash.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            let user_id = invalid_token(consume_recovery_token(&txn, &token_hash, created).await)?;
+            set_password_hash_by_id(&txn, user_id, password_hash, created).await?;
+            revoke_all_sessions(&txn, user_id, created).await?;
+            let user = get_user_by_id(&txn, user_id).await?;
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+pub async fn start_recovery_passkey(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    ceremony: &PasskeyCeremony,
+    recovery_token: &str,
+) -> Result<(String, serde_json::Value), AuthError> {
+    let token_hash = token_hash(pepper, recovery_token).map_err(AuthError::Backend)?;
+    let created = now();
+    let _ = delete_expired_ceremonies(db, created).await;
+    let user_id = find_open_recovery_user(db, &token_hash, created)
+        .await?
+        .ok_or(AuthError::InvalidToken)?;
+    let user = get_user_by_id(db, user_id).await?;
+    let existing = list_passkeys_for_user(db, user.id).await?;
+    let exclude = credential_ids(&existing)?;
+    let (options, state) = ceremony.start_registration(
+        user.public_id,
+        user.email.as_ref(),
+        &user.alias,
+        &exclude,
+    )?;
+    let flow_id = new_public_id().to_string();
+    insert_ceremony(
+        db,
+        &CeremonyRecord {
+            flow_id: flow_id.clone(),
+            kind: CEREMONY_RECOVERY_REGISTER.into(),
+            user_id: Some(user.id),
+            token_hash: Some(token_hash),
+            alias: Some(user.alias.clone()),
+            public_id: Some(user.public_id),
+            state,
+            created_at: created,
+            expires_at: created + CEREMONY_TTL,
+        },
+    )
+    .await?;
+    Ok((flow_id, options))
+}
+
+pub async fn finish_recovery_passkey(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    ceremony: &PasskeyCeremony,
+    flow_id: &str,
+    credential: &serde_json::Value,
+    user_agent: Option<&str>,
+) -> Result<SessionGrant, AuthError> {
+    let record = load_live_ceremony(db, flow_id, CEREMONY_RECOVERY_REGISTER).await?;
+    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let passkey_body = passkey_json(&passkey)?;
+    let credential_id = stored_credential_id(&passkey);
+    let ua = user_agent.map(str::to_owned);
+    transaction(db, |txn| {
+        let record = record.clone();
+        let passkey_body = passkey_body.clone();
+        let credential_id = credential_id.clone();
+        let ua = ua.clone();
+        async move {
+            let created = now();
+            invalid_token(consume_ceremony(&txn, &record.flow_id, created).await)?;
+            let token_hash = record.token_hash.ok_or(AuthError::InvalidToken)?;
+            let user_id = invalid_token(consume_recovery_token(&txn, &token_hash, created).await)?;
+            if record.user_id != Some(user_id) {
+                return Err(AuthError::InvalidToken);
+            }
+            insert_passkey(&txn, user_id, &credential_id, &passkey_body, created).await?;
+            revoke_all_sessions(&txn, user_id, created).await?;
+            let user = get_user_by_id(&txn, user_id).await?;
+            let grant = issue_session(&txn, pepper, &user, ua.as_deref(), created).await?;
+            touch_last_login_by_id(&txn, user.id, created).await?;
+            Ok((txn, grant))
+        }
+    })
+    .await
+}
+
+async fn issue_session<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    pepper: &[u8],
+    user: &User,
+    user_agent: Option<&str>,
+    created: OffsetDateTime,
+) -> Result<SessionGrant, AuthError> {
+    let raw = generate_session_token().map_err(AuthError::Backend)?;
+    let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
+    let expires_at = created + SESSION_TTL;
+    insert_session(db, user.id, &hash, created, expires_at, user_agent).await?;
+    Ok(SessionGrant {
+        token: raw,
+        expires_in: SESSION_TTL.whole_seconds(),
+        user: user.clone(),
+    })
+}
+
+async fn load_live_ceremony(
+    db: &DatabaseConnection,
+    flow_id: &str,
+    kind: &str,
+) -> Result<crate::auth::models::CeremonyRecord, AuthError> {
+    let record = get_ceremony(db, flow_id)
+        .await?
+        .ok_or(AuthError::InvalidToken)?;
+    if record.kind != kind || record.expires_at <= now() {
+        return Err(AuthError::InvalidToken);
+    }
+    Ok(record)
+}
+
+fn parse_email(email: &str) -> Result<EmailAddress, AuthError> {
+    let parsed: EmailAddress = email
+        .trim()
+        .parse()
+        .map_err(|_| AuthError::TypeMismatch)?;
+    let normalized = crate::auth::models::normalize_email(&parsed);
+    normalized.parse().map_err(|_| AuthError::TypeMismatch)
+}
+
+fn credential_ids(rows: &[crate::auth::models::PasskeyRecord]) -> Result<Vec<Vec<u8>>, AuthError> {
+    rows.iter()
+        .map(|row| {
+            let passkey = passkey_from_json(&row.passkey)?;
+            Ok(passkey.cred_id().to_vec())
+        })
+        .collect()
+}
+
+fn decode_passkeys(rows: &[crate::auth::models::PasskeyRecord]) -> Result<Vec<Passkey>, AuthError> {
+    rows.iter()
+        .map(|row| passkey_from_json(&row.passkey))
+        .collect()
+}
+
+fn auth_result_needs_update(result: &webauthn_rs::prelude::AuthenticationResult) -> bool {
+    result.needs_update()
+}

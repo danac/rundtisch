@@ -1,14 +1,18 @@
 use sea_orm::ActiveValue::Set;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, sea_query::Expr,
 };
+use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::auth::entities::{session, user};
+use crate::auth::entities::{invitation, passkey, recovery_token, session, user, webauthn_state};
 use crate::auth::error::DbError;
-use crate::auth::models::{NewUser, Session, User};
+use crate::auth::models::{
+    CeremonyRecord, InvitationRecord, NewUser, PasskeyRecord, Session, User,
+};
 
-pub async fn list_users(db: &DatabaseConnection) -> Result<Vec<User>, DbError> {
+pub async fn list_users<C: ConnectionTrait>(db: &C) -> Result<Vec<User>, DbError> {
     let rows = user::Entity::find()
         .order_by_asc(user::Column::Id)
         .all(db)
@@ -17,8 +21,8 @@ pub async fn list_users(db: &DatabaseConnection) -> Result<Vec<User>, DbError> {
     rows.into_iter().map(User::try_from).collect()
 }
 
-pub async fn get_user_by_public_id(
-    db: &DatabaseConnection,
+pub async fn get_user_by_public_id<C: ConnectionTrait>(
+    db: &C,
     public_id: Uuid,
 ) -> Result<User, DbError> {
     let row = user::Entity::find()
@@ -30,8 +34,8 @@ pub async fn get_user_by_public_id(
     User::try_from(row)
 }
 
-pub async fn get_user_by_email(
-    db: &DatabaseConnection,
+pub async fn get_user_by_email<C: ConnectionTrait>(
+    db: &C,
     email: &str,
 ) -> Result<Option<User>, DbError> {
     let row = user::Entity::find()
@@ -42,7 +46,7 @@ pub async fn get_user_by_email(
     row.map(User::try_from).transpose()
 }
 
-pub async fn get_user_by_id(db: &DatabaseConnection, id: i64) -> Result<User, DbError> {
+pub async fn get_user_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<User, DbError> {
     let row = user::Entity::find_by_id(id)
         .one(db)
         .await
@@ -51,23 +55,26 @@ pub async fn get_user_by_id(db: &DatabaseConnection, id: i64) -> Result<User, Db
     User::try_from(row)
 }
 
-pub async fn insert_user(db: &DatabaseConnection, new_user: &NewUser) -> Result<i64, DbError> {
+pub async fn insert_user<C: ConnectionTrait>(
+    db: &C,
+    new_user: &NewUser,
+) -> Result<i64, DbError> {
     insert_user_row(db, new_user, None).await
 }
 
 /// Same as [`insert_user`], but sets `email_verified_at` in the same insert.
-pub async fn insert_verified_user(
-    db: &DatabaseConnection,
+pub async fn insert_verified_user<C: ConnectionTrait>(
+    db: &C,
     new_user: &NewUser,
-    email_verified_at: time::OffsetDateTime,
+    email_verified_at: OffsetDateTime,
 ) -> Result<i64, DbError> {
     insert_user_row(db, new_user, Some(email_verified_at)).await
 }
 
-async fn insert_user_row(
-    db: &DatabaseConnection,
+async fn insert_user_row<C: ConnectionTrait>(
+    db: &C,
     new_user: &NewUser,
-    email_verified_at: Option<time::OffsetDateTime>,
+    email_verified_at: Option<OffsetDateTime>,
 ) -> Result<i64, DbError> {
     let model = user::ActiveModel {
         public_id: Set(new_user.public_id),
@@ -84,11 +91,11 @@ async fn insert_user_row(
     Ok(inserted.id)
 }
 
-pub async fn update_user_password_hash(
-    db: &DatabaseConnection,
+pub async fn update_user_password_hash<C: ConnectionTrait>(
+    db: &C,
     public_id: Uuid,
     password_hash: String,
-    updated_at: time::OffsetDateTime,
+    updated_at: OffsetDateTime,
 ) -> Result<u64, DbError> {
     let row = user::Entity::find()
         .filter(user::Column::PublicId.eq(public_id))
@@ -103,11 +110,29 @@ pub async fn update_user_password_hash(
     Ok(1)
 }
 
-pub async fn update_user_alias(
-    db: &DatabaseConnection,
+pub async fn set_password_hash_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    password_hash: String,
+    updated_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.password_hash = Set(Some(password_hash));
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn update_user_alias<C: ConnectionTrait>(
+    db: &C,
     public_id: Uuid,
     alias: &str,
-    updated_at: time::OffsetDateTime,
+    updated_at: OffsetDateTime,
 ) -> Result<u64, DbError> {
     let row = user::Entity::find()
         .filter(user::Column::PublicId.eq(public_id))
@@ -122,7 +147,7 @@ pub async fn update_user_alias(
     Ok(1)
 }
 
-pub async fn delete_user(db: &DatabaseConnection, public_id: Uuid) -> Result<u64, DbError> {
+pub async fn delete_user<C: ConnectionTrait>(db: &C, public_id: Uuid) -> Result<u64, DbError> {
     let result = user::Entity::delete_many()
         .filter(user::Column::PublicId.eq(public_id))
         .exec(db)
@@ -131,35 +156,12 @@ pub async fn delete_user(db: &DatabaseConnection, public_id: Uuid) -> Result<u64
     Ok(result.rows_affected)
 }
 
-pub async fn verify_email(
-    db: &DatabaseConnection,
-    public_id: Uuid,
-    email: &str,
-    verified_at: time::OffsetDateTime,
-) -> Result<u64, DbError> {
-    let Some(row) = user::Entity::find()
-        .filter(user::Column::PublicId.eq(public_id))
-        .filter(user::Column::Email.eq(email))
-        .one(db)
-        .await
-        .map_err(DbError::from)?
-    else {
-        return Ok(0);
-    };
-    let mut active: user::ActiveModel = row.into();
-    active.email_verified_at = Set(Some(verified_at));
-    active.updated_at = Set(verified_at);
-    active.update(db).await.map_err(DbError::from)?;
-    Ok(1)
-}
-
-pub async fn touch_last_login(
-    db: &DatabaseConnection,
-    public_id: Uuid,
-    last_login_at: time::OffsetDateTime,
+pub async fn touch_last_login_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    last_login_at: OffsetDateTime,
 ) -> Result<(), DbError> {
-    let Some(row) = user::Entity::find()
-        .filter(user::Column::PublicId.eq(public_id))
+    let Some(row) = user::Entity::find_by_id(id)
         .one(db)
         .await
         .map_err(DbError::from)?
@@ -169,16 +171,33 @@ pub async fn touch_last_login(
     let mut active: user::ActiveModel = row.into();
     active.last_login_at = Set(Some(last_login_at));
     active.updated_at = Set(last_login_at);
-    let _ = active.update(db).await.map_err(DbError::from)?;
+    active.update(db).await.map_err(DbError::from)?;
     Ok(())
 }
 
-pub async fn insert_session(
-    db: &DatabaseConnection,
+/// Write to the user row so concurrent credential changes serialize on it.
+pub async fn lock_user_row<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    now: OffsetDateTime,
+) -> Result<User, DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.updated_at = Set(now);
+    let updated = active.update(db).await.map_err(DbError::from)?;
+    User::try_from(updated)
+}
+
+pub async fn insert_session<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     token_hash: &str,
-    created_at: time::OffsetDateTime,
-    expires_at: time::OffsetDateTime,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
     user_agent: Option<&str>,
 ) -> Result<(), DbError> {
     let model = session::ActiveModel {
@@ -194,8 +213,8 @@ pub async fn insert_session(
     Ok(())
 }
 
-pub async fn get_session_by_token_hash(
-    db: &DatabaseConnection,
+pub async fn get_session_by_token_hash<C: ConnectionTrait>(
+    db: &C,
     token_hash: &str,
 ) -> Result<Option<Session>, DbError> {
     let row = session::Entity::find()
@@ -206,28 +225,10 @@ pub async fn get_session_by_token_hash(
     Ok(row.map(Session::from))
 }
 
-pub async fn rotate_session(
-    db: &DatabaseConnection,
+pub async fn touch_session_last_used<C: ConnectionTrait>(
+    db: &C,
     id: i64,
-    token_hash: &str,
-    last_used_at: time::OffsetDateTime,
-) -> Result<(), DbError> {
-    let row = session::Entity::find_by_id(id)
-        .one(db)
-        .await
-        .map_err(DbError::from)?
-        .ok_or(DbError::NotFound)?;
-    let mut active: session::ActiveModel = row.into();
-    active.token_hash = Set(token_hash.to_owned());
-    active.last_used_at = Set(last_used_at);
-    active.update(db).await.map_err(DbError::from)?;
-    Ok(())
-}
-
-pub async fn revoke_session(
-    db: &DatabaseConnection,
-    id: i64,
-    revoked_at: time::OffsetDateTime,
+    last_used_at: OffsetDateTime,
 ) -> Result<(), DbError> {
     let Some(row) = session::Entity::find_by_id(id)
         .one(db)
@@ -237,8 +238,344 @@ pub async fn revoke_session(
         return Ok(());
     };
     let mut active: session::ActiveModel = row.into();
-    active.revoked_at = Set(Some(revoked_at));
+    active.last_used_at = Set(last_used_at);
     active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn revoke_session<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    revoked_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let result = session::Entity::update_many()
+        .col_expr(session::Column::RevokedAt, Expr::value(revoked_at))
+        .filter(session::Column::Id.eq(id))
+        .filter(session::Column::RevokedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    let _ = result.rows_affected;
+    Ok(())
+}
+
+pub async fn revoke_all_sessions<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    revoked_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    session::Entity::update_many()
+        .col_expr(session::Column::RevokedAt, Expr::value(revoked_at))
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn insert_invitation<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    email: &str,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let model = invitation::ActiveModel {
+        token_hash: Set(token_hash.to_owned()),
+        email: Set(email.to_owned()),
+        created_at: Set(created_at),
+        expires_at: Set(expires_at),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn find_open_invitation<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    now: OffsetDateTime,
+) -> Result<Option<InvitationRecord>, DbError> {
+    let row = invitation::Entity::find()
+        .filter(invitation::Column::TokenHash.eq(token_hash))
+        .filter(invitation::Column::UsedAt.is_null())
+        .filter(invitation::Column::ExpiresAt.gt(now))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(InvitationRecord::from))
+}
+
+/// Conditional consume. Zero rows means missing, expired, or already used.
+pub async fn consume_invitation<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    now: OffsetDateTime,
+) -> Result<InvitationRecord, DbError> {
+    let result = invitation::Entity::update_many()
+        .col_expr(invitation::Column::UsedAt, Expr::value(now))
+        .filter(invitation::Column::TokenHash.eq(token_hash))
+        .filter(invitation::Column::UsedAt.is_null())
+        .filter(invitation::Column::ExpiresAt.gt(now))
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    if result.rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    let row = invitation::Entity::find()
+        .filter(invitation::Column::TokenHash.eq(token_hash))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    Ok(InvitationRecord::from(row))
+}
+
+pub async fn insert_recovery_token<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    token_hash: &str,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let model = recovery_token::ActiveModel {
+        user_id: Set(user_id),
+        token_hash: Set(token_hash.to_owned()),
+        created_at: Set(created_at),
+        expires_at: Set(expires_at),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn recovery_issued_since<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    since: OffsetDateTime,
+) -> Result<u64, DbError> {
+    recovery_token::Entity::find()
+        .filter(recovery_token::Column::UserId.eq(user_id))
+        .filter(recovery_token::Column::CreatedAt.gt(since))
+        .count(db)
+        .await
+        .map_err(DbError::from)
+}
+
+pub async fn consume_recovery_token<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    now: OffsetDateTime,
+) -> Result<i64, DbError> {
+    let existing = recovery_token::Entity::find()
+        .filter(recovery_token::Column::TokenHash.eq(token_hash))
+        .filter(recovery_token::Column::UsedAt.is_null())
+        .filter(recovery_token::Column::ExpiresAt.gt(now))
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let result = recovery_token::Entity::update_many()
+        .col_expr(recovery_token::Column::UsedAt, Expr::value(now))
+        .filter(recovery_token::Column::TokenHash.eq(token_hash))
+        .filter(recovery_token::Column::UsedAt.is_null())
+        .filter(recovery_token::Column::ExpiresAt.gt(now))
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    if result.rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(existing.user_id)
+}
+
+pub async fn find_open_recovery_user<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+    now: OffsetDateTime,
+) -> Result<Option<i64>, DbError> {
+    let row = recovery_token::Entity::find()
+        .filter(recovery_token::Column::TokenHash.eq(token_hash))
+        .filter(recovery_token::Column::UsedAt.is_null())
+        .filter(recovery_token::Column::ExpiresAt.gt(now))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(|row| row.user_id))
+}
+
+pub async fn insert_passkey<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    credential_id: &str,
+    passkey_json: &str,
+    created_at: OffsetDateTime,
+) -> Result<i64, DbError> {
+    let model = passkey::ActiveModel {
+        user_id: Set(user_id),
+        credential_id: Set(credential_id.to_owned()),
+        passkey: Set(passkey_json.to_owned()),
+        created_at: Set(created_at),
+        ..Default::default()
+    };
+    let inserted = model.insert(db).await.map_err(DbError::from)?;
+    Ok(inserted.id)
+}
+
+pub async fn list_passkeys_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+) -> Result<Vec<PasskeyRecord>, DbError> {
+    let rows = passkey::Entity::find()
+        .filter(passkey::Column::UserId.eq(user_id))
+        .order_by_asc(passkey::Column::Id)
+        .all(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(rows.into_iter().map(PasskeyRecord::from).collect())
+}
+
+pub async fn count_passkeys_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+) -> Result<u64, DbError> {
+    passkey::Entity::find()
+        .filter(passkey::Column::UserId.eq(user_id))
+        .count(db)
+        .await
+        .map_err(DbError::from)
+}
+
+pub async fn get_passkey_by_credential_id<C: ConnectionTrait>(
+    db: &C,
+    credential_id: &str,
+) -> Result<Option<PasskeyRecord>, DbError> {
+    let row = passkey::Entity::find()
+        .filter(passkey::Column::CredentialId.eq(credential_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(PasskeyRecord::from))
+}
+
+pub async fn get_passkey_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    id: i64,
+) -> Result<Option<PasskeyRecord>, DbError> {
+    let row = passkey::Entity::find_by_id(id)
+        .filter(passkey::Column::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(PasskeyRecord::from))
+}
+
+pub async fn update_passkey_json<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    passkey_json: &str,
+    last_used_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let Some(row) = passkey::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+    else {
+        return Err(DbError::NotFound);
+    };
+    let mut active: passkey::ActiveModel = row.into();
+    active.passkey = Set(passkey_json.to_owned());
+    active.last_used_at = Set(Some(last_used_at));
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn touch_passkey_last_used<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    last_used_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let Some(row) = passkey::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+    else {
+        return Ok(());
+    };
+    let mut active: passkey::ActiveModel = row.into();
+    active.last_used_at = Set(Some(last_used_at));
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn delete_passkey_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<u64, DbError> {
+    let result = passkey::Entity::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(result.rows_affected)
+}
+
+pub async fn insert_ceremony<C: ConnectionTrait>(
+    db: &C,
+    record: &CeremonyRecord,
+) -> Result<(), DbError> {
+    let model = webauthn_state::ActiveModel {
+        flow_id: Set(record.flow_id.clone()),
+        kind: Set(record.kind.clone()),
+        user_id: Set(record.user_id),
+        token_hash: Set(record.token_hash.clone()),
+        alias: Set(record.alias.clone()),
+        public_id: Set(record.public_id),
+        state: Set(record.state.clone()),
+        created_at: Set(record.created_at),
+        expires_at: Set(record.expires_at),
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn get_ceremony<C: ConnectionTrait>(
+    db: &C,
+    flow_id: &str,
+) -> Result<Option<CeremonyRecord>, DbError> {
+    let row = webauthn_state::Entity::find_by_id(flow_id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(CeremonyRecord::from))
+}
+
+/// Delete one unexpired ceremony. Zero rows means it was already consumed or expired.
+pub async fn consume_ceremony<C: ConnectionTrait>(
+    db: &C,
+    flow_id: &str,
+    now: OffsetDateTime,
+) -> Result<(), DbError> {
+    let result = webauthn_state::Entity::delete_many()
+        .filter(webauthn_state::Column::FlowId.eq(flow_id))
+        .filter(webauthn_state::Column::ExpiresAt.gt(now))
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    if result.rows_affected == 0 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+pub async fn delete_expired_ceremonies<C: ConnectionTrait>(
+    db: &C,
+    now: OffsetDateTime,
+) -> Result<(), DbError> {
+    webauthn_state::Entity::delete_many()
+        .filter(webauthn_state::Column::ExpiresAt.lte(now))
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
     Ok(())
 }
 
@@ -276,6 +613,48 @@ impl From<session::Model> for Session {
             expires_at: model.expires_at,
             revoked_at: model.revoked_at,
             user_agent: model.user_agent,
+        }
+    }
+}
+
+impl From<passkey::Model> for PasskeyRecord {
+    fn from(model: passkey::Model) -> Self {
+        Self {
+            id: model.id,
+            user_id: model.user_id,
+            credential_id: model.credential_id,
+            passkey: model.passkey,
+            created_at: model.created_at,
+            last_used_at: model.last_used_at,
+        }
+    }
+}
+
+impl From<invitation::Model> for InvitationRecord {
+    fn from(model: invitation::Model) -> Self {
+        Self {
+            id: model.id,
+            token_hash: model.token_hash,
+            email: model.email,
+            created_at: model.created_at,
+            expires_at: model.expires_at,
+            used_at: model.used_at,
+        }
+    }
+}
+
+impl From<webauthn_state::Model> for CeremonyRecord {
+    fn from(model: webauthn_state::Model) -> Self {
+        Self {
+            flow_id: model.flow_id,
+            kind: model.kind,
+            user_id: model.user_id,
+            token_hash: model.token_hash,
+            alias: model.alias,
+            public_id: model.public_id,
+            state: model.state,
+            created_at: model.created_at,
+            expires_at: model.expires_at,
         }
     }
 }

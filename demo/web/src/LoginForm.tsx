@@ -1,7 +1,10 @@
-import { useState, type FormEvent } from 'react'
-import { decodeJwt, useSession, type AuthUser } from './session.tsx'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useSession, type AuthUser } from './session.tsx'
+import { createPasskey, getPasskey, passkeySupported } from './webauthn.ts'
 
 type ErrorResponse = { error: string }
+type CeremonyStart = { flow_id: string; options: unknown }
+type PasskeyRow = { id: number; created_at: string; last_used_at: string | null }
 
 const inputClassName =
   'mt-1.5 block w-full rounded-lg border border-ring/80 bg-paper px-3 py-2 text-ink outline-none transition focus:border-ink/40 focus:ring-2 focus:ring-ring/60'
@@ -11,6 +14,10 @@ const secondaryButtonClassName =
   'rounded-full border border-ring/80 bg-paper px-3 py-1.5 text-sm font-semibold tracking-wide text-ink transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
 const panelClassName =
   'w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[0_12px_40px_rgba(44,36,22,0.08)] backdrop-blur-[2px]'
+
+const query = new URLSearchParams(window.location.search)
+const inviteFromQuery = query.get('invite') ?? ''
+const recoverFromQuery = query.get('recover') ?? ''
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -22,117 +29,148 @@ async function readError(response: Response): Promise<string> {
   return `Request failed (${response.status})`
 }
 
+function clearAuthQuery() {
+  window.history.replaceState({}, '', window.location.pathname)
+}
+
+function messageFrom(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'NotAllowedError') return 'passkey_cancelled'
+  if (err instanceof Error) return err.message
+  return 'Network error'
+}
+
 export function LoginForm() {
   const { api, establish } = useSession()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const recovering = recoverFromQuery.length > 0
+  const [mode, setMode] = useState<'login' | 'register'>(inviteFromQuery ? 'register' : 'login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [alias, setAlias] = useState('')
+  const [inviteToken, setInviteToken] = useState(inviteFromQuery)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [status, setStatus] = useState<string | null>(null)
-  const [activationToken, setActivationToken] = useState<string | null>(null)
+  const canPasskey = passkeySupported()
 
-  async function handleRegister(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  function begin() {
     setBusy(true)
     setError(null)
-    setStatus(null)
-    try {
-      const response = await api('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({
-          email,
-          password,
-          alias: alias.trim() || undefined,
-        }),
-      })
-      if (!response.ok) {
-        setError(await readError(response))
-        return
-      }
-      const body = (await response.json()) as {
-        activation_token: string
-        result: AuthUser
-      }
-      setActivationToken(body.activation_token)
-      setStatus(`Registered ${body.result.email}. Activate the email token, then log in.`)
-      setMode('login')
-    } catch {
-      setError('Network error')
-    } finally {
-      setBusy(false)
-    }
   }
 
-  async function handleActivate() {
-    if (!activationToken) return
-    setBusy(true)
-    setError(null)
-    setStatus(null)
-    try {
-      const response = await api('/api/auth/activate', {
-        method: 'POST',
-        body: JSON.stringify({ token: activationToken }),
-      })
-      if (!response.ok) {
-        setError(await readError(response))
-        return
-      }
-      setActivationToken(null)
-      setStatus('Email verified. You can log in.')
-    } catch {
-      setError('Network error')
-    } finally {
-      setBusy(false)
+  async function finishSession(response: Response) {
+    if (!response.ok) {
+      setError(await readError(response))
+      return
     }
+    const body = (await response.json()) as { user: AuthUser }
+    setPassword('')
+    clearAuthQuery()
+    establish(body.user)
   }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setBusy(true)
-    setError(null)
-    setStatus(null)
+    begin()
     try {
       const response = await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password }),
       })
-      if (!response.ok) {
-        setError(await readError(response))
-        return
-      }
-      const body = (await response.json()) as {
-        access_token: string
-        user: AuthUser
-      }
-      setPassword('')
-      establish(body.access_token, body.user)
-    } catch {
-      setError('Network error')
+      await finishSession(response)
+    } catch (err) {
+      setError(messageFrom(err))
     } finally {
       setBusy(false)
     }
   }
 
+  async function handleRegister(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    begin()
+    try {
+      const response = await api('/api/auth/register/password', {
+        method: 'POST',
+        body: JSON.stringify({
+          token: inviteToken.trim(),
+          password,
+          alias: alias.trim() || undefined,
+        }),
+      })
+      await finishSession(response)
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleRecoverPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    begin()
+    try {
+      const response = await api('/api/auth/reset', {
+        method: 'POST',
+        body: JSON.stringify({ token: recoverFromQuery, password }),
+      })
+      await finishSession(response)
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function runCeremony(
+    optionsPath: string,
+    finishPath: string,
+    body: unknown,
+    kind: 'create' | 'get',
+  ) {
+    begin()
+    try {
+      const started = await api(optionsPath, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      if (!started.ok) {
+        setError(await readError(started))
+        return
+      }
+      const ceremony = (await started.json()) as CeremonyStart
+      const credential =
+        kind === 'create' ? await createPasskey(ceremony.options) : await getPasskey(ceremony.options)
+      const finished = await api(finishPath, {
+        method: 'POST',
+        body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
+      })
+      await finishSession(finished)
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const heading = recovering ? 'Set a new credential' : mode === 'register' ? 'Register' : 'Log in'
+
   return (
     <section className={panelClassName} aria-labelledby="login-heading">
       <div className="flex items-center justify-between gap-3">
         <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">
-          {mode === 'register' ? 'Register' : 'Log in'}
+          {heading}
         </h2>
-        <button
-          type="button"
-          className={secondaryButtonClassName}
-          onClick={() => {
-            setMode(mode === 'register' ? 'login' : 'register')
-            setError(null)
-            setStatus(null)
-          }}
-          disabled={busy}
-        >
-          {mode === 'register' ? 'Have an account?' : 'Need an account?'}
-        </button>
+        {recovering ? null : (
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={() => {
+              setMode(mode === 'register' ? 'login' : 'register')
+              setError(null)
+            }}
+            disabled={busy}
+          >
+            {mode === 'register' ? 'Have an account?' : 'Have an invitation?'}
+          </button>
+        )}
       </div>
 
       {error ? (
@@ -140,43 +178,16 @@ export function LoginForm() {
           {error}
         </p>
       ) : null}
-      {status ? <p className="mt-3 text-sm text-ink-muted">{status}</p> : null}
 
-      <form onSubmit={mode === 'register' ? handleRegister : handleLogin} className="mt-4">
-        <div className="space-y-4">
-          <label className="block text-sm text-ink-muted">
-            Email
-            <input
-              type="email"
-              name="email"
-              autoComplete="username"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className={inputClassName}
-              disabled={busy}
-            />
-          </label>
-          {mode === 'register' ? (
-            <label className="block text-sm text-ink-muted">
-              Alias
-              <input
-                type="text"
-                name="alias"
-                autoComplete="nickname"
-                value={alias}
-                onChange={(event) => setAlias(event.target.value)}
-                className={inputClassName}
-                disabled={busy}
-              />
-            </label>
-          ) : null}
-          <label className="block text-sm text-ink-muted">
-            Password
+      {recovering ? (
+        <form onSubmit={(event) => void handleRecoverPassword(event)} className="mt-4">
+          <p className="text-sm text-ink-muted">Choose a new password or a passkey for this account.</p>
+          <label className="mt-4 block text-sm text-ink-muted">
+            New password
             <input
               type="password"
               name="password"
-              autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+              autoComplete="new-password"
               required
               minLength={15}
               maxLength={256}
@@ -186,65 +197,247 @@ export function LoginForm() {
               disabled={busy}
             />
           </label>
-        </div>
-        <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-          {mode === 'register' ? 'Register' : 'Log in'}
-        </button>
-      </form>
-
-      {activationToken ? (
-        <div className="mt-5 border-t border-ring/50 pt-5">
-          <p className="text-sm text-ink-muted">Demo activation token (no mailer in v1):</p>
-          <p className="mt-2 break-all font-mono text-xs text-ink">{activationToken}</p>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            Save password
+          </button>
           <button
             type="button"
-            className={`mt-4 w-full ${primaryButtonClassName}`}
-            onClick={() => void handleActivate()}
-            disabled={busy}
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy || !canPasskey}
+            onClick={() =>
+              void runCeremony(
+                '/api/auth/reset/passkey/options',
+                '/api/auth/reset/passkey',
+                { token: recoverFromQuery },
+                'create',
+              )
+            }
           >
-            Activate email
+            {canPasskey ? 'Use a passkey instead' : 'Passkeys are not available in this browser'}
+          </button>
+        </form>
+      ) : (
+        <form
+          onSubmit={mode === 'register' ? handleRegister : handleLogin}
+          className="mt-4"
+        >
+          <div className="space-y-4">
+            {mode === 'register' ? (
+              <label className="block text-sm text-ink-muted">
+                Invitation
+                <input
+                  type="text"
+                  name="invitation"
+                  autoComplete="off"
+                  required
+                  value={inviteToken}
+                  onChange={(event) => setInviteToken(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+            ) : (
+              <label className="block text-sm text-ink-muted">
+                Email
+                <input
+                  type="email"
+                  name="email"
+                  autoComplete="username"
+                  required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+            )}
+            {mode === 'register' ? (
+              <label className="block text-sm text-ink-muted">
+                Alias
+                <input
+                  type="text"
+                  name="alias"
+                  autoComplete="nickname"
+                  value={alias}
+                  onChange={(event) => setAlias(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+            ) : null}
+            <label className="block text-sm text-ink-muted">
+              Password
+              <input
+                type="password"
+                name="password"
+                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                required
+                minLength={15}
+                maxLength={256}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+          </div>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            {mode === 'register' ? 'Register' : 'Log in'}
+          </button>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy || !canPasskey || (mode === 'register' && inviteToken.trim() === '')}
+            onClick={() => {
+              if (mode === 'register') {
+                void runCeremony(
+                  '/api/auth/register/passkey/options',
+                  '/api/auth/register/passkey',
+                  { token: inviteToken.trim(), alias: alias.trim() || undefined },
+                  'create',
+                )
+                return
+              }
+              void runCeremony(
+                '/api/auth/passkeys/login/options',
+                '/api/auth/passkeys/login',
+                email.trim() ? { email } : {},
+                'get',
+              )
+            }}
+          >
+            {canPasskey
+              ? mode === 'register'
+                ? 'Register with a passkey'
+                : 'Log in with a passkey'
+              : 'Passkeys are not available in this browser'}
+          </button>
+        </form>
+      )}
+    </section>
+  )
+}
+
+export function AccountPanel() {
+  const { api, user, logout, logoutAll } = useSession()
+  const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const canPasskey = passkeySupported()
+
+  async function loadPasskeys() {
+    const response = await api('/api/auth/passkeys')
+    if (!response.ok) {
+      setError(await readError(response))
+      return
+    }
+    const body = (await response.json()) as { passkeys: PasskeyRow[] }
+    setPasskeys(body.passkeys)
+  }
+
+  useEffect(() => {
+    void loadPasskeys()
+  }, [])
+
+  async function addPasskey() {
+    setBusy(true)
+    setError(null)
+    try {
+      const started = await api('/api/auth/passkeys/register/options', { method: 'POST' })
+      if (!started.ok) {
+        setError(await readError(started))
+        return
+      }
+      const ceremony = (await started.json()) as CeremonyStart
+      const credential = await createPasskey(ceremony.options)
+      const finished = await api('/api/auth/passkeys/register', {
+        method: 'POST',
+        body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
+      })
+      if (!finished.ok) {
+        setError(await readError(finished))
+        return
+      }
+      await loadPasskeys()
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removePasskey(id: number) {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await api(`/api/auth/passkeys/${id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        setError(await readError(response))
+        return
+      }
+      await loadPasskeys()
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className={panelClassName} aria-labelledby="account-heading">
+      <div className="flex items-center justify-between gap-3">
+        <h2 id="account-heading" className="text-sm font-semibold tracking-wide text-ink">
+          Account
+        </h2>
+        <div className="flex gap-2">
+          <button type="button" className={secondaryButtonClassName} onClick={() => void logoutAll()}>
+            Log out everywhere
+          </button>
+          <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
+            Log out
           </button>
         </div>
-      ) : null}
-    </section>
-  )
-}
-
-export function TokenPanel() {
-  const { accessToken, user, logout } = useSession()
-  const decoded = accessToken ? decodeJwt(accessToken) : null
-
-  return (
-    <section className={panelClassName} aria-labelledby="token-heading">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="token-heading" className="text-sm font-semibold tracking-wide text-ink">
-          Session
-        </h2>
-        <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
-          Log out
-        </button>
       </div>
-      <p className="mt-4 text-xs tracking-wide text-ink-muted">Public user id</p>
-      <p className="mt-1 break-all font-mono text-sm text-ink">{user?.public_id}</p>
-      <p className="mt-4 text-xs tracking-wide text-ink-muted">Access token</p>
-      <p className="mt-1 break-all font-mono text-xs text-ink">{accessToken}</p>
-      <p className="mt-4 text-xs tracking-wide text-ink-muted">Decoded header</p>
-      <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">
-        {JSON.stringify(decoded?.header, null, 2)}
-      </pre>
-      <p className="mt-4 text-xs tracking-wide text-ink-muted">Decoded payload</p>
-      <pre className="mt-1 overflow-x-auto font-mono text-xs text-ink">
-        {JSON.stringify(decoded?.payload, null, 2)}
-      </pre>
+      <p className="mt-4 text-sm text-ink">{user?.alias}</p>
+      <p className="mt-1 text-sm text-ink-muted">{user?.email}</p>
+      <p className="mt-1 break-all font-mono text-xs text-ink-muted">{user?.public_id}</p>
+      {error ? (
+        <p className="mt-3 text-sm text-ink" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <div className="mt-5 border-t border-ring/50 pt-5">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold tracking-wide text-ink">Passkeys</h3>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            disabled={busy || !canPasskey}
+            onClick={() => void addPasskey()}
+          >
+            Add
+          </button>
+        </div>
+        {passkeys.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">No passkeys yet.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {passkeys.map((passkey) => (
+              <li key={passkey.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-ink-muted">{passkey.created_at.slice(0, 10)}</span>
+                <button
+                  type="button"
+                  className={secondaryButtonClassName}
+                  disabled={busy}
+                  onClick={() => void removePasskey(passkey.id)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
-  )
-}
-
-export function LogoutButton() {
-  const { logout } = useSession()
-  return (
-    <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
-      Log out
-    </button>
   )
 }

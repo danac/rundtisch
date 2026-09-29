@@ -18,9 +18,8 @@ auth = [
     "dep:serde_json",
     "dep:uuid",
     "dep:getrandom",
-    "dep:jwt-compact",
-    "dep:chrono",
     "dep:argon2",
+    "dep:webauthn-rs",
     "dep:hmac",
     "dep:sha2",
     "dep:subtle",
@@ -38,9 +37,8 @@ axum = { workspace = true, features = ["json"], optional = true }
 serde_json = { workspace = true, optional = true }
 uuid = { workspace = true, features = ["serde"], optional = true }
 getrandom = { workspace = true, optional = true }
-jwt-compact = { workspace = true, optional = true }
-chrono = { workspace = true, optional = true }
 argon2 = { workspace = true, features = ["alloc", "password-hash"], optional = true }
+webauthn-rs = { version = "0.6.1-dev", features = ["danger-allow-state-serialisation"], optional = true }
 hmac = { workspace = true, optional = true }
 sha2 = { workspace = true, optional = true }
 subtle = { workspace = true, optional = true }
@@ -51,3 +49,4 @@ zeroize = { workspace = true, features = ["alloc"], optional = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower = { workspace = true, features = ["util"] }
 sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
+webauthn-authenticator-rs = { version = "0.6.1-dev", default-features = false, features = ["softpasskey"] }

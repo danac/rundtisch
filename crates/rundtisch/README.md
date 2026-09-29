@@ -11,7 +11,7 @@ The library does not open a database and does not select a backend. Callers pass
 | Module | Role |
 |--------|------|
 | `app` | `AppState { db }` and `secret()` (`std::env::var`) |
-| `auth` | Users, sessions, jwt-compact HS256, Argon2id, SeaORM entities and migrations |
+| `auth` | Users, opaque sessions, invitations, recovery, passkeys, Argon2id, SeaORM entities and migrations |
 
 `auth` is a default feature. `cargo check -p rundtisch --no-default-features` builds only `app`.
 

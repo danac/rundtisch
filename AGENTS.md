@@ -7,7 +7,7 @@ This repo is **rundtisch** — a monorepo with a reusable Rust lib crate (`crate
 Standard commands:
 
 - **Install:** `npm install --prefix demo` (installs `concurrently`); `npm install --prefix demo/web` for frontend deps.
-- **Run (dev):** `npm run dev --prefix demo` starts Vite on `http://localhost:5173` and the native API on `http://localhost:8787` (API proxied via Vite). The script migrates a local SQLite file first. Auth routes also need `AUTH_JWT_ACCESS_SECRET`, `AUTH_JWT_VERIFY_SECRET` (each at least 32 bytes), and `AUTH_HASH_PEPPER` (exactly 32 bytes).
+- **Run (dev):** `npm run dev --prefix demo` starts Vite on `http://localhost:5173` and the native API on `http://localhost:8787` (API proxied via Vite). The script migrates a local SQLite file first. Auth routes need `AUTH_HASH_PEPPER` (exactly 32 bytes), which the dev script sets. WebAuthn defaults are RP id `localhost`, origin `http://localhost:5173`, and name `rundtisch` (`AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, `AUTH_WEBAUTHN_RP_NAME`). Mint invitation and recovery links with `cargo run -p rundtisch-demo --bin auth-link -- invite|recover`.
 - **Build:** `npm run build --prefix demo/web` runs `tsc -b` then `vite build` into `demo/web/dist/`. `npm run preview --prefix demo/web` serves the build on port 4173.
 - **API:** `DATABASE_URL=sqlite://rundtisch.sqlite?mode=rwc cargo run -p rundtisch-demo --bin native` serves the demo API on `http://localhost:8787`.
 - **Migrate:** `DATABASE_URL=... cargo run -p rundtisch-demo --bin migrate`. Optional `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` / `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` upsert a verified Admin after migrations (insert if the email is absent, otherwise reset the password and keep the same user).

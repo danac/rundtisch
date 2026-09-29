@@ -7,9 +7,11 @@ package: .
 # Auth secrets are not committed here. Set them on the app (dashboard or
 # `wasmer app secret`). The commented "Ensure auth secrets" step in
 # `.github/workflows/ci.yml` can create missing ones:
-#   AUTH_JWT_ACCESS_SECRET
-#   AUTH_JWT_VERIFY_SECRET
 #   AUTH_HASH_PEPPER
+# Optional WebAuthn RP overrides (defaults: localhost, http://localhost:5173, rundtisch):
+#   AUTH_WEBAUTHN_RP_ID
+#   AUTH_WEBAUTHN_RP_ORIGIN
+#   AUTH_WEBAUTHN_RP_NAME
 # Optional first admin. The pre-deployment migrate job upserts this email:
 # insert a verified Admin if absent, or reset the password if present
 # (public_id and the rest of the row stay the same):
