@@ -12,28 +12,6 @@ use crate::auth::models::{
     CeremonyRecord, InvitationRecord, NewUser, PasskeyRecord, Session, User,
 };
 
-pub async fn list_users<C: ConnectionTrait>(db: &C) -> Result<Vec<User>, DbError> {
-    let rows = user::Entity::find()
-        .order_by_asc(user::Column::Id)
-        .all(db)
-        .await
-        .map_err(DbError::from)?;
-    rows.into_iter().map(User::try_from).collect()
-}
-
-pub async fn get_user_by_public_id<C: ConnectionTrait>(
-    db: &C,
-    public_id: Uuid,
-) -> Result<User, DbError> {
-    let row = user::Entity::find()
-        .filter(user::Column::PublicId.eq(public_id))
-        .one(db)
-        .await
-        .map_err(DbError::from)?
-        .ok_or(DbError::NotFound)?;
-    User::try_from(row)
-}
-
 pub async fn get_user_by_email<C: ConnectionTrait>(
     db: &C,
     email: &str,
@@ -126,34 +104,6 @@ pub async fn set_password_hash_by_id<C: ConnectionTrait>(
     active.updated_at = Set(updated_at);
     active.update(db).await.map_err(DbError::from)?;
     Ok(())
-}
-
-pub async fn update_user_alias<C: ConnectionTrait>(
-    db: &C,
-    public_id: Uuid,
-    alias: &str,
-    updated_at: OffsetDateTime,
-) -> Result<u64, DbError> {
-    let row = user::Entity::find()
-        .filter(user::Column::PublicId.eq(public_id))
-        .one(db)
-        .await
-        .map_err(DbError::from)?
-        .ok_or(DbError::NotFound)?;
-    let mut active: user::ActiveModel = row.into();
-    active.alias = Set(alias.to_owned());
-    active.updated_at = Set(updated_at);
-    active.update(db).await.map_err(DbError::from)?;
-    Ok(1)
-}
-
-pub async fn delete_user<C: ConnectionTrait>(db: &C, public_id: Uuid) -> Result<u64, DbError> {
-    let result = user::Entity::delete_many()
-        .filter(user::Column::PublicId.eq(public_id))
-        .exec(db)
-        .await
-        .map_err(DbError::from)?;
-    Ok(result.rows_affected)
 }
 
 pub async fn touch_last_login_by_id<C: ConnectionTrait>(

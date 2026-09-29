@@ -34,8 +34,6 @@ demo/api/
 | Method | Path | Response |
 |--------|------|----------|
 | GET | `/api/health` | `{ "status": "ok", "headers": [...] }` |
-| GET / POST | `/api/auth/users` | Playground list / create |
-| PATCH / DELETE | `/api/auth/users/{public_id}` | Alias update / delete |
 | POST | `/api/auth/register/password`, `/api/auth/register_with_token` | Consume an invitation and set a password |
 | POST | `/api/auth/register/passkey/options`, `/api/auth/register/passkey` | Invitation passkey ceremony |
 | POST | `/api/auth/login` | Password login; `session` cookie and opaque bearer |

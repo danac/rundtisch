@@ -62,7 +62,6 @@ impl IntoResponse for DbError {
 pub enum AuthError {
     InvalidCredentials,
     InvalidToken,
-    Forbidden,
     InvalidPassword,
     LastCredential,
     TypeMismatch,
@@ -114,7 +113,6 @@ impl AuthError {
         match self {
             AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
-            AuthError::Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             AuthError::InvalidPassword => (StatusCode::BAD_REQUEST, "invalid_password"),
             AuthError::LastCredential => (StatusCode::CONFLICT, "last_credential"),
             AuthError::TypeMismatch => (StatusCode::BAD_REQUEST, "type mismatch"),

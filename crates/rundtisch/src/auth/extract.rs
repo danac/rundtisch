@@ -1,6 +1,6 @@
 use crate::auth::config::{AUTH_HASH_PEPPER, SESSION_COOKIE};
 use crate::auth::error::AuthError;
-use crate::auth::models::{Role, User};
+use crate::auth::models::User;
 use crate::auth::services::authenticate_token;
 use crate::auth::session::cookie_value;
 use crate::AppState;
@@ -26,24 +26,6 @@ impl FromRequestParts<AppState> for SessionUser {
             .await
             .map_err(IntoResponse::into_response)?;
         Ok(SessionUser(user))
-    }
-}
-
-/// Logged-in user whose account role is `Admin`.
-pub struct AdminUser(pub User);
-
-impl FromRequestParts<AppState> for AdminUser {
-    type Rejection = Response;
-
-    async fn from_request_parts(
-        parts: &mut Parts,
-        state: &AppState,
-    ) -> Result<Self, Self::Rejection> {
-        let SessionUser(user) = SessionUser::from_request_parts(parts, state).await?;
-        if user.role != Role::Admin {
-            return Err(AuthError::Forbidden.into_response());
-        }
-        Ok(AdminUser(user))
     }
 }
 

@@ -1,14 +1,10 @@
 use crate::AppState;
 use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL};
-use crate::auth::error::{AuthError, DbError};
+use crate::auth::error::AuthError;
 use crate::auth::extract::presented_token;
-use crate::auth::extract::{AdminUser, SessionUser, secret_bytes};
-use crate::auth::models::{AccountView, NewUser, SessionGrant, UpdateUserAlias, User};
+use crate::auth::extract::{SessionUser, secret_bytes};
+use crate::auth::models::{AccountView, SessionGrant};
 use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_policy};
-use crate::auth::queries::{
-    delete_user as delete_user_row, get_user_by_public_id, insert_user,
-    list_users as list_user_rows, update_user_alias,
-};
 use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
     delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
@@ -25,8 +21,6 @@ use axum::response::IntoResponse;
 use email_address::EmailAddress;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use time::OffsetDateTime;
-use uuid::Uuid;
 use zeroize::Zeroize;
 
 #[cfg(test)]
@@ -79,10 +73,6 @@ pub struct RecoveryTokenBody {
     pub token: String,
 }
 
-fn now() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
-}
-
 fn hasher(state: &AppState) -> Result<Box<dyn PasswordHasher>, AuthError> {
     #[cfg(test)]
     if std::env::var("RUNDTISCH_TEST_PASSWORD_HASHER")
@@ -129,70 +119,6 @@ fn ceremony_response(flow_id: String, options: Value) -> axum::response::Respons
         "options": options,
     }))
     .into_response()
-}
-
-pub async fn list_users(State(state): State<AppState>, _admin: AdminUser) -> impl IntoResponse {
-    match list_user_rows(&state.db).await {
-        Ok(users) => Json(json!({"result": users})).into_response(),
-        Err(e) => e.into_response(),
-    }
-}
-
-pub async fn create_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Json(mut new_user): Json<NewUser>,
-) -> impl IntoResponse {
-    match normalize_alias(new_user.alias) {
-        Ok(alias) => new_user.alias = alias,
-        Err(e) => return e.into_response(),
-    }
-    new_user.email = match crate::auth::models::normalize_email(&new_user.email).parse() {
-        Ok(email) => email,
-        Err(_) => return AuthError::TypeMismatch.into_response(),
-    };
-    new_user.assign_public_id();
-    new_user.stamp_now(now());
-    match insert_user(&state.db, &new_user).await {
-        Ok(id) => (
-            StatusCode::CREATED,
-            Json(json!({"result": User::from_new(id, new_user)})),
-        )
-            .into_response(),
-        Err(e) => e.into_response(),
-    }
-}
-
-pub async fn update_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Path(public_id): Path<Uuid>,
-    Json(body): Json<UpdateUserAlias>,
-) -> impl IntoResponse {
-    let alias = match normalize_alias(body.alias) {
-        Ok(alias) => alias,
-        Err(e) => return e.into_response(),
-    };
-    let updated_at = now();
-    match update_user_alias(&state.db, public_id, &alias, updated_at).await {
-        Ok(_) => match get_user_by_public_id(&state.db, public_id).await {
-            Ok(user) => Json(json!({"result": user})).into_response(),
-            Err(e) => e.into_response(),
-        },
-        Err(e) => e.into_response(),
-    }
-}
-
-pub async fn delete_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Path(public_id): Path<Uuid>,
-) -> impl IntoResponse {
-    match delete_user_row(&state.db, public_id).await {
-        Ok(0) => DbError::NotFound.into_response(),
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => e.into_response(),
-    }
 }
 
 pub async fn register_with_token(
@@ -582,7 +508,6 @@ mod tests {
     use crate::auth::config::{AUTH_WEBAUTHN_RP_ID, AUTH_WEBAUTHN_RP_ORIGIN};
     use crate::auth::entities::recovery_token;
     use crate::auth::migrations::Migrator;
-    use crate::auth::models::Role;
     use crate::auth::services::{create_recovery_token, mint_invitation};
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
@@ -610,14 +535,6 @@ mod tests {
         Migrator::up(&db, None).await.expect("migrate");
         let state = AppState { db: db.clone() };
         let router = axum::Router::new()
-            .route(
-                "/api/auth/users",
-                axum::routing::get(list_users).post(create_user),
-            )
-            .route(
-                "/api/auth/users/{public_id}",
-                axum::routing::patch(update_user).delete(delete_user),
-            )
             .route(
                 "/api/auth/register_with_token",
                 axum::routing::post(register_with_token),
@@ -867,57 +784,6 @@ mod tests {
         let (status, json) = body_json(response).await;
         assert_eq!(status, HttpStatus::UNAUTHORIZED);
         assert_eq!(json["error"], "invalid_credentials");
-    }
-
-    #[tokio::test]
-    async fn admin_crud_uses_session_bearer() {
-        let (app, db) = app().await;
-        let token = invite(&db, "admin@example.com").await;
-        let registered = post_json(
-            &app,
-            "/api/auth/register/password",
-            json!({
-                "token": token,
-                "password": "unique-passphrase-ok",
-                "alias": "admin"
-            }),
-            None,
-            None,
-        )
-        .await;
-        let (status, json) = body_json(registered).await;
-        assert_eq!(status, HttpStatus::CREATED, "{json}");
-        let bearer = json["token"].as_str().unwrap().to_string();
-        let public_id = json["user"]["public_id"].as_str().unwrap();
-        let user = crate::auth::entities::user::Entity::find()
-            .one(&db)
-            .await
-            .unwrap()
-            .unwrap();
-        let mut active: crate::auth::entities::user::ActiveModel = user.into();
-        active.role = sea_orm::ActiveValue::Set(Role::Admin);
-        sea_orm::ActiveModelTrait::update(active, &db)
-            .await
-            .unwrap();
-
-        let forbidden = app
-            .clone()
-            .oneshot(Request::get("/api/auth/users").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(forbidden.status(), HttpStatus::UNAUTHORIZED);
-
-        let created = post_json(
-            &app,
-            "/api/auth/users",
-            json!({"email": "pat@example.com", "alias": "pat", "role": "User"}),
-            None,
-            Some(&bearer),
-        )
-        .await;
-        let (status, json) = body_json(created).await;
-        assert_eq!(status, HttpStatus::CREATED, "{json}");
-        let _ = public_id;
     }
 
     #[tokio::test]

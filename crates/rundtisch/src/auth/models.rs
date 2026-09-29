@@ -75,12 +75,6 @@ pub struct NewUser {
     pub updated_at: DateTime,
 }
 
-/// Body for `PATCH /api/auth/users/{public_id}` — only alias may change.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateUserAlias {
-    pub alias: String,
-}
-
 impl NewUser {
     pub fn new(
         email: EmailAddress,

@@ -1,6 +1,5 @@
 import { AccountPanel, LoginForm } from './LoginForm.tsx'
 import { SessionProvider, useSession } from './session.tsx'
-import { UsersPanel } from './UsersPanel.tsx'
 
 function SessionGate() {
   const { status, user } = useSession()
@@ -17,7 +16,6 @@ function SessionGate() {
   return (
     <div className="mt-10 flex w-full max-w-md flex-col gap-4">
       <AccountPanel />
-      {user.role === 'Admin' ? <UsersPanel /> : null}
     </div>
   )
 }

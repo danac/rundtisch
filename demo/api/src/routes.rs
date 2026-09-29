@@ -1,23 +1,17 @@
 use crate::handlers::health;
 use axum::Router;
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, post};
 use rundtisch::auth::handlers::{
-    create_user, delete_user, list_passkeys, list_users, login, logout, logout_all, me,
-    passkey_delete, passkey_login, passkey_login_options, passkey_register,
-    passkey_register_options, register_passkey, register_passkey_options, register_password,
-    register_with_token, request_reset, reset_passkey, reset_passkey_options, reset_password,
-    update_user,
+    list_passkeys, login, logout, logout_all, me, passkey_delete, passkey_login,
+    passkey_login_options, passkey_register, passkey_register_options, register_passkey,
+    register_passkey_options, register_password, register_with_token, request_reset, reset_passkey,
+    reset_passkey_options, reset_password,
 };
 use rundtisch::AppState;
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
-        .route("/api/auth/users", get(list_users).post(create_user))
-        .route(
-            "/api/auth/users/{public_id}",
-            patch(update_user).delete(delete_user),
-        )
         .route(
             "/api/auth/register_with_token",
             post(register_with_token),

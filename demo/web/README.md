@@ -12,7 +12,7 @@ React SPA used to exercise the [demo API](../api/README.md).
 
 ## Current state
 
-Landing page with cookie sessions. Log in with a password or a passkey. Registration uses an invitation token (`?invite=` or pasted). A `?recover=` link from the `auth-link` CLI completes password or passkey recovery; the page never displays or generates a recovery link. Signed-in accounts can list, add, and remove passkeys. Admins also get the users CRUD panel against `/api/auth/users`.
+Landing page with cookie sessions. Log in with a password or a passkey. Registration uses an invitation token (`?invite=` or pasted). A `?recover=` link from the `auth-link` CLI completes password or passkey recovery; the page never displays or generates a recovery link. Signed-in accounts can list, add, and remove passkeys.
 
 ## Commands
 
