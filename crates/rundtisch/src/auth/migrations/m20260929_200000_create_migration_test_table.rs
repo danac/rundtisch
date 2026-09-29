@@ -44,6 +44,7 @@ enum MigrationTest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sea_orm::ConnectionTrait;
 
     #[tokio::test]
     async fn creates_the_deployment_probe_table() {
@@ -52,6 +53,10 @@ mod tests {
 
         Migration.up(&manager).await.unwrap();
 
-        assert!(manager.has_table("auth_migration_test").await.unwrap());
+        let select = Query::select()
+            .column(MigrationTest::Id)
+            .from(MigrationTest::Table)
+            .to_owned();
+        assert!(db.query_all(&select).await.is_ok());
     }
 }
