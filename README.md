@@ -97,11 +97,12 @@ curl http://localhost:8787/api/health
 ## Build and test
 
 ```bash
+cargo test --manifest-path crates/rundtisch/Cargo.toml
 cargo test
 npm run build --prefix demo/web
 ```
 
-CI (`.github/workflows/deploy.yml`) runs `cargo test` and the frontend build.
+The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo. CI (`.github/workflows/deploy.yml`) runs both, then the frontend build.
 
 ## Related documentation
 

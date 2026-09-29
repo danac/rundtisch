@@ -1,10 +1,8 @@
 [workspace]
 resolver = "2"
-members = [
-    "crates/rundtisch",
-    "demo/api",
-]
-default-members = ["crates/rundtisch", "demo/api"]
+members = ["demo/api"]
+exclude = ["crates/rundtisch"]
+default-members = ["demo/api"]
 
 [workspace.package]
 version = "0.1.0"

@@ -591,6 +591,8 @@ mod tests {
     use serde_json::json;
     use time::Duration;
     use tower::ServiceExt;
+    use webauthn_authenticator_rs::WebauthnAuthenticator;
+    use webauthn_authenticator_rs::softpasskey::SoftPasskey;
     use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse, Url};
 
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
@@ -725,8 +727,8 @@ mod tests {
             .expect("invite")
     }
 
-    fn authenticator() -> crate::auth::test_softpasskey::SoftPasskey {
-        crate::auth::test_softpasskey::SoftPasskey::new()
+    fn authenticator() -> SoftPasskey {
+        SoftPasskey::new(true)
     }
 
     fn origin() -> Url {
