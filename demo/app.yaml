@@ -8,7 +8,7 @@ package: .
 # `wasmer app secret`). The commented "Ensure auth secrets" step in
 # `.github/workflows/deploy-rundtisch-demo.yml` can create missing ones:
 #   AUTH_HASH_PEPPER
-# Optional first admin. The pre-deployment migrate job upserts this email:
+# Optional first admin. The post-deployment migrate job upserts this email:
 # insert a verified Admin if absent, or reset the password if present
 # (public_id and the rest of the row stay the same):
 #   RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL
@@ -30,14 +30,14 @@ capabilities:
 locality:
   regions:
     - fr-roub1
-# Run the package `migrate` command once per deploy, before the new version
-# is created. The job gets the app's DB_* env and secrets. SeaORM applies
+# Run the package `migrate` command once after each new version is created.
+# The job gets the app's DB_* env and secrets. SeaORM applies
 # pending migrations, then upserts a bootstrap Admin when
 # RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL and RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
 # are set. Do not call migrate from native startup or HTTP handlers.
 jobs:
   - name: migrate-database
-    trigger: pre-deployment
+    trigger: post-deployment
     timeout: 5m
     retries: 2
     action:
