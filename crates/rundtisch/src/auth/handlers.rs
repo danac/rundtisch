@@ -1,11 +1,13 @@
+use crate::AppState;
 use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL};
 use crate::auth::error::{AuthError, DbError};
-use crate::auth::extract::{secret_bytes, AdminUser, SessionUser};
+use crate::auth::extract::presented_token;
+use crate::auth::extract::{AdminUser, SessionUser, secret_bytes};
 use crate::auth::models::{AccountView, NewUser, SessionGrant, UpdateUserAlias, User};
 use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_policy};
 use crate::auth::queries::{
-    delete_user as delete_user_row, get_user_by_public_id, insert_user, list_users as list_user_rows,
-    update_user_alias,
+    delete_user as delete_user_row, get_user_by_public_id, insert_user,
+    list_users as list_user_rows, update_user_alias,
 };
 use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
@@ -16,8 +18,6 @@ use crate::auth::services::{
 };
 use crate::auth::session::{cap_user_agent, clear_session_cookie_header, session_cookie_header};
 use crate::auth::webauthn::PasskeyCeremony;
-use crate::auth::extract::presented_token;
-use crate::AppState;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -85,7 +85,11 @@ fn now() -> OffsetDateTime {
 
 fn hasher(state: &AppState) -> Result<Box<dyn PasswordHasher>, AuthError> {
     #[cfg(test)]
-    if std::env::var("RUNDTISCH_TEST_PASSWORD_HASHER").ok().as_deref() == Some("1") {
+    if std::env::var("RUNDTISCH_TEST_PASSWORD_HASHER")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
         return Ok(Box::new(TestPasswordHasher));
     }
     let pepper = secret_bytes(state, AUTH_HASH_PEPPER, 32)?;
@@ -127,10 +131,7 @@ fn ceremony_response(flow_id: String, options: Value) -> axum::response::Respons
     .into_response()
 }
 
-pub async fn list_users(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-) -> impl IntoResponse {
+pub async fn list_users(State(state): State<AppState>, _admin: AdminUser) -> impl IntoResponse {
     match list_user_rows(&state.db).await {
         Ok(users) => Json(json!({"result": users})).into_response(),
         Err(e) => e.into_response(),
@@ -326,8 +327,7 @@ pub async fn passkey_login_options(
     let result: Result<axum::response::Response, AuthError> = async {
         let ceremony = PasskeyCeremony::from_app(&state)?;
         let email = body.email.as_ref().map(EmailAddress::as_ref);
-        let (flow_id, options) =
-            start_passkey_login(&state.db, &ceremony, email).await?;
+        let (flow_id, options) = start_passkey_login(&state.db, &ceremony, email).await?;
         Ok(ceremony_response(flow_id, options))
     }
     .await;
@@ -363,10 +363,7 @@ pub async fn passkey_login(
     }
 }
 
-pub async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
+pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Some(token) = presented_token(&headers) {
         if let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) {
             let _ = logout_current(&state.db, &pepper, &token).await;
@@ -594,8 +591,6 @@ mod tests {
     use serde_json::json;
     use time::Duration;
     use tower::ServiceExt;
-    use webauthn_authenticator_rs::WebauthnAuthenticator;
-    use webauthn_authenticator_rs::softpasskey::SoftPasskey;
     use webauthn_rs::prelude::{CreationChallengeResponse, RequestChallengeResponse, Url};
 
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
@@ -613,41 +608,68 @@ mod tests {
         Migrator::up(&db, None).await.expect("migrate");
         let state = AppState { db: db.clone() };
         let router = axum::Router::new()
-            .route("/api/auth/users", axum::routing::get(list_users).post(create_user))
+            .route(
+                "/api/auth/users",
+                axum::routing::get(list_users).post(create_user),
+            )
             .route(
                 "/api/auth/users/{public_id}",
                 axum::routing::patch(update_user).delete(delete_user),
             )
-            .route("/api/auth/register_with_token", axum::routing::post(register_with_token))
-            .route("/api/auth/register/password", axum::routing::post(register_password))
+            .route(
+                "/api/auth/register_with_token",
+                axum::routing::post(register_with_token),
+            )
+            .route(
+                "/api/auth/register/password",
+                axum::routing::post(register_password),
+            )
             .route(
                 "/api/auth/register/passkey/options",
                 axum::routing::post(register_passkey_options),
             )
-            .route("/api/auth/register/passkey", axum::routing::post(register_passkey))
+            .route(
+                "/api/auth/register/passkey",
+                axum::routing::post(register_passkey),
+            )
             .route("/api/auth/login", axum::routing::post(login))
             .route(
                 "/api/auth/passkeys/login/options",
                 axum::routing::post(passkey_login_options),
             )
-            .route("/api/auth/passkeys/login", axum::routing::post(passkey_login))
+            .route(
+                "/api/auth/passkeys/login",
+                axum::routing::post(passkey_login),
+            )
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
-            .route("/api/auth/request_reset", axum::routing::post(request_reset))
+            .route(
+                "/api/auth/request_reset",
+                axum::routing::post(request_reset),
+            )
             .route("/api/auth/reset", axum::routing::post(reset_password))
             .route(
                 "/api/auth/reset/passkey/options",
                 axum::routing::post(reset_passkey_options),
             )
-            .route("/api/auth/reset/passkey", axum::routing::post(reset_passkey))
+            .route(
+                "/api/auth/reset/passkey",
+                axum::routing::post(reset_passkey),
+            )
             .route("/api/auth/passkeys", axum::routing::get(list_passkeys))
             .route(
                 "/api/auth/passkeys/register/options",
                 axum::routing::post(passkey_register_options),
             )
-            .route("/api/auth/passkeys/register", axum::routing::post(passkey_register))
-            .route("/api/auth/passkeys/{id}", axum::routing::delete(passkey_delete))
+            .route(
+                "/api/auth/passkeys/register",
+                axum::routing::post(passkey_register),
+            )
+            .route(
+                "/api/auth/passkeys/{id}",
+                axum::routing::delete(passkey_delete),
+            )
             .with_state(state);
         (router, db)
     }
@@ -703,8 +725,8 @@ mod tests {
             .expect("invite")
     }
 
-    fn authenticator() -> SoftPasskey {
-        SoftPasskey::new(true)
+    fn authenticator() -> crate::auth::test_softpasskey::SoftPasskey {
+        crate::auth::test_softpasskey::SoftPasskey::new()
     }
 
     fn origin() -> Url {
@@ -806,19 +828,26 @@ mod tests {
             "alias": "race"
         });
         let (left, right) = tokio::join!(
-            post_json(&app, "/api/auth/register/password", body.clone(), None, None),
+            post_json(
+                &app,
+                "/api/auth/register/password",
+                body.clone(),
+                None,
+                None
+            ),
             post_json(&app, "/api/auth/register/password", body, None, None),
         );
         let statuses = [left.status(), right.status()];
+        assert!(statuses.contains(&HttpStatus::CREATED), "{statuses:?}");
         assert!(
-            statuses.contains(&HttpStatus::CREATED),
+            statuses.contains(&HttpStatus::UNAUTHORIZED)
+                || statuses.contains(&HttpStatus::CONFLICT),
             "{statuses:?}"
         );
-        assert!(
-            statuses.contains(&HttpStatus::UNAUTHORIZED) || statuses.contains(&HttpStatus::CONFLICT),
-            "{statuses:?}"
-        );
-        let ok = statuses.iter().filter(|s| **s == HttpStatus::CREATED).count();
+        let ok = statuses
+            .iter()
+            .filter(|s| **s == HttpStatus::CREATED)
+            .count();
         assert_eq!(ok, 1, "{statuses:?}");
     }
 
@@ -865,7 +894,9 @@ mod tests {
             .unwrap();
         let mut active: crate::auth::entities::user::ActiveModel = user.into();
         active.role = sea_orm::ActiveValue::Set(Role::Admin);
-        sea_orm::ActiveModelTrait::update(active, &db).await.unwrap();
+        sea_orm::ActiveModelTrait::update(active, &db)
+            .await
+            .unwrap();
 
         let forbidden = app
             .clone()

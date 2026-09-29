@@ -1211,21 +1211,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "futures"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a31d2a3fbaaeb2af2368bbdd904aa8e812d3c04a1ee10d3171f52d556e5d0a3"
-dependencies = [
- "futures-channel",
- "futures-core",
- "futures-executor",
- "futures-io",
- "futures-sink",
- "futures-task",
- "futures-util",
-]
-
-[[package]]
 name = "futures-channel"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1270,17 +1255,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53c0fa8157de1303bfffdaa1cc2a673bfffb60102f76b0ef4441659124373fed"
 
 [[package]]
-name = "futures-macro"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fb9654ba8355388abeb8dcb4fc62f511300867002afc858860463bdd9fe0c44"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
 name = "futures-sink"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1298,10 +1272,8 @@ version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
- "futures-channel",
  "futures-core",
  "futures-io",
- "futures-macro",
  "futures-sink",
  "futures-task",
  "memchr",
@@ -2102,17 +2074,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "521739c6d2bac4aa25192232afe6841231376b2b26d4d9fae5ecf8ca5772e441"
 
 [[package]]
-name = "num-derive"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
 name = "num-integer"
 version = "0.1.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2687,9 +2648,11 @@ dependencies = [
  "email_address",
  "getrandom 0.4.3",
  "hmac 0.13.0",
+ "p256",
  "sea-orm",
  "sea-orm-migration",
  "serde",
+ "serde_cbor_2",
  "serde_json",
  "sha2 0.11.0",
  "subtle",
@@ -2697,8 +2660,8 @@ dependencies = [
  "tokio",
  "tower",
  "uuid",
- "webauthn-authenticator-rs",
  "webauthn-rs",
+ "webauthn-rs-proto",
  "zeroize",
 ]
 
@@ -3048,16 +3011,6 @@ checksum = "4148590afebada386688f18773da617792bf2ef03ffc1e4cbd2b1d45b023e0ba"
 dependencies = [
  "serde_core",
  "serde_derive",
-]
-
-[[package]]
-name = "serde_bytes"
-version = "0.11.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5d440709e79d88e51ac01c4b72fc6cb7314017bb7da9eeff678aa94c10e3ea8"
-dependencies = [
- "serde",
- "serde_core",
 ]
 
 [[package]]
@@ -3709,7 +3662,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -4040,37 +3992,6 @@ dependencies = [
  "serde_with",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "webauthn-authenticator-rs"
-version = "0.6.1-dev"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd96e0e791a6748c1fd36bf8e10980ec22023466b10fa0bdb871aeb91be7a750"
-dependencies = [
- "async-stream",
- "async-trait",
- "base64 0.21.7",
- "bitflags 1.3.2",
- "crypto-glue",
- "futures",
- "hex",
- "nom",
- "num-derive",
- "num-traits",
- "serde",
- "serde_bytes",
- "serde_cbor_2",
- "serde_json",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tracing",
- "unicode-normalization",
- "url",
- "uuid",
- "webauthn-rs-core",
- "webauthn-rs-proto",
 ]
 
 [[package]]

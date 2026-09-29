@@ -12,6 +12,9 @@ pub mod services;
 pub mod session;
 pub mod webauthn;
 
+#[cfg(test)]
+mod test_softpasskey;
+
 pub use bootstrap::{
     BOOTSTRAP_ADMIN_ALIAS, BOOTSTRAP_ADMIN_EMAIL, BOOTSTRAP_ADMIN_PASSWORD, BOOTSTRAP_ADMIN_PREFIX,
 };

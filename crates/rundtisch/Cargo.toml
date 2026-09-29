@@ -49,4 +49,6 @@ zeroize = { workspace = true, features = ["alloc"], optional = true }
 tokio = { workspace = true, features = ["macros", "rt"] }
 tower = { workspace = true, features = ["util"] }
 sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
-webauthn-authenticator-rs = { version = "0.6.1-dev", default-features = false, features = ["softpasskey"] }
+p256 = "0.13.2"
+serde_cbor_2 = "0.13"
+webauthn-rs-proto = "0.6.1-dev"
