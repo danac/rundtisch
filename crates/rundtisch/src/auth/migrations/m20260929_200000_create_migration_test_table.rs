@@ -1,5 +1,5 @@
 use sea_orm_migration::prelude::*;
-use sea_orm_migration::schema::{pk_big_auto, timestamp};
+use sea_orm_migration::schema::{big_pk_auto, timestamp};
 
 /// Deployment probe used to verify that Wasmer runs the candidate package's
 /// migrator during the same deployment.
@@ -14,7 +14,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(MigrationTest::Table)
                     .if_not_exists()
-                    .col(pk_big_auto(MigrationTest::Id))
+                    .col(big_pk_auto(MigrationTest::Id))
                     .col(timestamp(MigrationTest::CreatedAt))
                     .to_owned(),
             )
