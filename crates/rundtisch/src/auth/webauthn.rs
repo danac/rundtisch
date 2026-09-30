@@ -72,6 +72,9 @@ impl PasskeyCeremony {
         // webauthn-rs passkey registration hardcodes residentKey=discouraged.
         // Discoverable login needs a resident credential, so require one here.
         require_discoverable_credential(&mut options_json);
+        // webauthn-rs also hardcodes attestation=none. Request direct so authenticators
+        // that support it can return an AAGUID in the stored Passkey attestation metadata.
+        require_direct_attestation(&mut options_json);
         let state_json = serde_json::to_string(&state)
             .map_err(|err| AuthError::Backend(format!("webauthn state: {err}")))?;
         Ok((options_json, state_json))
@@ -189,6 +192,16 @@ fn require_discoverable_credential(options: &mut Value) {
         Value::String("required".to_string()),
     );
     selection.insert("requireResidentKey".to_string(), Value::Bool(true));
+}
+
+fn require_direct_attestation(options: &mut Value) {
+    let Some(public_key) = options.get_mut("publicKey").and_then(Value::as_object_mut) else {
+        return;
+    };
+    public_key.insert(
+        "attestation".to_string(),
+        Value::String("direct".to_string()),
+    );
 }
 
 pub fn passkey_json(passkey: &Passkey) -> Result<String, AuthError> {
