@@ -40,7 +40,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }
 
   function showFreshLoginPage() {
-    clearSession()
+    // Reload without clearing React session first. Clearing would mount an
+    // empty login form before navigation and flash the account panel away.
     // Some browsers do not re-arm Conditional UI after a WebAuthn request
     // completes or is aborted in the same document.
     window.location.replace(window.location.pathname)
