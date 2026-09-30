@@ -8,8 +8,9 @@ use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_polic
 use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
     delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
-    finish_session_passkey, list_passkey_info, login_with_password, logout_all_for_user,
-    logout_current, request_recovery, start_invite_passkey, start_passkey_login,
+    clear_session_password, finish_session_passkey, list_passkey_info, login_with_password,
+    logout_all_for_user, logout_current, request_recovery, set_session_password,
+    start_invite_passkey, start_passkey_login,
     start_recovery_passkey, start_session_passkey,
 };
 use crate::auth::session::{cap_user_agent, clear_session_cookie_header, session_cookie_header};
@@ -355,6 +356,53 @@ pub async fn me(SessionUser(user): SessionUser) -> impl IntoResponse {
     Json(AccountView::from(&user)).into_response()
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetPasswordBody {
+    pub password: String,
+}
+
+/// Set or replace the signed-in user's password. Does not ask for the current
+/// password and does not revoke sessions.
+pub async fn set_password(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(mut body): Json<SetPasswordBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        if let Err(err) = check_password_policy(&body.password) {
+            body.password.zeroize();
+            return Err(err.into());
+        }
+        let password_hasher = hasher(&state)?;
+        let password_hash = match password_hasher.hash(&body.password) {
+            Ok(hash) => hash,
+            Err(err) => {
+                body.password.zeroize();
+                return Err(err.into());
+            }
+        };
+        body.password.zeroize();
+        let updated = set_session_password(&state.db, user.id, password_hash).await?;
+        Ok(Json(AccountView::from(&updated)).into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+/// Remove the password when at least one passkey remains.
+pub async fn clear_password(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+) -> impl IntoResponse {
+    match clear_session_password(&state.db, user.id).await {
+        Ok(updated) => Json(AccountView::from(&updated)).into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
 pub async fn request_reset(
     State(state): State<AppState>,
     Json(body): Json<RequestResetBody>,
@@ -603,6 +651,10 @@ mod tests {
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
+            .route(
+                "/api/auth/password",
+                axum::routing::put(set_password).delete(clear_password),
+            )
             .route(
                 "/api/auth/request_reset",
                 axum::routing::post(request_reset),
@@ -984,6 +1036,243 @@ mod tests {
         )
         .await;
         assert_eq!(login.status(), HttpStatus::OK);
+    }
+
+    #[tokio::test]
+    async fn session_password_keeps_the_session_and_refuses_the_last_credential() {
+        let (app, db) = app().await;
+        let token = invite(&db, "pw@example.com").await;
+        let registered = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok",
+                "alias": "pw"
+            }),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&registered);
+        let (status, json) = body_json(registered).await;
+        assert_eq!(status, HttpStatus::CREATED, "{json}");
+
+        let removed = app
+            .clone()
+            .oneshot(
+                Request::delete("/api/auth/password")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, err) = body_json(removed).await;
+        assert_eq!(status, HttpStatus::CONFLICT, "{err}");
+        assert_eq!(err["error"], "last_credential");
+
+        let changed = app
+            .clone()
+            .oneshot(
+                Request::put("/api/auth/password")
+                    .header("cookie", &cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        json!({"password": "another-passphrase-ok"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(changed).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_eq!(json["has_password"], true);
+
+        let me = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(me.status(), HttpStatus::OK);
+
+        let old_login = post_json(
+            &app,
+            "/api/auth/login",
+            json!({
+                "email": "pw@example.com",
+                "password": "unique-passphrase-ok"
+            }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(old_login.status(), HttpStatus::UNAUTHORIZED);
+        let new_login = post_json(
+            &app,
+            "/api/auth/login",
+            json!({
+                "email": "pw@example.com",
+                "password": "another-passphrase-ok"
+            }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(new_login.status(), HttpStatus::OK);
+
+        let mut authenticator = authenticator();
+        let started = post_json(
+            &app,
+            "/api/auth/passkeys/register/options",
+            json!({"label": "Phone"}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        let (status, options_json) = body_json(started).await;
+        assert_eq!(status, HttpStatus::OK, "{options_json}");
+        let flow_id = options_json["flow_id"].as_str().unwrap().to_string();
+        let options: CreationChallengeResponse =
+            serde_json::from_value(options_json["options"].clone()).expect("creation options");
+        let credential = register_soft(&mut authenticator, options);
+        let finished = post_json(
+            &app,
+            "/api/auth/passkeys/register",
+            json!({"flow_id": flow_id, "credential": credential}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        let (status, created_json) = body_json(finished).await;
+        assert_eq!(status, HttpStatus::CREATED, "{created_json}");
+        let passkey_id = created_json["passkey"]["public_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let deleted_passkey = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/auth/passkeys/{passkey_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(deleted_passkey.status(), HttpStatus::NO_CONTENT);
+
+        let still_blocked = app
+            .clone()
+            .oneshot(
+                Request::delete("/api/auth/password")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, err) = body_json(still_blocked).await;
+        assert_eq!(status, HttpStatus::CONFLICT, "{err}");
+        assert_eq!(err["error"], "last_credential");
+
+        let mut authenticator = crate::auth::handlers::tests::authenticator();
+        let started = post_json(
+            &app,
+            "/api/auth/passkeys/register/options",
+            json!({}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        let (status, options_json) = body_json(started).await;
+        assert_eq!(status, HttpStatus::OK, "{options_json}");
+        let flow_id = options_json["flow_id"].as_str().unwrap().to_string();
+        let options: CreationChallengeResponse =
+            serde_json::from_value(options_json["options"].clone()).expect("creation options");
+        let credential = register_soft(&mut authenticator, options);
+        let finished = post_json(
+            &app,
+            "/api/auth/passkeys/register",
+            json!({"flow_id": flow_id, "credential": credential}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(finished.status(), HttpStatus::CREATED);
+
+        let cleared = app
+            .clone()
+            .oneshot(
+                Request::delete("/api/auth/password")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(cleared).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_eq!(json["has_password"], false);
+
+        let me = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, me_json) = body_json(me).await;
+        assert_eq!(status, HttpStatus::OK, "{me_json}");
+        assert_eq!(me_json["has_password"], false);
+
+        let password_login = post_json(
+            &app,
+            "/api/auth/login",
+            json!({
+                "email": "pw@example.com",
+                "password": "another-passphrase-ok"
+            }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(password_login.status(), HttpStatus::UNAUTHORIZED);
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/passkeys")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, listed_json) = body_json(listed).await;
+        assert_eq!(status, HttpStatus::OK, "{listed_json}");
+        let passkey_id = listed_json["passkeys"][0]["public_id"].as_str().unwrap();
+        let last = app
+            .oneshot(
+                Request::delete(format!("/api/auth/passkeys/{passkey_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, err) = body_json(last).await;
+        assert_eq!(status, HttpStatus::CONFLICT, "{err}");
+        assert_eq!(err["error"], "last_credential");
     }
 
     #[tokio::test]

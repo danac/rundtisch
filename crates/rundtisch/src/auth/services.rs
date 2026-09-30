@@ -10,8 +10,9 @@ use crate::auth::queries::{
     consume_ceremony, consume_invitation, consume_recovery_token, count_passkeys_for_user,
     delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation, find_open_recovery_user,
     get_ceremony, get_passkey_by_credential_id, get_passkey_for_user, get_session_by_token_hash,
-    get_user_by_email, get_user_by_id, insert_ceremony, insert_invitation, insert_passkey,
-    insert_recovery_token, insert_session, list_passkeys_for_user, lock_user_row,
+    clear_password_hash_by_id, get_user_by_email, get_user_by_id, insert_ceremony,
+    insert_invitation, insert_passkey, insert_recovery_token, insert_session,
+    list_passkeys_for_user, lock_user_row,
     recovery_issued_since, revoke_all_sessions, revoke_session, set_password_hash_by_id,
     touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
 };
@@ -482,6 +483,47 @@ pub async fn list_passkey_info(
 ) -> Result<Vec<PasskeyInfo>, AuthError> {
     let rows = list_passkeys_for_user(db, user_id).await?;
     Ok(rows.iter().map(PasskeyInfo::from).collect())
+}
+
+/// Replace the signed-in user's password. Existing sessions stay valid.
+pub async fn set_session_password(
+    db: &DatabaseConnection,
+    user_id: i64,
+    password_hash: String,
+) -> Result<User, AuthError> {
+    transaction(db, |txn| {
+        let password_hash = password_hash.clone();
+        async move {
+            let created = now();
+            lock_user_row(&txn, user_id, created).await?;
+            set_password_hash_by_id(&txn, user_id, password_hash, created).await?;
+            let user = get_user_by_id(&txn, user_id).await?;
+            Ok((txn, user))
+        }
+    })
+    .await
+}
+
+/// Clear the password when a passkey remains. Refuses when that would leave
+/// the account with no sign-in method. Existing sessions stay valid.
+pub async fn clear_session_password(
+    db: &DatabaseConnection,
+    user_id: i64,
+) -> Result<User, AuthError> {
+    transaction(db, |txn| async move {
+        let created = now();
+        let user = lock_user_row(&txn, user_id, created).await?;
+        let passkeys = count_passkeys_for_user(&txn, user_id).await?;
+        if passkeys == 0 {
+            return Err(AuthError::LastCredential);
+        }
+        if user.has_password() {
+            clear_password_hash_by_id(&txn, user_id, created).await?;
+        }
+        let user = get_user_by_id(&txn, user_id).await?;
+        Ok((txn, user))
+    })
+    .await
 }
 
 pub async fn delete_passkey(

@@ -85,6 +85,23 @@ pub async fn update_user_password_hash<C: ConnectionTrait>(
     Ok(1)
 }
 
+pub async fn clear_password_hash_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    updated_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.password_hash = Set(None);
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
 pub async fn set_password_hash_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,

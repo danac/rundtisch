@@ -50,6 +50,47 @@ function messageFrom(err: unknown): string {
   return 'Network error'
 }
 
+function accountError(code: string): string {
+  if (code === 'last_credential') {
+    return 'Keep a password or a passkey so this account can still sign in.'
+  }
+  if (code === 'invalid_password') {
+    return 'Use at least 15 characters, and not a common password.'
+  }
+  return code
+}
+
+function NewPasswordField({
+  value,
+  onChange,
+  disabled,
+  autoFocus = false,
+}: {
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+  autoFocus?: boolean
+}) {
+  return (
+    <label className="block text-sm text-ink-muted">
+      Password
+      <input
+        type="password"
+        name="password"
+        autoComplete="new-password"
+        autoFocus={autoFocus}
+        required
+        minLength={15}
+        maxLength={256}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={inputClassName}
+        disabled={disabled}
+      />
+    </label>
+  )
+}
+
 function ignoredPasskeyError(err: unknown): boolean {
   return (
     err instanceof DOMException && (err.name === 'AbortError' || err.name === 'NotAllowedError')
@@ -486,21 +527,7 @@ export function LoginForm() {
                   disabled={busy}
                 />
               </label>
-              <label className="block text-sm text-ink-muted">
-                Password
-                <input
-                  type="password"
-                  name="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={15}
-                  maxLength={256}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
+              <NewPasswordField value={password} onChange={setPassword} disabled={busy} />
             </div>
             <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
               Register
@@ -618,13 +645,19 @@ export function LoginForm() {
 }
 
 export function AccountPanel() {
-  const { api, user, logout, logoutAll } = useSession()
+  const { api, user, establish, logout, logoutAll } = useSession()
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
+  const [passkeysLoaded, setPasskeysLoaded] = useState(false)
   const [passkeyLabel, setPasskeyLabel] = useState('')
   const [addingPasskey, setAddingPasskey] = useState(false)
+  const [password, setPassword] = useState('')
+  const [settingPassword, setSettingPassword] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canPasskey = passkeySupported()
+  const passwordSet = user?.has_password ?? false
+  const canRemovePassword = passkeysLoaded && passwordSet && passkeys.length > 0
+  const solePasskey = !passwordSet && passkeys.length <= 1
 
   async function loadPasskeys() {
     const response = await api('/api/auth/passkeys')
@@ -634,6 +667,7 @@ export function AccountPanel() {
     }
     const body = (await response.json()) as { passkeys: PasskeyRow[] }
     setPasskeys(body.passkeys)
+    setPasskeysLoaded(true)
   }
 
   useEffect(() => {
@@ -678,10 +712,52 @@ export function AccountPanel() {
     try {
       const response = await api(`/api/auth/passkeys/${publicId}`, { method: 'DELETE' })
       if (!response.ok) {
-        setError(await readError(response))
+        setError(accountError(await readError(response)))
         return
       }
       await loadPasskeys()
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function savePassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await api('/api/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ password }),
+      })
+      if (!response.ok) {
+        setError(accountError(await readError(response)))
+        return
+      }
+      establish((await response.json()) as AuthUser)
+      setPassword('')
+      setSettingPassword(false)
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function removePassword() {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await api('/api/auth/password', { method: 'DELETE' })
+      if (!response.ok) {
+        setError(accountError(await readError(response)))
+        return
+      }
+      establish((await response.json()) as AuthUser)
+      setPassword('')
+      setSettingPassword(false)
     } catch (err) {
       setError(messageFrom(err))
     } finally {
@@ -714,6 +790,65 @@ export function AccountPanel() {
       ) : null}
       <div className="mt-5 border-t border-ring/50 pt-5">
         <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold tracking-wide text-ink">Password</h3>
+          {settingPassword ? null : (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className={secondaryButtonClassName}
+                disabled={busy}
+                onClick={() => {
+                  setError(null)
+                  setPassword('')
+                  setAddingPasskey(false)
+                  setSettingPassword(true)
+                }}
+              >
+                {passwordSet ? 'Change' : 'Set'}
+              </button>
+              {passwordSet ? (
+                <button
+                  type="button"
+                  className={secondaryButtonClassName}
+                  disabled={busy || !canRemovePassword}
+                  onClick={() => void removePassword()}
+                >
+                  Remove
+                </button>
+              ) : null}
+            </div>
+          )}
+        </div>
+        {settingPassword ? (
+          <form onSubmit={(event) => void savePassword(event)} className="mt-4">
+            <NewPasswordField value={password} onChange={setPassword} disabled={busy} autoFocus />
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              {passwordSet ? 'Save password' : 'Set password'}
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy}
+              onClick={() => {
+                setPassword('')
+                setError(null)
+                setSettingPassword(false)
+              }}
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <p className="mt-3 text-sm text-ink-muted">
+            {passwordSet ? 'Password is set.' : 'No password is set.'}
+            {passwordSet && passkeysLoaded && passkeys.length === 0
+              ? ' Add a passkey before removing it.'
+              : ''}
+          </p>
+        )}
+      </div>
+      <div className="mt-5 border-t border-ring/50 pt-5">
+        <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Passkeys</h3>
           {addingPasskey ? null : (
             <button
@@ -723,6 +858,7 @@ export function AccountPanel() {
               onClick={() => {
                 setError(null)
                 setPasskeyLabel('')
+                setSettingPassword(false)
                 setAddingPasskey(true)
               }}
             >
@@ -767,7 +903,7 @@ export function AccountPanel() {
                 <button
                   type="button"
                   className={secondaryButtonClassName}
-                  disabled={busy}
+                  disabled={busy || solePasskey}
                   onClick={() => void removePasskey(passkey.public_id)}
                 >
                   Remove
