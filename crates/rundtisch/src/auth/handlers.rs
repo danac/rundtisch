@@ -1076,7 +1076,7 @@ mod tests {
         assert_eq!(status, HttpStatus::OK, "{listed_json}");
         assert_eq!(listed_json["passkeys"][0]["label"], "Security key");
         assert!(listed_json["passkeys"][0].get("id").is_none());
-        // SoftPasskey uses none attestation, so no AAGUID is stored.
+        // SoftPasskey puts a nil AAGUID in authData; we persist NULL for that.
         assert!(listed_json["passkeys"][0]["aaguid"].is_null());
         let public_id = listed_json["passkeys"][0]["public_id"].as_str().unwrap();
         let deleted = app

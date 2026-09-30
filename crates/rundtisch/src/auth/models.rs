@@ -210,6 +210,7 @@ pub struct PasskeyRecord {
     pub credential_id: String,
     pub passkey: String,
     pub label: Option<String>,
+    pub aaguid: Option<uuid::Uuid>,
     pub created_at: DateTime,
     pub last_used_at: Option<DateTime>,
 }
@@ -230,7 +231,7 @@ impl From<&PasskeyRecord> for PasskeyInfo {
         Self {
             public_id: row.public_id,
             label: row.label.clone(),
-            aaguid: crate::auth::webauthn::passkey_aaguid_from_json(&row.passkey),
+            aaguid: row.aaguid,
             created_at: row.created_at,
             last_used_at: row.last_used_at,
         }

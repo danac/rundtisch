@@ -1,5 +1,8 @@
 use std::time::Duration;
 
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use serde_cbor_2::Value as CborValue;
 use serde_json::{Map, Value};
 use uuid::Uuid;
 use webauthn_rs::prelude::{
@@ -73,7 +76,7 @@ impl PasskeyCeremony {
         // Discoverable login needs a resident credential, so require one here.
         require_discoverable_credential(&mut options_json);
         // webauthn-rs also hardcodes attestation=none. Request direct so authenticators
-        // that support it can return an AAGUID in the stored Passkey attestation metadata.
+        // that support it expose a non-nil AAGUID in attestationObject authData.
         require_direct_attestation(&mut options_json);
         let state_json = serde_json::to_string(&state)
             .map_err(|err| AuthError::Backend(format!("webauthn state: {err}")))?;
@@ -84,14 +87,18 @@ impl PasskeyCeremony {
         &self,
         credential: &Value,
         state_json: &str,
-    ) -> Result<Passkey, AuthError> {
+    ) -> Result<(Passkey, Option<Uuid>), AuthError> {
         let reg: RegisterPublicKeyCredential = serde_json::from_value(credential.clone())
             .map_err(|_| AuthError::InvalidCredentials)?;
         let state: PasskeyRegistration =
             serde_json::from_str(state_json).map_err(|_| AuthError::InvalidToken)?;
-        self.webauthn
+        let passkey = self
+            .webauthn
             .finish_passkey_registration(&reg, &state)
-            .map_err(ceremony_err)
+            .map_err(ceremony_err)?;
+        // Read AAGUID from raw authData so fmt=none (e.g. Android Password Manager) still works.
+        let aaguid = aaguid_from_attestation_object(credential);
+        Ok((passkey, aaguid))
     }
 
     pub fn start_authentication(&self, passkeys: &[Passkey]) -> Result<(Value, String), AuthError> {
@@ -212,18 +219,36 @@ pub fn passkey_from_json(json: &str) -> Result<Passkey, AuthError> {
     serde_json::from_str(json).map_err(|_| AuthError::Backend("stored passkey is invalid".into()))
 }
 
-/// AAGUID from packed/TPM attestation metadata in a stored Passkey JSON blob.
-/// Absent when registration used `none` attestation or the authenticator omitted it.
-pub fn passkey_aaguid_from_json(json: &str) -> Option<Uuid> {
-    let value: Value = serde_json::from_str(json).ok()?;
-    let metadata = value.get("cred")?.get("attestation")?.get("metadata")?;
-    metadata
-        .get("Packed")
-        .or_else(|| metadata.get("Tpm"))
-        .and_then(|entry| entry.get("aaguid"))
-        .and_then(Value::as_str)
-        .and_then(|raw| Uuid::parse_str(raw).ok())
-        .filter(|id| *id != Uuid::nil())
+/// AAGUID from `response.attestationObject` authData (attestedCredentialData).
+/// Works for `fmt: "none"` as well as packed/TPM. Nil AAGUIDs are treated as absent.
+pub fn aaguid_from_attestation_object(credential: &Value) -> Option<Uuid> {
+    const AT_FLAG: u8 = 0x40;
+    const AUTH_DATA_FIXED: usize = 32 + 1 + 4;
+    const AAGUID_LEN: usize = 16;
+
+    let b64 = credential
+        .get("response")?
+        .get("attestationObject")?
+        .as_str()?;
+    let bytes = URL_SAFE_NO_PAD.decode(b64).ok()?;
+    let cbor: CborValue = serde_cbor_2::from_slice(&bytes).ok()?;
+    let CborValue::Map(map) = cbor else {
+        return None;
+    };
+    let auth_data = map.iter().find_map(|(key, value)| match (key, value) {
+        (CborValue::Text(name), CborValue::Bytes(data)) if name == "authData" => {
+            Some(data.as_slice())
+        }
+        _ => None,
+    })?;
+    if auth_data.len() < AUTH_DATA_FIXED + AAGUID_LEN {
+        return None;
+    }
+    if auth_data[32] & AT_FLAG == 0 {
+        return None;
+    }
+    let aaguid = Uuid::from_slice(&auth_data[AUTH_DATA_FIXED..AUTH_DATA_FIXED + AAGUID_LEN]).ok()?;
+    (aaguid != Uuid::nil()).then_some(aaguid)
 }
 
 pub fn passkey_credential_id(passkey: &Passkey) -> Vec<u8> {
@@ -253,21 +278,66 @@ fn env_or(state: &AppState, name: &str, default: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::passkey_aaguid_from_json;
+    use super::aaguid_from_attestation_object;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use serde_cbor_2::Value as CborValue;
+    use serde_json::json;
+    use std::collections::BTreeMap;
     use uuid::Uuid;
 
-    #[test]
-    fn reads_packed_aaguid_and_ignores_nil() {
-        let id = Uuid::parse_str("fbfc3007-154e-4ecc-8c0b-6e020557d7bd").unwrap();
-        let packed = format!(
-            r#"{{"cred":{{"attestation":{{"data":"None","metadata":{{"Packed":{{"aaguid":"{id}"}}}}}}}}}}"#
+    fn credential_with_auth_data(auth_data: Vec<u8>) -> serde_json::Value {
+        let mut map = BTreeMap::new();
+        map.insert(
+            CborValue::Text("fmt".into()),
+            CborValue::Text("none".into()),
         );
-        assert_eq!(passkey_aaguid_from_json(&packed), Some(id));
+        map.insert(
+            CborValue::Text("authData".into()),
+            CborValue::Bytes(auth_data),
+        );
+        map.insert(
+            CborValue::Text("attStmt".into()),
+            CborValue::Map(BTreeMap::new()),
+        );
+        let encoded = URL_SAFE_NO_PAD.encode(serde_cbor_2::to_vec(&CborValue::Map(map)).unwrap());
+        json!({
+            "response": {
+                "attestationObject": encoded,
+            }
+        })
+    }
 
-        let nil = r#"{"cred":{"attestation":{"data":"None","metadata":{"Packed":{"aaguid":"00000000-0000-0000-0000-000000000000"}}}}}"#;
-        assert_eq!(passkey_aaguid_from_json(nil), None);
+    fn auth_data_with_aaguid(aaguid: [u8; 16], attested: bool) -> Vec<u8> {
+        let mut auth_data = vec![0u8; 37];
+        if attested {
+            auth_data[32] = 0x45; // UP | UV | AT
+            auth_data.extend_from_slice(&aaguid);
+            auth_data.extend_from_slice(&0u16.to_be_bytes());
+        }
+        auth_data
+    }
 
-        let none = r#"{"cred":{"attestation":{"data":"None","metadata":"None"}}}"#;
-        assert_eq!(passkey_aaguid_from_json(none), None);
+    #[test]
+    fn reads_aaguid_from_none_attestation_auth_data() {
+        let id = Uuid::parse_str("fbfc3007-154e-4ecc-8c0b-6e020557d7bd").unwrap();
+        let credential = credential_with_auth_data(auth_data_with_aaguid(*id.as_bytes(), true));
+        assert_eq!(aaguid_from_attestation_object(&credential), Some(id));
+    }
+
+    #[test]
+    fn ignores_nil_aaguid_and_missing_at_flag() {
+        let nil = credential_with_auth_data(auth_data_with_aaguid([0; 16], true));
+        assert_eq!(aaguid_from_attestation_object(&nil), None);
+
+        let no_at = credential_with_auth_data(auth_data_with_aaguid(
+            *Uuid::parse_str("fbfc3007-154e-4ecc-8c0b-6e020557d7bd")
+                .unwrap()
+                .as_bytes(),
+            false,
+        ));
+        assert_eq!(aaguid_from_attestation_object(&no_at), None);
+
+        assert_eq!(aaguid_from_attestation_object(&json!({})), None);
     }
 }

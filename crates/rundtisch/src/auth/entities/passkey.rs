@@ -12,6 +12,7 @@ pub struct Model {
     pub credential_id: String,
     pub passkey: String,
     pub label: Option<String>,
+    pub aaguid: Option<Uuid>,
     pub created_at: TimeDateTimeWithTimeZone,
     pub last_used_at: Option<TimeDateTimeWithTimeZone>,
 }

@@ -267,7 +267,7 @@ pub async fn finish_invite_passkey(
     user_agent: Option<&str>,
 ) -> Result<SessionGrant, AuthError> {
     let record = load_live_ceremony(db, flow_id, CEREMONY_INVITE_REGISTER).await?;
-    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let (passkey, aaguid) = ceremony.finish_registration(credential, &record.state)?;
     let passkey_body = passkey_json(&passkey)?;
     let credential_id = stored_credential_id(&passkey);
     let ua = user_agent.map(str::to_owned);
@@ -302,6 +302,7 @@ pub async fn finish_invite_passkey(
                 &credential_id,
                 &passkey_body,
                 record.passkey_label.as_deref(),
+                aaguid,
                 created,
             )
             .await?;
@@ -356,7 +357,7 @@ pub async fn finish_session_passkey(
     if record.user_id != Some(user_id) {
         return Err(AuthError::InvalidToken);
     }
-    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let (passkey, aaguid) = ceremony.finish_registration(credential, &record.state)?;
     let passkey_body = passkey_json(&passkey)?;
     let credential_id = stored_credential_id(&passkey);
     transaction(db, |txn| {
@@ -374,6 +375,7 @@ pub async fn finish_session_passkey(
                 &credential_id,
                 &passkey_body,
                 record.passkey_label.as_deref(),
+                aaguid,
                 created,
             )
             .await?;
@@ -382,7 +384,7 @@ pub async fn finish_session_passkey(
                 PasskeyInfo {
                     public_id,
                     label: record.passkey_label,
-                    aaguid: crate::auth::webauthn::passkey_aaguid_from_json(&passkey_body),
+                    aaguid,
                     created_at: created,
                     last_used_at: None,
                 },
@@ -580,7 +582,7 @@ pub async fn finish_recovery_passkey(
     user_agent: Option<&str>,
 ) -> Result<SessionGrant, AuthError> {
     let record = load_live_ceremony(db, flow_id, CEREMONY_RECOVERY_REGISTER).await?;
-    let passkey = ceremony.finish_registration(credential, &record.state)?;
+    let (passkey, aaguid) = ceremony.finish_registration(credential, &record.state)?;
     let passkey_body = passkey_json(&passkey)?;
     let credential_id = stored_credential_id(&passkey);
     let ua = user_agent.map(str::to_owned);
@@ -604,6 +606,7 @@ pub async fn finish_recovery_passkey(
                 &credential_id,
                 &passkey_body,
                 record.passkey_label.as_deref(),
+                aaguid,
                 created,
             )
             .await?;

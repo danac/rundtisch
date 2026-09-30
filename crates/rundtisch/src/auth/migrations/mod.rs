@@ -3,6 +3,7 @@ use sea_orm_migration::prelude::*;
 mod m20260929_120000_create_auth_tables;
 mod m20260929_150000_widen_webauthn_text_columns;
 mod m20260929_180000_add_passkey_public_id_and_label;
+mod m20260930_120000_add_passkey_aaguid;
 
 /// Tracking table for auth migrations. A host database can keep its own
 /// SeaORM history in `seaql_migrations`.
@@ -14,6 +15,7 @@ pub fn migrations() -> Vec<Box<dyn MigrationTrait>> {
         Box::new(m20260929_120000_create_auth_tables::Migration),
         Box::new(m20260929_150000_widen_webauthn_text_columns::Migration),
         Box::new(m20260929_180000_add_passkey_public_id_and_label::Migration),
+        Box::new(m20260930_120000_add_passkey_aaguid::Migration),
     ]
 }
 

@@ -360,6 +360,7 @@ pub async fn insert_passkey<C: ConnectionTrait>(
     credential_id: &str,
     passkey_json: &str,
     label: Option<&str>,
+    aaguid: Option<Uuid>,
     created_at: OffsetDateTime,
 ) -> Result<i64, DbError> {
     let model = passkey::ActiveModel {
@@ -368,6 +369,7 @@ pub async fn insert_passkey<C: ConnectionTrait>(
         credential_id: Set(credential_id.to_owned()),
         passkey: Set(passkey_json.to_owned()),
         label: Set(label.map(str::to_owned)),
+        aaguid: Set(aaguid),
         created_at: Set(created_at),
         ..Default::default()
     };
@@ -579,6 +581,7 @@ impl From<passkey::Model> for PasskeyRecord {
             credential_id: model.credential_id,
             passkey: model.passkey,
             label: model.label,
+            aaguid: model.aaguid,
             created_at: model.created_at,
             last_used_at: model.last_used_at,
         }
