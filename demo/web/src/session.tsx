@@ -39,6 +39,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStatus('authenticated')
   }
 
+  function showFreshLoginPage() {
+    clearSession()
+    // Some browsers do not re-arm Conditional UI after a WebAuthn request
+    // completes or is aborted in the same document.
+    window.location.replace(window.location.pathname)
+  }
+
   async function api(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers)
     if (init.body && !headers.has('Content-Type')) {
@@ -54,12 +61,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   async function logout() {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
-    clearSession()
+    showFreshLoginPage()
   }
 
   async function logoutAll() {
     const response = await api('/api/auth/logout_all', { method: 'POST' })
-    if (response.ok) clearSession()
+    if (response.ok) showFreshLoginPage()
   }
 
   useEffect(() => {
