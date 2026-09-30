@@ -67,8 +67,10 @@ export function LoginForm() {
   const [inviteToken, setInviteToken] = useState(inviteFromQuery)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
   const canPasskey = passkeySupported()
   const conditionalAbort = useRef<AbortController | null>(null)
+  const passwordInputRef = useRef<HTMLInputElement>(null)
 
   function begin() {
     setBusy(true)
@@ -88,7 +90,7 @@ export function LoginForm() {
   }
 
   useEffect(() => {
-    if (mode !== 'login' || recovering || !canPasskey) return
+    if (mode !== 'login' || recovering || !canPasskey || loginPhase !== 'email') return
     const controller = new AbortController()
     conditionalAbort.current = controller
     let cancelled = false
@@ -123,7 +125,34 @@ export function LoginForm() {
       controller.abort()
       if (conditionalAbort.current === controller) conditionalAbort.current = null
     }
-  }, [mode, recovering, canPasskey])
+  }, [mode, recovering, canPasskey, loginPhase])
+
+  useEffect(() => {
+    if (mode === 'login' && loginPhase === 'password') {
+      passwordInputRef.current?.focus()
+    }
+  }, [mode, loginPhase])
+
+  function showEmailStep() {
+    setLoginPhase('email')
+    setPassword('')
+    setError(null)
+  }
+
+  function handleEmailNext(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const loginEmail =
+      String(new FormData(event.currentTarget).get('email') ?? '').trim() || email.trim()
+    setEmail(loginEmail)
+    setPassword('')
+    setError(null)
+    setLoginPhase('password')
+  }
+
+  function startPasskeyLogin() {
+    conditionalAbort.current?.abort()
+    void runCeremony('/api/auth/passkeys/login/options', '/api/auth/passkeys/login', {}, 'get')
+  }
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -225,6 +254,8 @@ export function LoginForm() {
             className={secondaryButtonClassName}
             onClick={() => {
               setMode(mode === 'register' ? 'login' : 'register')
+              setLoginPhase('email')
+              setPassword('')
               setError(null)
             }}
             disabled={busy}
@@ -289,75 +320,52 @@ export function LoginForm() {
             {canPasskey ? 'Use a passkey instead' : 'Passkeys are not available in this browser'}
           </button>
         </form>
-      ) : (
-        <form
-          onSubmit={mode === 'register' ? handleRegister : handleLogin}
-          className="mt-4"
-        >
+      ) : mode === 'register' ? (
+        <form onSubmit={handleRegister} className="mt-4">
           <div className="space-y-4">
-            {mode === 'register' ? (
-              <label className="block text-sm text-ink-muted">
-                Invitation
-                <input
-                  type="text"
-                  name="invitation"
-                  autoComplete="off"
-                  required
-                  value={inviteToken}
-                  onChange={(event) => setInviteToken(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
-            ) : (
-              <label className="block text-sm text-ink-muted">
-                Email
-                <input
-                  type="email"
-                  name="email"
-                  autoComplete="username webauthn"
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
-            )}
-            {mode === 'register' ? (
-              <>
-                <label className="block text-sm text-ink-muted">
-                  Alias
-                  <input
-                    type="text"
-                    name="alias"
-                    autoComplete="nickname"
-                    value={alias}
-                    onChange={(event) => setAlias(event.target.value)}
-                    className={inputClassName}
-                    disabled={busy}
-                  />
-                </label>
-                <label className="block text-sm text-ink-muted">
-                  Passkey label (optional)
-                  <input
-                    type="text"
-                    maxLength={64}
-                    value={passkeyLabel}
-                    onChange={(event) => setPasskeyLabel(event.target.value)}
-                    placeholder="MacBook Touch ID"
-                    className={inputClassName}
-                    disabled={busy}
-                  />
-                </label>
-              </>
-            ) : null}
+            <label className="block text-sm text-ink-muted">
+              Invitation
+              <input
+                type="text"
+                name="invitation"
+                autoComplete="off"
+                required
+                value={inviteToken}
+                onChange={(event) => setInviteToken(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <label className="block text-sm text-ink-muted">
+              Alias
+              <input
+                type="text"
+                name="alias"
+                autoComplete="nickname"
+                value={alias}
+                onChange={(event) => setAlias(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <label className="block text-sm text-ink-muted">
+              Passkey label (optional)
+              <input
+                type="text"
+                maxLength={64}
+                value={passkeyLabel}
+                onChange={(event) => setPasskeyLabel(event.target.value)}
+                placeholder="MacBook Touch ID"
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
             <label className="block text-sm text-ink-muted">
               Password
               <input
                 type="password"
                 name="password"
-                autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
+                autoComplete="new-password"
                 required
                 minLength={15}
                 maxLength={256}
@@ -369,40 +377,85 @@ export function LoginForm() {
             </label>
           </div>
           <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            {mode === 'register' ? 'Register' : 'Log in'}
+            Register
           </button>
           <button
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey || (mode === 'register' && inviteToken.trim() === '')}
-            onClick={() => {
-              if (mode === 'register') {
-                void runCeremony(
-                  '/api/auth/register/passkey/options',
-                  '/api/auth/register/passkey',
-                  {
-                    token: inviteToken.trim(),
-                    alias: alias.trim() || undefined,
-                    label: passkeyLabel.trim() || undefined,
-                  },
-                  'create',
-                )
-                return
-              }
-              conditionalAbort.current?.abort()
+            disabled={busy || !canPasskey || inviteToken.trim() === ''}
+            onClick={() =>
               void runCeremony(
-                '/api/auth/passkeys/login/options',
-                '/api/auth/passkeys/login',
-                {},
-                'get',
+                '/api/auth/register/passkey/options',
+                '/api/auth/register/passkey',
+                {
+                  token: inviteToken.trim(),
+                  alias: alias.trim() || undefined,
+                  label: passkeyLabel.trim() || undefined,
+                },
+                'create',
               )
-            }}
+            }
           >
-            {canPasskey
-              ? mode === 'register'
-                ? 'Register with a passkey'
-                : 'Log in with a passkey'
-              : 'Passkeys are not available in this browser'}
+            {canPasskey ? 'Register with a passkey' : 'Passkeys are not available in this browser'}
+          </button>
+        </form>
+      ) : loginPhase === 'email' ? (
+        <form onSubmit={handleEmailNext} className="mt-4">
+          <label className="block text-sm text-ink-muted">
+            Email
+            <input
+              type="email"
+              name="email"
+              autoComplete="username webauthn"
+              autoFocus
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={inputClassName}
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            Next
+          </button>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy || !canPasskey}
+            onClick={startPasskeyLogin}
+          >
+            {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleLogin} className="mt-4">
+          <button
+            type="button"
+            onClick={showEmailStep}
+            disabled={busy}
+            className="flex w-full items-center justify-between gap-3 rounded-lg border border-ring/80 bg-paper px-3 py-2 text-left text-sm transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
+          >
+            <span className="min-w-0 truncate text-ink">{email}</span>
+            <span className="shrink-0 font-semibold tracking-wide text-ink-muted">Change</span>
+          </button>
+          <label className="mt-4 block text-sm text-ink-muted">
+            Password
+            <input
+              ref={passwordInputRef}
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              required
+              minLength={15}
+              maxLength={256}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className={inputClassName}
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            Log in
           </button>
         </form>
       )}
