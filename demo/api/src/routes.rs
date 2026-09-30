@@ -5,7 +5,8 @@ use rundtisch::auth::handlers::{
     clear_password, list_passkeys, login, logout, logout_all, me, passkey_delete, passkey_login,
     passkey_login_options, passkey_register, passkey_register_options, register_passkey,
     register_passkey_options, register_password, register_with_token, request_reset, reset_passkey,
-    reset_passkey_options, reset_password, set_password,
+    reset_passkey_options, reset_password, set_password, step_up_login, step_up_passkey_login,
+    step_up_passkey_login_options,
 };
 use rundtisch::AppState;
 
@@ -28,6 +29,12 @@ pub fn build_router(state: AppState) -> Router {
             post(passkey_login_options),
         )
         .route("/api/auth/passkeys/login", post(passkey_login))
+        .route("/api/auth/step-up/login", post(step_up_login))
+        .route(
+            "/api/auth/step-up/passkeys/login/options",
+            post(step_up_passkey_login_options),
+        )
+        .route("/api/auth/step-up/passkeys/login", post(step_up_passkey_login))
         .route("/api/auth/logout", post(logout))
         .route("/api/auth/logout_all", post(logout_all))
         .route("/api/auth/me", get(me))

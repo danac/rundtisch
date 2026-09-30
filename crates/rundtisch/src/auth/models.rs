@@ -266,6 +266,7 @@ pub const CEREMONY_INVITE_REGISTER: &str = "invite_register";
 pub const CEREMONY_RECOVERY_REGISTER: &str = "recovery_register";
 pub const CEREMONY_SESSION_REGISTER: &str = "session_register";
 pub const CEREMONY_LOGIN: &str = "login";
+pub const CEREMONY_STEP_UP_LOGIN: &str = "step_up_login";
 
 /// Successful authentication result. `token` is the raw bearer secret.
 #[derive(Debug, Clone)]

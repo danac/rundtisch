@@ -50,7 +50,25 @@ function messageFrom(err: unknown): string {
   return 'Network error'
 }
 
+function readStepUp(slot: { current: { token: string; expiresAt: number } | null }): string | null {
+  const held = slot.current
+  if (!held || held.expiresAt <= Date.now()) {
+    slot.current = null
+    return null
+  }
+  return held.token
+}
+
+function storeStepUp(
+  slot: { current: { token: string; expiresAt: number } | null },
+  token: string,
+  expiresIn: number,
+) {
+  slot.current = { token, expiresAt: Date.now() + Math.max(expiresIn - 2, 1) * 1000 }
+}
+
 function accountError(code: string): string {
+  if (code === 'invalid_credentials') return 'That credential was not accepted.'
   if (code === 'last_credential') {
     return 'Keep a password or a passkey so this account can still sign in.'
   }
@@ -258,7 +276,8 @@ export function LoginForm() {
         await finishSession(finished)
       } catch (err) {
         if (cancelled || controller.signal.aborted || ignoredPasskeyError(err)) return
-        setError(messageFrom(err))
+        if (err instanceof Error && err.message === 'cancelled') return
+      setError(messageFrom(err))
       }
     })()
     return () => {
@@ -308,6 +327,7 @@ export function LoginForm() {
       })
       await finishSession(response)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -328,6 +348,7 @@ export function LoginForm() {
       })
       await finishSession(response)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -344,6 +365,7 @@ export function LoginForm() {
       })
       await finishSession(response)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -375,6 +397,7 @@ export function LoginForm() {
       })
       await finishSession(finished)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -652,12 +675,125 @@ export function AccountPanel() {
   const [addingPasskey, setAddingPasskey] = useState(false)
   const [password, setPassword] = useState('')
   const [settingPassword, setSettingPassword] = useState(false)
+  const [stepUpPassword, setStepUpPassword] = useState('')
+  const [stepUpError, setStepUpError] = useState<string | null>(null)
+  const [stepUpBusy, setStepUpBusy] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canPasskey = passkeySupported()
   const passwordSet = user?.has_password ?? false
   const canRemovePassword = passkeysLoaded && passwordSet && passkeys.length > 0
   const solePasskey = !passwordSet && passkeys.length <= 1
+  const stepUpToken = useRef<{ token: string; expiresAt: number } | null>(null)
+  const stepUpWait = useRef<{
+    resolve: (token: string) => void
+    reject: (err: Error) => void
+  } | null>(null)
+  const [stepUpOpen, setStepUpOpen] = useState(false)
+
+  function askStepUp(): Promise<string> {
+    const existing = readStepUp(stepUpToken)
+    if (existing) return Promise.resolve(existing)
+    return new Promise((resolve, reject) => {
+      stepUpWait.current = { resolve, reject }
+      setStepUpPassword('')
+      setStepUpError(null)
+      setStepUpOpen(true)
+    })
+  }
+
+  function cancelStepUp() {
+    stepUpWait.current?.reject(new Error('cancelled'))
+    stepUpWait.current = null
+    setStepUpOpen(false)
+    setStepUpPassword('')
+    setStepUpError(null)
+  }
+
+  function finishStepUp(token: string, expiresIn: number) {
+    storeStepUp(stepUpToken, token, expiresIn)
+    const waiting = stepUpWait.current
+    stepUpWait.current = null
+    setStepUpOpen(false)
+    setStepUpPassword('')
+    setStepUpError(null)
+    waiting?.resolve(token)
+  }
+
+  async function withStepUp(run: (token: string) => Promise<Response>): Promise<Response> {
+    let token = await askStepUp()
+    let response = await run(token)
+    if (response.status !== 403) return response
+    const code = await readError(response.clone())
+    if (code !== 'step_up_required' && code !== 'step_up_invalid') return response
+    stepUpToken.current = null
+    token = await askStepUp()
+    return run(token)
+  }
+
+  async function submitStepUpPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user) return
+    setStepUpBusy(true)
+    setStepUpError(null)
+    try {
+      const response = await api('/api/auth/step-up/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: user.email, password: stepUpPassword }),
+      })
+      if (!response.ok) {
+        setStepUpError(accountError(await readError(response)))
+        return
+      }
+      const token = response.headers.get('x-step-up-token')
+      const body = (await response.json()) as { expires_in?: number }
+      if (!token) {
+        setStepUpError('Re-authentication did not return a token')
+        return
+      }
+      finishStepUp(token, body.expires_in ?? 300)
+    } catch (err) {
+      setStepUpError(messageFrom(err))
+    } finally {
+      setStepUpBusy(false)
+    }
+  }
+
+  async function submitStepUpPasskey() {
+    setStepUpBusy(true)
+    setStepUpError(null)
+    try {
+      const started = await api('/api/auth/step-up/passkeys/login/options', {
+        method: 'POST',
+        body: '{}',
+      })
+      if (!started.ok) {
+        setStepUpError(accountError(await readError(started)))
+        return
+      }
+      const ceremony = (await started.json()) as CeremonyStart
+      const credential = await getPasskey(ceremony.options)
+      const finished = await api('/api/auth/step-up/passkeys/login', {
+        method: 'POST',
+        body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
+      })
+      if (!finished.ok) {
+        setStepUpError(accountError(await readError(finished)))
+        return
+      }
+      const token = finished.headers.get('x-step-up-token')
+      const body = (await finished.json()) as { expires_in?: number }
+      if (!token) {
+        setStepUpError('Re-authentication did not return a token')
+        return
+      }
+      finishStepUp(token, body.expires_in ?? 300)
+    } catch (err) {
+      setStepUpError(messageFrom(err))
+    } finally {
+      setStepUpBusy(false)
+    }
+  }
 
   async function loadPasskeys() {
     const response = await api('/api/auth/passkeys')
@@ -678,20 +814,26 @@ export function AccountPanel() {
     setBusy(true)
     setError(null)
     try {
-      const started = await api('/api/auth/passkeys/register/options', {
-        method: 'POST',
-        body: JSON.stringify({ label: passkeyLabel.trim() || undefined }),
-      })
+      const started = await withStepUp((token) =>
+        api('/api/auth/passkeys/register/options', {
+          method: 'POST',
+          headers: { 'X-Step-Up-Token': token },
+          body: JSON.stringify({ label: passkeyLabel.trim() || undefined }),
+        }),
+      )
       if (!started.ok) {
         setError(await readError(started))
         return
       }
       const ceremony = (await started.json()) as CeremonyStart
       const credential = await createPasskey(ceremony.options)
-      const finished = await api('/api/auth/passkeys/register', {
-        method: 'POST',
-        body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
-      })
+      const finished = await withStepUp((token) =>
+        api('/api/auth/passkeys/register', {
+          method: 'POST',
+          headers: { 'X-Step-Up-Token': token },
+          body: JSON.stringify({ flow_id: ceremony.flow_id, credential }),
+        }),
+      )
       if (!finished.ok) {
         setError(await readError(finished))
         return
@@ -700,6 +842,7 @@ export function AccountPanel() {
       setAddingPasskey(false)
       await loadPasskeys()
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -710,13 +853,19 @@ export function AccountPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await api(`/api/auth/passkeys/${publicId}`, { method: 'DELETE' })
+      const response = await withStepUp((token) =>
+        api(`/api/auth/passkeys/${publicId}`, {
+          method: 'DELETE',
+          headers: { 'X-Step-Up-Token': token },
+        }),
+      )
       if (!response.ok) {
         setError(accountError(await readError(response)))
         return
       }
       await loadPasskeys()
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -728,10 +877,13 @@ export function AccountPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await api('/api/auth/password', {
-        method: 'PUT',
-        body: JSON.stringify({ password }),
-      })
+      const response = await withStepUp((token) =>
+        api('/api/auth/password', {
+          method: 'PUT',
+          headers: { 'X-Step-Up-Token': token },
+          body: JSON.stringify({ password }),
+        }),
+      )
       if (!response.ok) {
         setError(accountError(await readError(response)))
         return
@@ -740,6 +892,7 @@ export function AccountPanel() {
       setPassword('')
       setSettingPassword(false)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -750,7 +903,12 @@ export function AccountPanel() {
     setBusy(true)
     setError(null)
     try {
-      const response = await api('/api/auth/password', { method: 'DELETE' })
+      const response = await withStepUp((token) =>
+        api('/api/auth/password', {
+          method: 'DELETE',
+          headers: { 'X-Step-Up-Token': token },
+        }),
+      )
       if (!response.ok) {
         setError(accountError(await readError(response)))
         return
@@ -759,6 +917,7 @@ export function AccountPanel() {
       setPassword('')
       setSettingPassword(false)
     } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
       setError(messageFrom(err))
     } finally {
       setBusy(false)
@@ -788,6 +947,61 @@ export function AccountPanel() {
           {error}
         </p>
       ) : null}
+      {stepUpOpen ? (
+        <div className="mt-5 border-t border-ring/50 pt-5">
+          <h3 className="text-sm font-semibold tracking-wide text-ink">Confirm it's you</h3>
+          <p className="mt-3 text-sm text-ink">{user?.email}</p>
+          {stepUpError ? (
+            <p className="mt-3 text-sm text-ink" role="alert">
+              {stepUpError}
+            </p>
+          ) : null}
+          {passwordSet ? (
+            <form onSubmit={(event) => void submitStepUpPassword(event)} className="mt-4">
+              <label className="block text-sm text-ink-muted">
+                Password
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  minLength={15}
+                  maxLength={256}
+                  value={stepUpPassword}
+                  onChange={(event) => setStepUpPassword(event.target.value)}
+                  className={inputClassName}
+                  disabled={stepUpBusy}
+                  autoFocus
+                />
+              </label>
+              <button
+                type="submit"
+                className={`mt-6 w-full ${primaryButtonClassName}`}
+                disabled={stepUpBusy}
+              >
+                Confirm password
+              </button>
+            </form>
+          ) : null}
+          {passkeys.length > 0 && canPasskey ? (
+            <button
+              type="button"
+              className={`mt-3 w-full ${passwordSet ? secondaryButtonClassName : primaryButtonClassName}`}
+              disabled={stepUpBusy}
+              onClick={() => void submitStepUpPasskey()}
+            >
+              Use a passkey
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={stepUpBusy}
+            onClick={cancelStepUp}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
       <div className="mt-5 border-t border-ring/50 pt-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Password</h3>
@@ -796,7 +1010,7 @@ export function AccountPanel() {
               <button
                 type="button"
                 className={secondaryButtonClassName}
-                disabled={busy}
+                disabled={busy || !passkeysLoaded}
                 onClick={() => {
                   setError(null)
                   setPassword('')
@@ -854,7 +1068,7 @@ export function AccountPanel() {
             <button
               type="button"
               className={secondaryButtonClassName}
-              disabled={busy || !canPasskey}
+              disabled={busy || !canPasskey || !passkeysLoaded}
               onClick={() => {
                 setError(null)
                 setPasskeyLabel('')

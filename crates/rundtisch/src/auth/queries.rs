@@ -6,7 +6,9 @@ use sea_orm::{
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::auth::entities::{invitation, passkey, recovery_token, session, user, webauthn_state};
+use crate::auth::entities::{
+    invitation, passkey, recovery_token, session, step_up, user, webauthn_state,
+};
 use crate::auth::error::DbError;
 use crate::auth::models::{
     CeremonyRecord, InvitationRecord, NewUser, PasskeyRecord, Session, User,
@@ -232,6 +234,50 @@ pub async fn revoke_all_sessions<C: ConnectionTrait>(
         .col_expr(session::Column::RevokedAt, Expr::value(revoked_at))
         .filter(session::Column::UserId.eq(user_id))
         .filter(session::Column::RevokedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn insert_step_up<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    token_hash: &str,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let model = step_up::ActiveModel {
+        user_id: Set(user_id),
+        token_hash: Set(token_hash.to_owned()),
+        created_at: Set(created_at),
+        expires_at: Set(expires_at),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn get_step_up_by_token_hash<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+) -> Result<Option<step_up::Model>, DbError> {
+    step_up::Entity::find()
+        .filter(step_up::Column::TokenHash.eq(token_hash))
+        .one(db)
+        .await
+        .map_err(DbError::from)
+}
+
+pub async fn revoke_all_step_ups<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    revoked_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    step_up::Entity::update_many()
+        .col_expr(step_up::Column::RevokedAt, Expr::value(revoked_at))
+        .filter(step_up::Column::UserId.eq(user_id))
+        .filter(step_up::Column::RevokedAt.is_null())
         .exec(db)
         .await
         .map_err(DbError::from)?;

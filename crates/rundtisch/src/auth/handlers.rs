@@ -1,5 +1,5 @@
 use crate::AppState;
-use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL};
+use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL, STEP_UP_HEADER};
 use crate::auth::error::AuthError;
 use crate::auth::extract::presented_token;
 use crate::auth::extract::{SessionUser, secret_bytes};
@@ -8,16 +8,16 @@ use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_polic
 use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
     delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
-    clear_session_password, finish_session_passkey, list_passkey_info, login_with_password,
-    logout_all_for_user, logout_current, request_recovery, set_session_password,
-    start_invite_passkey, start_passkey_login,
-    start_recovery_passkey, start_session_passkey,
+    clear_session_password, finish_session_passkey, finish_step_up_passkey_login, list_passkey_info,
+    login_with_password, logout_all_for_user, logout_current, request_recovery,
+    set_session_password, start_invite_passkey, start_passkey_login, start_recovery_passkey,
+    start_session_passkey, start_step_up_passkey_login, step_up_with_password, authenticate_step_up,
 };
 use crate::auth::session::{cap_user_agent, clear_session_cookie_header, session_cookie_header};
 use crate::auth::webauthn::PasskeyCeremony;
 use axum::Json;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::IntoResponse;
 use email_address::EmailAddress;
 use serde::Deserialize;
@@ -323,6 +323,114 @@ pub async fn passkey_login(
     }
 }
 
+fn step_up_token_header(headers: &HeaderMap) -> Option<String> {
+    let value = headers.get(STEP_UP_HEADER)?.to_str().ok()?.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+async fn require_step_up(
+    state: &AppState,
+    headers: &HeaderMap,
+    user_id: i64,
+) -> Result<(), AuthError> {
+    let Some(token) = step_up_token_header(headers) else {
+        return Err(AuthError::StepUpRequired);
+    };
+    let pepper = secret_bytes(state, AUTH_HASH_PEPPER, 32)?;
+    authenticate_step_up(&state.db, &pepper, &token, user_id).await
+}
+
+fn step_up_response(token: &str, expires_in: i64) -> axum::response::Response {
+    let mut response = (
+        StatusCode::OK,
+        Json(json!({
+            "expires_in": expires_in,
+            "token_type": "StepUp",
+        })),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        HeaderName::from_static(STEP_UP_HEADER),
+        HeaderValue::from_str(token).expect("step-up token is header-safe"),
+    );
+    response
+}
+
+pub async fn step_up_login(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(mut body): Json<LoginBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let password_hasher = hasher(&state)?;
+        let grant = step_up_with_password(
+            &state.db,
+            &pepper,
+            password_hasher.as_ref(),
+            &user,
+            body.email.as_ref(),
+            &body.password,
+        )
+        .await;
+        body.password.zeroize();
+        let grant = grant?;
+        Ok(step_up_response(&grant.token, grant.expires_in))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn step_up_passkey_login_options(
+    State(state): State<AppState>,
+    SessionUser(_user): SessionUser,
+    Json(_body): Json<PasskeyLoginOptionsBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let (flow_id, options) = start_step_up_passkey_login(&state.db, &ceremony).await?;
+        Ok(ceremony_response(flow_id, options))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn step_up_passkey_login(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(body): Json<FlowCredentialBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let grant = finish_step_up_passkey_login(
+            &state.db,
+            &pepper,
+            &ceremony,
+            user.id,
+            &body.flow_id,
+            &body.credential,
+        )
+        .await?;
+        Ok(step_up_response(&grant.token, grant.expires_in))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
 pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
     if let Some(token) = presented_token(&headers) {
         if let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) {
@@ -365,10 +473,12 @@ pub struct SetPasswordBody {
 /// password and does not revoke sessions.
 pub async fn set_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     SessionUser(user): SessionUser,
     Json(mut body): Json<SetPasswordBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
+        require_step_up(&state, &headers, user.id).await?;
         if let Err(err) = check_password_policy(&body.password) {
             body.password.zeroize();
             return Err(err.into());
@@ -395,9 +505,15 @@ pub async fn set_password(
 /// Remove the password when at least one passkey remains.
 pub async fn clear_password(
     State(state): State<AppState>,
+    headers: HeaderMap,
     SessionUser(user): SessionUser,
 ) -> impl IntoResponse {
-    match clear_session_password(&state.db, user.id).await {
+    let result = async {
+        require_step_up(&state, &headers, user.id).await?;
+        clear_session_password(&state.db, user.id).await
+    }
+    .await;
+    match result {
         Ok(updated) => Json(AccountView::from(&updated)).into_response(),
         Err(err) => err.into_response(),
     }
@@ -517,10 +633,12 @@ pub async fn list_passkeys(
 
 pub async fn passkey_register_options(
     State(state): State<AppState>,
+    headers: HeaderMap,
     SessionUser(user): SessionUser,
     Json(body): Json<PasskeyOptionsBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
+        require_step_up(&state, &headers, user.id).await?;
         let passkey_label = normalize_passkey_label(body.label)?;
         let ceremony = PasskeyCeremony::from_app(&state)?;
         let (flow_id, options) =
@@ -536,10 +654,12 @@ pub async fn passkey_register_options(
 
 pub async fn passkey_register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     SessionUser(user): SessionUser,
     Json(body): Json<FlowCredentialBody>,
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
+        require_step_up(&state, &headers, user.id).await?;
         let ceremony = PasskeyCeremony::from_app(&state)?;
         let info = finish_session_passkey(
             &state.db,
@@ -560,10 +680,16 @@ pub async fn passkey_register(
 
 pub async fn passkey_delete(
     State(state): State<AppState>,
+    headers: HeaderMap,
     SessionUser(user): SessionUser,
     Path(public_id): Path<Uuid>,
 ) -> impl IntoResponse {
-    match delete_passkey(&state.db, user.id, public_id).await {
+    let result = async {
+        require_step_up(&state, &headers, user.id).await?;
+        delete_passkey(&state.db, user.id, public_id).await
+    }
+    .await;
+    match result {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(err) => err.into_response(),
     }
@@ -648,6 +774,18 @@ mod tests {
                 "/api/auth/passkeys/login",
                 axum::routing::post(passkey_login),
             )
+            .route(
+                "/api/auth/step-up/login",
+                axum::routing::post(step_up_login),
+            )
+            .route(
+                "/api/auth/step-up/passkeys/login/options",
+                axum::routing::post(step_up_passkey_login_options),
+            )
+            .route(
+                "/api/auth/step-up/passkeys/login",
+                axum::routing::post(step_up_passkey_login),
+            )
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
@@ -728,6 +866,50 @@ mod tests {
             .oneshot(req.body(Body::from(body.to_string())).unwrap())
             .await
             .unwrap()
+    }
+
+    async fn post_json_step(
+        app: &axum::Router,
+        path: &str,
+        body: serde_json::Value,
+        cookie: &str,
+        step_up: &str,
+    ) -> axum::http::Response<Body> {
+        app.clone()
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .header("cookie", cookie)
+                    .header("x-step-up-token", step_up)
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
+    async fn password_step_up(
+        app: &axum::Router,
+        cookie: &str,
+        email: &str,
+        password: &str,
+    ) -> String {
+        let response = post_json(
+            app,
+            "/api/auth/step-up/login",
+            json!({"email": email, "password": password}),
+            Some(cookie),
+            None,
+        )
+        .await;
+        assert_eq!(response.status(), HttpStatus::OK, "step-up login");
+        response
+            .headers()
+            .get("x-step-up-token")
+            .expect("step-up header")
+            .to_str()
+            .unwrap()
+            .to_string()
     }
 
     async fn invite(db: &sea_orm::DatabaseConnection, email: &str) -> String {
@@ -1058,11 +1240,34 @@ mod tests {
         let (status, json) = body_json(registered).await;
         assert_eq!(status, HttpStatus::CREATED, "{json}");
 
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::delete("/api/auth/password")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, err) = body_json(missing).await;
+        assert_eq!(status, HttpStatus::FORBIDDEN, "{err}");
+        assert_eq!(err["error"], "step_up_required");
+
+        let step = password_step_up(
+            &app,
+            &cookie,
+            "pw@example.com",
+            "unique-passphrase-ok",
+        )
+        .await;
+
         let removed = app
             .clone()
             .oneshot(
                 Request::delete("/api/auth/password")
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1077,6 +1282,7 @@ mod tests {
             .oneshot(
                 Request::put("/api/auth/password")
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .header("content-type", "application/json")
                     .body(Body::from(
                         json!({"password": "another-passphrase-ok"}).to_string(),
@@ -1127,12 +1333,12 @@ mod tests {
         assert_eq!(new_login.status(), HttpStatus::OK);
 
         let mut authenticator = authenticator();
-        let started = post_json(
+        let started = post_json_step(
             &app,
             "/api/auth/passkeys/register/options",
             json!({"label": "Phone"}),
-            Some(&cookie),
-            None,
+            &cookie,
+            &step,
         )
         .await;
         let (status, options_json) = body_json(started).await;
@@ -1141,12 +1347,12 @@ mod tests {
         let options: CreationChallengeResponse =
             serde_json::from_value(options_json["options"].clone()).expect("creation options");
         let credential = register_soft(&mut authenticator, options);
-        let finished = post_json(
+        let finished = post_json_step(
             &app,
             "/api/auth/passkeys/register",
             json!({"flow_id": flow_id, "credential": credential}),
-            Some(&cookie),
-            None,
+            &cookie,
+            &step,
         )
         .await;
         let (status, created_json) = body_json(finished).await;
@@ -1161,6 +1367,7 @@ mod tests {
             .oneshot(
                 Request::delete(format!("/api/auth/passkeys/{passkey_id}"))
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1173,6 +1380,7 @@ mod tests {
             .oneshot(
                 Request::delete("/api/auth/password")
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1183,12 +1391,12 @@ mod tests {
         assert_eq!(err["error"], "last_credential");
 
         let mut authenticator = crate::auth::handlers::tests::authenticator();
-        let started = post_json(
+        let started = post_json_step(
             &app,
             "/api/auth/passkeys/register/options",
             json!({}),
-            Some(&cookie),
-            None,
+            &cookie,
+            &step,
         )
         .await;
         let (status, options_json) = body_json(started).await;
@@ -1197,12 +1405,12 @@ mod tests {
         let options: CreationChallengeResponse =
             serde_json::from_value(options_json["options"].clone()).expect("creation options");
         let credential = register_soft(&mut authenticator, options);
-        let finished = post_json(
+        let finished = post_json_step(
             &app,
             "/api/auth/passkeys/register",
             json!({"flow_id": flow_id, "credential": credential}),
-            Some(&cookie),
-            None,
+            &cookie,
+            &step,
         )
         .await;
         assert_eq!(finished.status(), HttpStatus::CREATED);
@@ -1212,6 +1420,7 @@ mod tests {
             .oneshot(
                 Request::delete("/api/auth/password")
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1265,6 +1474,7 @@ mod tests {
             .oneshot(
                 Request::delete(format!("/api/auth/passkeys/{passkey_id}"))
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -1367,11 +1577,42 @@ mod tests {
         assert!(listed_json["passkeys"][0].get("id").is_none());
         // SoftPasskey puts a nil AAGUID in authData; we persist NULL for that.
         assert!(listed_json["passkeys"][0]["aaguid"].is_null());
+        let step_started = post_json(
+            &app,
+            "/api/auth/step-up/passkeys/login/options",
+            json!({}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        let (status, step_json) = body_json(step_started).await;
+        assert_eq!(status, HttpStatus::OK, "{step_json}");
+        let step_flow = step_json["flow_id"].as_str().unwrap().to_string();
+        let request: RequestChallengeResponse =
+            serde_json::from_value(step_json["options"].clone()).expect("step-up options");
+        let assertion = login_soft(&mut authenticator, request, &credential_id, public_id);
+        let stepped = post_json(
+            &app,
+            "/api/auth/step-up/passkeys/login",
+            json!({"flow_id": step_flow, "credential": assertion}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        let step = stepped
+            .headers()
+            .get("x-step-up-token")
+            .expect("step-up header")
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert_eq!(stepped.status(), HttpStatus::OK);
         let public_id = listed_json["passkeys"][0]["public_id"].as_str().unwrap();
         let deleted = app
             .oneshot(
                 Request::delete(format!("/api/auth/passkeys/{public_id}"))
                     .header("cookie", &cookie)
+                    .header("x-step-up-token", &step)
                     .body(Body::empty())
                     .unwrap(),
             )
