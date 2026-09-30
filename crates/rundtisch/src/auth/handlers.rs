@@ -1,47 +1,51 @@
-use crate::auth::config::{
-    ACCESS_TTL, AUTH_HASH_PEPPER, AUTH_JWT_ACCESS_SECRET, AUTH_JWT_VERIFY_SECRET, SESSION_COOKIE,
-    SESSION_TTL,
-};
-use crate::auth::error::{AuthError, DbError};
-use crate::auth::extract::{AdminUser, BearerUser, secret_bytes};
-use crate::auth::jwt::{issue_access_token, issue_activation_token, verify_activation_token};
-use crate::auth::models::{NewUser, Role, UpdateUserAlias, User};
-use crate::auth::password::{
-    Argon2idHasher, PasswordHasher, check_password_policy, dummy_verify,
-};
-#[cfg(test)]
-use crate::auth::password::TestPasswordHasher;
-use crate::auth::queries::{
-    delete_user as delete_user_row, get_session_by_token_hash, get_user_by_email, get_user_by_id,
-    get_user_by_public_id, insert_session, insert_user, list_users as list_user_rows,
-    revoke_session, rotate_session, touch_last_login, update_user_alias, verify_email,
-};
-use crate::auth::session::{
-    cap_user_agent, clear_session_cookie_header, cookie_value, generate_session_token,
-    session_cookie_header, token_hash,
-};
 use crate::AppState;
+use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL};
+use crate::auth::error::AuthError;
+use crate::auth::extract::presented_token;
+use crate::auth::extract::{SessionUser, secret_bytes};
+use crate::auth::models::{AccountView, SessionGrant};
+use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_policy};
+use crate::auth::services::{
+    complete_password_recovery, complete_password_registration, create_recovery_token,
+    delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
+    finish_session_passkey, list_passkey_info, login_with_password, logout_all_for_user,
+    logout_current, request_recovery, start_invite_passkey, start_passkey_login,
+    start_recovery_passkey, start_session_passkey,
+};
+use crate::auth::session::{cap_user_agent, clear_session_cookie_header, session_cookie_header};
+use crate::auth::webauthn::PasskeyCeremony;
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::IntoResponse;
 use email_address::EmailAddress;
 use serde::Deserialize;
-use serde_json::json;
-use time::OffsetDateTime;
+use serde_json::{Value, json};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
+#[cfg(test)]
+use crate::auth::password::TestPasswordHasher;
+
 #[derive(Debug, Deserialize)]
-pub struct RegisterBody {
-    pub email: EmailAddress,
+pub struct RegisterPasswordBody {
+    pub token: String,
     pub password: String,
     pub alias: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ActivateBody {
+pub struct InvitePasskeyOptionsBody {
     pub token: String,
+    pub alias: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FlowCredentialBody {
+    pub flow_id: String,
+    pub credential: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -50,429 +54,583 @@ pub struct LoginBody {
     pub password: String,
 }
 
-fn now() -> OffsetDateTime {
-    OffsetDateTime::now_utc()
+/// Usernameless passkey login. An email would let the options response
+/// reveal whether that account has a credential.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasskeyLoginOptionsBody {}
+
+#[derive(Debug, Deserialize)]
+pub struct RequestResetBody {
+    pub email: EmailAddress,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordBody {
+    pub token: String,
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RecoveryTokenBody {
+    pub token: String,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PasskeyOptionsBody {
+    #[serde(default)]
+    pub label: Option<String>,
 }
 
 fn hasher(state: &AppState) -> Result<Box<dyn PasswordHasher>, AuthError> {
     #[cfg(test)]
-    if std::env::var("RUNDTISCH_TEST_PASSWORD_HASHER").ok().as_deref() == Some("1") {
+    if std::env::var("RUNDTISCH_TEST_PASSWORD_HASHER")
+        .ok()
+        .as_deref()
+        == Some("1")
+    {
         return Ok(Box::new(TestPasswordHasher));
     }
     let pepper = secret_bytes(state, AUTH_HASH_PEPPER, 32)?;
     Ok(Box::new(Argon2idHasher::new(pepper)))
 }
 
-fn normalize_alias(alias: String) -> Result<String, DbError> {
+fn normalize_alias(alias: String) -> Result<String, AuthError> {
     let trimmed = alias.trim().to_string();
-    if trimmed.is_empty() {
-        Err(DbError::TypeMismatch)
+    if trimmed.is_empty() || trimmed.len() > 128 {
+        Err(AuthError::TypeMismatch)
     } else {
         Ok(trimmed)
     }
 }
 
-pub async fn list_users(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-) -> impl IntoResponse {
-    match list_user_rows(&state.db).await {
-        Ok(users) => Json(json!({"result": users})).into_response(),
-        Err(e) => e.into_response(),
-    }
-}
-
-pub async fn create_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Json(mut new_user): Json<NewUser>,
-) -> impl IntoResponse {
-    match normalize_alias(new_user.alias) {
-        Ok(alias) => new_user.alias = alias,
-        Err(e) => return e.into_response(),
-    }
-    new_user.assign_public_id();
-    new_user.stamp_now(now());
-    match insert_user(&state.db, &new_user).await {
-        Ok(id) => (
-            StatusCode::CREATED,
-            Json(json!({"result": User::from_new(id, new_user)})),
-        )
-            .into_response(),
-        Err(e) => e.into_response(),
-    }
-}
-
-pub async fn update_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Path(public_id): Path<Uuid>,
-    Json(body): Json<UpdateUserAlias>,
-) -> impl IntoResponse {
-    let alias = match normalize_alias(body.alias) {
-        Ok(alias) => alias,
-        Err(e) => return e.into_response(),
+fn normalize_passkey_label(label: Option<String>) -> Result<Option<String>, AuthError> {
+    let Some(label) = label else {
+        return Ok(None);
     };
-    let updated_at = now();
-    match update_user_alias(&state.db, public_id, &alias, updated_at).await {
-        Ok(_) => match get_user_by_public_id(&state.db, public_id).await {
-            Ok(user) => Json(json!({"result": user})).into_response(),
-            Err(e) => e.into_response(),
-        },
-        Err(e) => e.into_response(),
+    let label = label.trim().to_string();
+    if label.is_empty() {
+        return Ok(None);
     }
-}
-
-pub async fn delete_user(
-    State(state): State<AppState>,
-    _admin: AdminUser,
-    Path(public_id): Path<Uuid>,
-) -> impl IntoResponse {
-    match delete_user_row(&state.db, public_id).await {
-        Ok(0) => DbError::NotFound.into_response(),
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(e) => e.into_response(),
+    if label.chars().count() > 64 {
+        return Err(AuthError::TypeMismatch);
     }
+    Ok(Some(label))
 }
 
-fn user_json(user: &User) -> serde_json::Value {
-    json!({
-        "public_id": user.public_id,
-        "email": user.email,
-        "alias": user.alias,
-        "role": user.role,
-        "email_verified_at": user.email_verified_at.map(crate::auth::models::datetime_to_rfc3339),
-    })
-}
-
-async fn issue_tokens(
-    state: &AppState,
-    user: &User,
-    headers: &HeaderMap,
-) -> Result<(String, String), AuthError> {
-    let access_secret = secret_bytes(state, AUTH_JWT_ACCESS_SECRET, 32)?;
-    let pepper = secret_bytes(state, AUTH_HASH_PEPPER, 32)?;
-    let access_token = issue_access_token(user.public_id, user.role, &access_secret, now())?;
-    let raw = generate_session_token()
-        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
-    let hash = token_hash(&pepper, &raw)
-        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
-    let created = now();
-    insert_session(
-        &state.db,
-        user.id,
-        &hash,
-        created,
-        created + SESSION_TTL,
-        cap_user_agent(headers).as_deref(),
-    )
-    .await?;
-    Ok((access_token, raw))
-}
-
-fn login_response(
-    user: &User,
-    access_token: String,
-    raw_session: String,
-) -> axum::response::Response {
+fn session_response(status: StatusCode, grant: SessionGrant) -> axum::response::Response {
+    let account = AccountView::from(&grant.user);
     let mut response = (
-        StatusCode::OK,
+        status,
         Json(json!({
-            "access_token": access_token,
+            "token": grant.token,
             "token_type": "Bearer",
-            "expires_in": ACCESS_TTL.whole_seconds(),
-            "user": user_json(user),
+            "expires_in": grant.expires_in,
+            "user": account,
         })),
     )
         .into_response();
-    if let Ok(cookie) = session_cookie_header(&raw_session) {
+    if let Ok(cookie) = session_cookie_header(&grant.token) {
         response.headers_mut().insert(header::SET_COOKIE, cookie);
     }
     response
 }
 
-pub async fn register(
-    State(state): State<AppState>,
-    Json(body): Json<RegisterBody>,
-) -> impl IntoResponse {
-    match register_inner(state, body).await {
-        Ok(response) => response,
-        Err(err) => err.into_response(),
-    }
+fn ceremony_response(flow_id: String, options: Value) -> axum::response::Response {
+    Json(json!({
+        "flow_id": flow_id,
+        "options": options,
+    }))
+    .into_response()
 }
 
-async fn register_inner(
-    state: AppState,
-    mut body: RegisterBody,
-) -> Result<axum::response::Response, AuthError> {
-    if let Err(err) = check_password_policy(&body.password) {
-        body.password.zeroize();
-        return Err(err.into());
-    }
-    let alias = match body.alias {
-        Some(alias) => normalize_alias(alias).map_err(|_| AuthError::TypeMismatch)?,
-        None => body
-            .email
-            .as_ref()
-            .split('@')
-            .next()
-            .filter(|s| !s.is_empty())
-            .unwrap_or("user")
-            .to_string(),
-    };
-    let password_hasher = hasher(&state)?;
-    let password_hash = match password_hasher.hash(&body.password) {
-        Ok(hash) => hash,
-        Err(err) => {
+pub async fn register_with_token(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<RegisterPasswordBody>,
+) -> impl IntoResponse {
+    register_password(State(state), headers, Json(body)).await
+}
+
+pub async fn register_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(mut body): Json<RegisterPasswordBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        if let Err(err) = check_password_policy(&body.password) {
             body.password.zeroize();
             return Err(err.into());
         }
-    };
-    body.password.zeroize();
-    let mut new_user = NewUser::new(body.email.clone(), alias, Role::User, Some(password_hash));
-    new_user.assign_public_id();
-    new_user.stamp_now(now());
-    let id = insert_user(&state.db, &new_user).await?;
-    let user = User::from_new(id, new_user);
-    let verify_secret = secret_bytes(&state, AUTH_JWT_VERIFY_SECRET, 32)?;
-    let activation_token = issue_activation_token(
-        user.public_id,
-        user.email.as_ref(),
-        &verify_secret,
-        now(),
-    )?;
-    Ok((
-        StatusCode::CREATED,
-        Json(json!({
-            "result": user_json(&user),
-            "activation_token": activation_token,
-        })),
-    )
-        .into_response())
-}
-
-pub async fn activate(
-    State(state): State<AppState>,
-    Json(body): Json<ActivateBody>,
-) -> impl IntoResponse {
-    match activate_inner(state, body).await {
+        let alias = match body.alias {
+            Some(alias) => Some(normalize_alias(alias)?),
+            None => None,
+        };
+        let password_hasher = hasher(&state)?;
+        let password_hash = match password_hasher.hash(&body.password) {
+            Ok(hash) => hash,
+            Err(err) => {
+                body.password.zeroize();
+                return Err(err.into());
+            }
+        };
+        body.password.zeroize();
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let grant = complete_password_registration(
+            &state.db,
+            &pepper,
+            &body.token,
+            password_hash,
+            alias,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await?;
+        Ok(session_response(StatusCode::CREATED, grant))
+    }
+    .await;
+    match result {
         Ok(response) => response,
         Err(err) => err.into_response(),
     }
 }
 
-async fn activate_inner(
-    state: AppState,
-    body: ActivateBody,
-) -> Result<axum::response::Response, AuthError> {
-    let verify_secret = secret_bytes(&state, AUTH_JWT_VERIFY_SECRET, 32)?;
-    let claims = verify_activation_token(&body.token, &verify_secret, now())?;
-    let rows = verify_email(&state.db, claims.sub, &claims.email, now()).await?;
-    if rows == 0 {
-        return Err(AuthError::InvalidToken);
+pub async fn register_passkey_options(
+    State(state): State<AppState>,
+    Json(body): Json<InvitePasskeyOptionsBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let alias = match body.alias {
+            Some(alias) => Some(normalize_alias(alias)?),
+            None => None,
+        };
+        let passkey_label = normalize_passkey_label(body.label)?;
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let (flow_id, options) = start_invite_passkey(
+            &state.db,
+            &pepper,
+            &ceremony,
+            &body.token,
+            alias,
+            passkey_label,
+        )
+        .await?;
+        Ok(ceremony_response(flow_id, options))
     }
-    Ok(Json(json!({"result": "activated"})).into_response())
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn register_passkey(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<FlowCredentialBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let grant = finish_invite_passkey(
+            &state.db,
+            &pepper,
+            &ceremony,
+            &body.flow_id,
+            &body.credential,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await?;
+        Ok(session_response(StatusCode::CREATED, grant))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
 }
 
 pub async fn login(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(body): Json<LoginBody>,
+    Json(mut body): Json<LoginBody>,
 ) -> impl IntoResponse {
-    match login_inner(state, headers, body).await {
-        Ok(response) => response,
-        Err(err) => err.into_response(),
-    }
-}
-
-async fn login_inner(
-    state: AppState,
-    headers: HeaderMap,
-    mut body: LoginBody,
-) -> Result<axum::response::Response, AuthError> {
-    let password_hasher = hasher(&state)?;
-    let user = get_user_by_email(&state.db, body.email.as_ref()).await?;
-    let Some(user) = user else {
-        dummy_verify(password_hasher.as_ref(), &body.password);
-        body.password.zeroize();
-        return Err(AuthError::InvalidCredentials);
-    };
-    let Some(password_hash) = user.password_hash.as_deref() else {
-        dummy_verify(password_hasher.as_ref(), &body.password);
-        body.password.zeroize();
-        return Err(AuthError::InvalidCredentials);
-    };
-    let verified = match password_hasher.verify(&body.password, password_hash) {
-        Ok(ok) => ok,
-        Err(err) => {
-            body.password.zeroize();
-            return Err(err.into());
-        }
-    };
-    body.password.zeroize();
-    if !verified {
-        return Err(AuthError::InvalidCredentials);
-    }
-    if user.email_verified_at.is_none() {
-        return Err(AuthError::EmailNotVerified);
-    }
-    let (access_token, raw_session) = issue_tokens(&state, &user, &headers).await?;
-    let _ = touch_last_login(&state.db, user.public_id, now()).await;
-    Ok(login_response(&user, access_token, raw_session))
-}
-
-pub async fn refresh(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    match refresh_inner(state, headers).await {
-        Ok(response) => response,
-        Err(err) => err.into_response(),
-    }
-}
-
-async fn refresh_inner(
-    state: AppState,
-    headers: HeaderMap,
-) -> Result<axum::response::Response, AuthError> {
-    let raw = cookie_value(&headers, SESSION_COOKIE).ok_or(AuthError::InvalidToken)?;
-    let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
-    let hash = token_hash(&pepper, &raw)
-        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
-    let session = get_session_by_token_hash(&state.db, &hash)
-        .await?
-        .ok_or(AuthError::InvalidToken)?;
-    let created = now();
-    if session.revoked_at.is_some() || session.expires_at <= created {
-        return Err(AuthError::InvalidToken);
-    }
-    let user = get_user_by_id(&state.db, session.user_id).await?;
-    let new_raw = generate_session_token()
-        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
-    let new_hash = token_hash(&pepper, &new_raw)
-        .map_err(|err| AuthError::Token(crate::auth::jwt::TokenError::Backend(err)))?;
-    rotate_session(&state.db, session.id, &new_hash, created).await?;
-    let access_secret = secret_bytes(&state, AUTH_JWT_ACCESS_SECRET, 32)?;
-    let access_token = issue_access_token(user.public_id, user.role, &access_secret, now())?;
-    Ok(login_response(&user, access_token, new_raw))
-}
-
-pub async fn logout(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-) -> impl IntoResponse {
-    match logout_inner(state, headers).await {
-        Ok(response) => response,
-        Err(err) => err.into_response(),
-    }
-}
-
-async fn logout_inner(
-    state: AppState,
-    headers: HeaderMap,
-) -> Result<axum::response::Response, AuthError> {
-    if let Some(raw) = cookie_value(&headers, SESSION_COOKIE) {
+    let result: Result<axum::response::Response, AuthError> = async {
         let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
-        if let Ok(hash) = token_hash(&pepper, &raw) {
-            if let Ok(Some(session)) = get_session_by_token_hash(&state.db, &hash).await {
-                let _ = revoke_session(&state.db, session.id, now()).await;
-            }
+        let password_hasher = hasher(&state)?;
+        let grant = login_with_password(
+            &state.db,
+            &pepper,
+            password_hasher.as_ref(),
+            body.email.as_ref(),
+            &body.password,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await;
+        body.password.zeroize();
+        Ok(session_response(StatusCode::OK, grant?))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn passkey_login_options(
+    State(state): State<AppState>,
+    Json(_body): Json<PasskeyLoginOptionsBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let (flow_id, options) = start_passkey_login(&state.db, &ceremony).await?;
+        Ok(ceremony_response(flow_id, options))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn passkey_login(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<FlowCredentialBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let grant = finish_passkey_login(
+            &state.db,
+            &pepper,
+            &ceremony,
+            &body.flow_id,
+            &body.credential,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await?;
+        Ok(session_response(StatusCode::OK, grant))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+    if let Some(token) = presented_token(&headers) {
+        if let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) {
+            let _ = logout_current(&state.db, &pepper, &token).await;
         }
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
     response
         .headers_mut()
         .insert(header::SET_COOKIE, clear_session_cookie_header());
-    Ok(response)
+    response
 }
 
-pub async fn me(
+pub async fn logout_all(
     State(state): State<AppState>,
-    BearerUser(claims): BearerUser,
+    SessionUser(user): SessionUser,
 ) -> impl IntoResponse {
-    match get_user_by_public_id(&state.db, claims.sub).await {
-        Ok(user) => Json(json!({"result": user})).into_response(),
-        Err(e) => e.into_response(),
+    match logout_all_for_user(&state.db, user.id).await {
+        Ok(()) => {
+            let mut response = StatusCode::NO_CONTENT.into_response();
+            response
+                .headers_mut()
+                .insert(header::SET_COOKIE, clear_session_cookie_header());
+            response
+        }
+        Err(err) => err.into_response(),
     }
+}
+
+pub async fn me(SessionUser(user): SessionUser) -> impl IntoResponse {
+    Json(AccountView::from(&user)).into_response()
+}
+
+pub async fn request_reset(
+    State(state): State<AppState>,
+    Json(body): Json<RequestResetBody>,
+) -> impl IntoResponse {
+    let response = (
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "message": "If that account exists, a recovery link has been sent."
+        })),
+    );
+    let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) else {
+        return AuthError::Secrets.into_response();
+    };
+    match request_recovery(&state.db, &pepper, body.email.as_ref(), RECOVERY_TTL).await {
+        Ok(()) => response.into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn reset_password(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(mut body): Json<ResetPasswordBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        if let Err(err) = check_password_policy(&body.password) {
+            body.password.zeroize();
+            return Err(err.into());
+        }
+        let password_hasher = hasher(&state)?;
+        let password_hash = match password_hasher.hash(&body.password) {
+            Ok(hash) => hash,
+            Err(err) => {
+                body.password.zeroize();
+                return Err(err.into());
+            }
+        };
+        body.password.zeroize();
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let grant = complete_password_recovery(
+            &state.db,
+            &pepper,
+            &body.token,
+            password_hash,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await?;
+        Ok(session_response(StatusCode::OK, grant))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn reset_passkey_options(
+    State(state): State<AppState>,
+    Json(body): Json<RecoveryTokenBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let passkey_label = normalize_passkey_label(body.label)?;
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let (flow_id, options) =
+            start_recovery_passkey(&state.db, &pepper, &ceremony, &body.token, passkey_label)
+                .await?;
+        Ok(ceremony_response(flow_id, options))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn reset_passkey(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(body): Json<FlowCredentialBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let grant = finish_recovery_passkey(
+            &state.db,
+            &pepper,
+            &ceremony,
+            &body.flow_id,
+            &body.credential,
+            cap_user_agent(&headers).as_deref(),
+        )
+        .await?;
+        Ok(session_response(StatusCode::OK, grant))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn list_passkeys(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+) -> impl IntoResponse {
+    match list_passkey_info(&state.db, user.id).await {
+        Ok(passkeys) => Json(json!({"passkeys": passkeys})).into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn passkey_register_options(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(body): Json<PasskeyOptionsBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let passkey_label = normalize_passkey_label(body.label)?;
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let (flow_id, options) =
+            start_session_passkey(&state.db, &ceremony, &user, passkey_label).await?;
+        Ok(ceremony_response(flow_id, options))
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn passkey_register(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(body): Json<FlowCredentialBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let ceremony = PasskeyCeremony::from_app(&state)?;
+        let info = finish_session_passkey(
+            &state.db,
+            &ceremony,
+            user.id,
+            &body.flow_id,
+            &body.credential,
+        )
+        .await?;
+        Ok((StatusCode::CREATED, Json(json!({"passkey": info}))).into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+pub async fn passkey_delete(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Path(public_id): Path<Uuid>,
+) -> impl IntoResponse {
+    match delete_passkey(&state.db, user.id, public_id).await {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
+/// Operator helper used by the demo `auth-link` binary. Not an HTTP handler.
+pub async fn mint_invitation_link(
+    db: &sea_orm::DatabaseConnection,
+    pepper: &[u8],
+    email: &str,
+    ttl: time::Duration,
+) -> Result<String, AuthError> {
+    crate::auth::services::mint_invitation(db, pepper, email, ttl).await
+}
+
+pub async fn mint_recovery_link(
+    db: &sea_orm::DatabaseConnection,
+    pepper: &[u8],
+    email: &str,
+    ttl: time::Duration,
+) -> Result<Option<String>, AuthError> {
+    create_recovery_token(db, pepper, email, ttl).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::config::{AUTH_WEBAUTHN_RP_ID, AUTH_WEBAUTHN_RP_ORIGIN};
+    use crate::auth::entities::recovery_token;
     use crate::auth::migrations::Migrator;
-    use crate::auth::models::{NewUser, Role};
-    use crate::auth::queries::{insert_user, verify_email};
+    use crate::auth::services::{create_recovery_token, mint_invitation};
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
+    use sea_orm::{EntityTrait, PaginatorTrait};
     use sea_orm_migration::MigratorTrait;
+    use serde_json::json;
+    use time::Duration;
     use tower::ServiceExt;
+    use webauthn_authenticator_rs::WebauthnAuthenticator;
+    use webauthn_authenticator_rs::softpasskey::SoftPasskey;
+    use webauthn_rs::prelude::{
+        CreationChallengeResponse, PublicKeyCredential, RequestChallengeResponse, Url,
+    };
 
-    const ACCESS_SECRET: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const VERIFY_SECRET: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
 
     async fn app() -> (axum::Router, sea_orm::DatabaseConnection) {
         unsafe {
-            std::env::set_var(AUTH_JWT_ACCESS_SECRET, ACCESS_SECRET);
-            std::env::set_var(AUTH_JWT_VERIFY_SECRET, VERIFY_SECRET);
             std::env::set_var(AUTH_HASH_PEPPER, PEPPER);
+            std::env::set_var(AUTH_WEBAUTHN_RP_ID, "localhost");
+            std::env::set_var(AUTH_WEBAUTHN_RP_ORIGIN, "http://localhost:5173");
             std::env::set_var("RUNDTISCH_TEST_PASSWORD_HASHER", "1");
         }
-        let db = sea_orm::Database::connect("sqlite::memory:")
-            .await
-            .expect("sqlite");
+        let mut opts = sea_orm::ConnectOptions::new("sqlite::memory:");
+        opts.max_connections(1);
+        let db = sea_orm::Database::connect(opts).await.expect("sqlite");
         Migrator::up(&db, None).await.expect("migrate");
         let state = AppState { db: db.clone() };
         let router = axum::Router::new()
             .route(
-                "/api/auth/users",
-                axum::routing::get(list_users).post(create_user),
+                "/api/auth/register_with_token",
+                axum::routing::post(register_with_token),
             )
             .route(
-                "/api/auth/users/{public_id}",
-                axum::routing::patch(update_user).delete(delete_user),
+                "/api/auth/register/password",
+                axum::routing::post(register_password),
             )
-            .route("/api/auth/register", axum::routing::post(register))
-            .route("/api/auth/activate", axum::routing::post(activate))
+            .route(
+                "/api/auth/register/passkey/options",
+                axum::routing::post(register_passkey_options),
+            )
+            .route(
+                "/api/auth/register/passkey",
+                axum::routing::post(register_passkey),
+            )
             .route("/api/auth/login", axum::routing::post(login))
-            .route("/api/auth/refresh", axum::routing::post(refresh))
+            .route(
+                "/api/auth/passkeys/login/options",
+                axum::routing::post(passkey_login_options),
+            )
+            .route(
+                "/api/auth/passkeys/login",
+                axum::routing::post(passkey_login),
+            )
             .route("/api/auth/logout", axum::routing::post(logout))
+            .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
+            .route(
+                "/api/auth/request_reset",
+                axum::routing::post(request_reset),
+            )
+            .route("/api/auth/reset", axum::routing::post(reset_password))
+            .route(
+                "/api/auth/reset/passkey/options",
+                axum::routing::post(reset_passkey_options),
+            )
+            .route(
+                "/api/auth/reset/passkey",
+                axum::routing::post(reset_passkey),
+            )
+            .route("/api/auth/passkeys", axum::routing::get(list_passkeys))
+            .route(
+                "/api/auth/passkeys/register/options",
+                axum::routing::post(passkey_register_options),
+            )
+            .route(
+                "/api/auth/passkeys/register",
+                axum::routing::post(passkey_register),
+            )
+            .route(
+                "/api/auth/passkeys/{public_id}",
+                axum::routing::delete(passkey_delete),
+            )
             .with_state(state);
         (router, db)
-    }
-
-    async fn seed_verified_user(db: &sea_orm::DatabaseConnection, email: &str, role: Role) {
-        let mut new_user = NewUser::new(
-            email.parse().unwrap(),
-            email.split('@').next().unwrap(),
-            role,
-            Some("test:unique-passphrase-ok".into()),
-        );
-        new_user.assign_public_id();
-        new_user.stamp_now(OffsetDateTime::now_utc());
-        insert_user(db, &new_user).await.expect("insert");
-        verify_email(db, new_user.public_id, email, OffsetDateTime::now_utc())
-            .await
-            .expect("verify");
-    }
-
-    async fn login_access_token(app: &axum::Router, email: &str) -> String {
-        let response = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/login")
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!(
-                        r#"{{"email":"{email}","password":"unique-passphrase-ok"}}"#
-                    )))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let (status, json) = body_json(response).await;
-        assert_eq!(status, HttpStatus::OK, "{json}");
-        json["access_token"].as_str().unwrap().to_string()
     }
 
     async fn body_json(response: axum::http::Response<Body>) -> (HttpStatus, serde_json::Value) {
@@ -480,11 +638,14 @@ mod tests {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("body");
-        let json: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
+        if bytes.is_empty() {
+            return (status, serde_json::Value::Null);
+        }
+        let json = serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null);
         (status, json)
     }
 
-    fn cookie_header_from_response(response: &axum::http::Response<Body>) -> String {
+    fn cookie_pair(response: &axum::http::Response<Body>) -> String {
         response
             .headers()
             .get(header::SET_COOKIE)
@@ -497,168 +658,546 @@ mod tests {
             .to_string()
     }
 
-    #[tokio::test]
-    async fn create_list_delete_users() {
-        let (app, db) = app().await;
-        seed_verified_user(&db, "admin@example.com", Role::Admin).await;
-        let admin = login_access_token(&app, "admin@example.com").await;
-        let created = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/users")
-                    .header("content-type", "application/json")
-                    .header("authorization", format!("Bearer {admin}"))
-                    .body(Body::from(
-                        r#"{"email":"carol@example.com","alias":"carol","role":"User"}"#,
-                    ))
-                    .unwrap(),
-            )
+    async fn post_json(
+        app: &axum::Router,
+        path: &str,
+        body: serde_json::Value,
+        cookie: Option<&str>,
+        bearer: Option<&str>,
+    ) -> axum::http::Response<Body> {
+        let mut req = Request::post(path).header("content-type", "application/json");
+        if let Some(cookie) = cookie {
+            req = req.header("cookie", cookie);
+        }
+        if let Some(bearer) = bearer {
+            req = req.header("authorization", format!("Bearer {bearer}"));
+        }
+        app.clone()
+            .oneshot(req.body(Body::from(body.to_string())).unwrap())
             .await
-            .unwrap();
-        let (status, json) = body_json(created).await;
-        assert_eq!(status, HttpStatus::CREATED);
-        assert_eq!(json["result"]["email"], "carol@example.com");
-        let public_id = json["result"]["public_id"].as_str().unwrap().to_string();
-
-        let listed = app
-            .clone()
-            .oneshot(
-                Request::get("/api/auth/users")
-                    .header("authorization", format!("Bearer {admin}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let (status, json) = body_json(listed).await;
-        assert_eq!(status, HttpStatus::OK);
-        let listed_ids = json["result"]
-            .as_array()
             .unwrap()
-            .iter()
-            .map(|user| user["public_id"].as_str().unwrap().to_string())
-            .collect::<Vec<_>>();
-        assert!(listed_ids.contains(&public_id), "{listed_ids:?}");
+    }
 
-        let deleted = app
-            .oneshot(
-                Request::delete(format!("/api/auth/users/{public_id}"))
-                    .header("authorization", format!("Bearer {admin}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
+    async fn invite(db: &sea_orm::DatabaseConnection, email: &str) -> String {
+        mint_invitation(db, PEPPER.as_bytes(), email, Duration::hours(24))
             .await
-            .unwrap();
-        assert_eq!(deleted.status(), HttpStatus::NO_CONTENT);
+            .expect("invite")
+    }
+
+    fn authenticator() -> SoftPasskey {
+        SoftPasskey::new(true)
+    }
+
+    fn origin() -> Url {
+        Url::parse("http://localhost:5173").unwrap()
+    }
+
+    #[test]
+    fn passkey_labels_are_optional_trimmed_and_limited() {
+        assert_eq!(normalize_passkey_label(None).unwrap(), None);
+        assert_eq!(normalize_passkey_label(Some("   ".into())).unwrap(), None);
+        assert_eq!(
+            normalize_passkey_label(Some("  MacBook Touch ID  ".into())).unwrap(),
+            Some("MacBook Touch ID".into())
+        );
+        assert!(normalize_passkey_label(Some("x".repeat(65))).is_err());
+    }
+
+    /// SoftPasskey rejects requireResidentKey. The server still advertises it;
+    /// the test authenticator only clears the flag on its local copy.
+    fn register_soft(
+        authenticator: &mut SoftPasskey,
+        mut options: CreationChallengeResponse,
+    ) -> webauthn_rs::prelude::RegisterPublicKeyCredential {
+        if let Some(selection) = options.public_key.authenticator_selection.as_mut() {
+            selection.require_resident_key = false;
+        }
+        authenticator
+            .do_registration(origin(), options)
+            .expect("soft register")
+    }
+
+    fn assert_resident_key_required(json: &serde_json::Value) {
+        let selection = &json["options"]["publicKey"]["authenticatorSelection"];
+        assert_eq!(selection["residentKey"], "required");
+        assert_eq!(selection["requireResidentKey"], true);
+    }
+
+    fn assert_direct_attestation(json: &serde_json::Value) {
+        assert_eq!(json["options"]["publicKey"]["attestation"], "direct");
+    }
+
+    fn assert_discoverable_request(json: &serde_json::Value) {
+        let allow = &json["options"]["publicKey"]["allowCredentials"];
+        assert!(
+            allow.is_null() || allow.as_array().is_some_and(|items| items.is_empty()),
+            "{allow}"
+        );
+    }
+
+    /// SoftPasskey needs an allow list and does not return a user handle.
+    /// The signature does not cover userHandle, so attach the account public_id
+    /// after signing to exercise discoverable verification.
+    fn login_soft(
+        authenticator: &mut SoftPasskey,
+        request: RequestChallengeResponse,
+        credential_id: &str,
+        public_id: Uuid,
+    ) -> PublicKeyCredential {
+        let mut request = serde_json::to_value(&request).expect("request json");
+        request["publicKey"]["allowCredentials"] = json!([{
+            "type": "public-key",
+            "id": credential_id,
+        }]);
+        let request: RequestChallengeResponse =
+            serde_json::from_value(request).expect("request with allow list");
+        let mut assertion = authenticator
+            .do_authentication(origin(), request)
+            .expect("soft login");
+        assertion.response.user_handle = Some(public_id.as_bytes().to_vec());
+        assertion
     }
 
     #[tokio::test]
-    async fn user_management_rejects_missing_and_non_admin_tokens() {
+    async fn password_register_login_me_logout_and_replay() {
         let (app, db) = app().await;
-        let missing = app
-            .clone()
-            .oneshot(Request::get("/api/auth/users").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(missing.status(), HttpStatus::UNAUTHORIZED);
-
-        seed_verified_user(&db, "carol@example.com", Role::User).await;
-        let user = login_access_token(&app, "carol@example.com").await;
-        let forbidden = app
-            .oneshot(
-                Request::get("/api/auth/users")
-                    .header("authorization", format!("Bearer {user}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let (status, json) = body_json(forbidden).await;
-        assert_eq!(status, HttpStatus::FORBIDDEN);
-        assert_eq!(json["error"], "forbidden");
-    }
-
-    #[tokio::test]
-    async fn register_activate_login_me_refresh_logout() {
-        let (app, _) = app().await;
-        let registered = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/register")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"email":"carol@example.com","password":"unique-passphrase-ok","alias":"carol"}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
+        let token = invite(&db, "carol@example.com").await;
+        let registered = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok",
+                "alias": "carol"
+            }),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&registered);
         let (status, json) = body_json(registered).await;
-        assert_eq!(status, HttpStatus::CREATED);
-        let token = json["activation_token"].as_str().unwrap().to_string();
+        assert_eq!(status, HttpStatus::CREATED, "{json}");
+        let bearer = json["token"].as_str().unwrap().to_string();
+        assert_eq!(json["user"]["email"], "carol@example.com");
+        assert_eq!(json["user"]["has_password"], true);
 
-        let activated = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/activate")
-                    .header("content-type", "application/json")
-                    .body(Body::from(format!(r#"{{"token":"{token}"}}"#)))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(activated.status(), HttpStatus::OK);
-
-        let login = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/login")
-                    .header("content-type", "application/json")
-                    .body(Body::from(
-                        r#"{"email":"carol@example.com","password":"unique-passphrase-ok"}"#,
-                    ))
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let cookie = cookie_header_from_response(&login);
-        let (status, json) = body_json(login).await;
-        assert_eq!(status, HttpStatus::OK);
-        let access = json["access_token"].as_str().unwrap().to_string();
+        let replay = post_json(
+            &app,
+            "/api/auth/register_with_token",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok"
+            }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(replay.status(), HttpStatus::UNAUTHORIZED);
 
         let me = app
             .clone()
             .oneshot(
                 Request::get("/api/auth/me")
-                    .header("authorization", format!("Bearer {access}"))
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(me.status(), HttpStatus::OK);
-
-        let refreshed = app
-            .clone()
-            .oneshot(
-                Request::post("/api/auth/refresh")
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
-        assert_eq!(refreshed.status(), HttpStatus::OK);
+        let (status, me_json) = body_json(me).await;
+        assert_eq!(status, HttpStatus::OK, "{me_json}");
+        assert_eq!(me_json["alias"], "carol");
+
+        let me_bearer = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("authorization", format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(me_bearer.status(), HttpStatus::OK);
 
         let logout = app
+            .clone()
             .oneshot(
                 Request::post("/api/auth/logout")
-                    .header("cookie", cookie_header_from_response(&refreshed))
+                    .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
             )
             .await
             .unwrap();
         assert_eq!(logout.status(), HttpStatus::NO_CONTENT);
+        let after = app
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(after.status(), HttpStatus::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn concurrent_invitation_consumption_allows_one_account() {
+        let (app, db) = app().await;
+        let token = invite(&db, "race@example.com").await;
+        let body = json!({
+            "token": token,
+            "password": "unique-passphrase-ok",
+            "alias": "race"
+        });
+        let (left, right) = tokio::join!(
+            post_json(
+                &app,
+                "/api/auth/register/password",
+                body.clone(),
+                None,
+                None
+            ),
+            post_json(&app, "/api/auth/register/password", body, None, None),
+        );
+        let statuses = [left.status(), right.status()];
+        assert!(statuses.contains(&HttpStatus::CREATED), "{statuses:?}");
+        assert!(
+            statuses.contains(&HttpStatus::UNAUTHORIZED)
+                || statuses.contains(&HttpStatus::CONFLICT),
+            "{statuses:?}"
+        );
+        let ok = statuses
+            .iter()
+            .filter(|s| **s == HttpStatus::CREATED)
+            .count();
+        assert_eq!(ok, 1, "{statuses:?}");
+    }
+
+    #[tokio::test]
+    async fn login_rejects_unknown_user_and_missing_password() {
+        let (app, _) = app().await;
+        let response = post_json(
+            &app,
+            "/api/auth/login",
+            json!({"email": "missing@example.com", "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let (status, json) = body_json(response).await;
+        assert_eq!(status, HttpStatus::UNAUTHORIZED);
+        assert_eq!(json["error"], "invalid_credentials");
+    }
+
+    #[tokio::test]
+    async fn request_reset_does_not_enumerate_or_return_token() {
+        let (app, db) = app().await;
+        let token = invite(&db, "ada@example.com").await;
+        post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({"token": token, "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+
+        let known = post_json(
+            &app,
+            "/api/auth/request_reset",
+            json!({"email": "ada@example.com"}),
+            None,
+            None,
+        )
+        .await;
+        let (status, known_json) = body_json(known).await;
+        let missing = post_json(
+            &app,
+            "/api/auth/request_reset",
+            json!({"email": "nope@example.com"}),
+            None,
+            None,
+        )
+        .await;
+        let (missing_status, missing_json) = body_json(missing).await;
+        assert_eq!(status, HttpStatus::ACCEPTED);
+        assert_eq!(missing_status, status);
+        assert_eq!(known_json, missing_json);
+        assert!(known_json.get("token").is_none());
+        let count = recovery_token::Entity::find().count(&db).await.unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn password_recovery_revokes_old_sessions() {
+        let (app, db) = app().await;
+        let invite_token = invite(&db, "ada@example.com").await;
+        let registered = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({"token": invite_token, "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let old_cookie = cookie_pair(&registered);
+        let recovery = create_recovery_token(
+            &db,
+            PEPPER.as_bytes(),
+            "ada@example.com",
+            Duration::hours(1),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let reset = post_json(
+            &app,
+            "/api/auth/reset",
+            json!({"token": recovery, "password": "another-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let (status, json) = body_json(reset).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_eq!(json["user"]["has_password"], true);
+        let old = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", old_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(old.status(), HttpStatus::UNAUTHORIZED);
+        let login = post_json(
+            &app,
+            "/api/auth/login",
+            json!({"email": "ada@example.com", "password": "another-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(login.status(), HttpStatus::OK);
+    }
+
+    #[tokio::test]
+    async fn passkey_register_login_and_last_credential_guard() {
+        let (app, db) = app().await;
+        let token = invite(&db, "pk@example.com").await;
+        let mut authenticator = authenticator();
+        let started = post_json(
+            &app,
+            "/api/auth/register/passkey/options",
+            json!({"token": token, "alias": "pk", "label": "Security key"}),
+            None,
+            None,
+        )
+        .await;
+        let (status, json) = body_json(started).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_resident_key_required(&json);
+        assert_direct_attestation(&json);
+        let flow_id = json["flow_id"].as_str().unwrap().to_string();
+        let options: CreationChallengeResponse =
+            serde_json::from_value(json["options"].clone()).expect("creation options");
+        let credential = register_soft(&mut authenticator, options);
+        let credential_id = credential.id.clone();
+        let finished = post_json(
+            &app,
+            "/api/auth/register/passkey",
+            json!({
+                "flow_id": flow_id,
+                "credential": credential,
+            }),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&finished);
+        let (status, json) = body_json(finished).await;
+        assert_eq!(status, HttpStatus::CREATED, "{json}");
+        assert_eq!(json["user"]["has_password"], false);
+        let public_id = Uuid::parse_str(json["user"]["public_id"].as_str().unwrap()).unwrap();
+
+        let anonymous = post_json(
+            &app,
+            "/api/auth/passkeys/login/options",
+            json!({}),
+            None,
+            None,
+        )
+        .await;
+        let (status, login_json) = body_json(anonymous).await;
+        assert_eq!(status, HttpStatus::OK, "{login_json}");
+        assert_discoverable_request(&login_json);
+
+        let login_started = post_json(
+            &app,
+            "/api/auth/passkeys/login/options",
+            json!({}),
+            None,
+            None,
+        )
+        .await;
+        let (status, login_json) = body_json(login_started).await;
+        assert_eq!(status, HttpStatus::OK, "{login_json}");
+        assert_discoverable_request(&login_json);
+        let login_flow = login_json["flow_id"].as_str().unwrap().to_string();
+        let request: RequestChallengeResponse =
+            serde_json::from_value(login_json["options"].clone()).expect("request options");
+        let assertion = login_soft(&mut authenticator, request, &credential_id, public_id);
+        let logged_in = post_json(
+            &app,
+            "/api/auth/passkeys/login",
+            json!({"flow_id": login_flow, "credential": assertion}),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(logged_in.status(), HttpStatus::OK);
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/passkeys")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, listed_json) = body_json(listed).await;
+        assert_eq!(status, HttpStatus::OK, "{listed_json}");
+        assert_eq!(listed_json["passkeys"][0]["label"], "Security key");
+        assert!(listed_json["passkeys"][0].get("id").is_none());
+        // SoftPasskey puts a nil AAGUID in authData; we persist NULL for that.
+        assert!(listed_json["passkeys"][0]["aaguid"].is_null());
+        let public_id = listed_json["passkeys"][0]["public_id"].as_str().unwrap();
+        let deleted = app
+            .oneshot(
+                Request::delete(format!("/api/auth/passkeys/{public_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, err) = body_json(deleted).await;
+        assert_eq!(status, HttpStatus::CONFLICT, "{err}");
+        assert_eq!(err["error"], "last_credential");
+    }
+
+    #[tokio::test]
+    async fn recovery_passkey_establishes_credential_and_session() {
+        let (app, db) = app().await;
+        let invite_token = invite(&db, "recover@example.com").await;
+        post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({"token": invite_token, "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let recovery = create_recovery_token(
+            &db,
+            PEPPER.as_bytes(),
+            "recover@example.com",
+            Duration::hours(1),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let mut authenticator = authenticator();
+        let started = post_json(
+            &app,
+            "/api/auth/reset/passkey/options",
+            json!({"token": recovery, "label": "Recovery passkey"}),
+            None,
+            None,
+        )
+        .await;
+        let (status, json) = body_json(started).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        let flow_id = json["flow_id"].as_str().unwrap().to_string();
+        assert_resident_key_required(&json);
+        assert_direct_attestation(&json);
+        let options: CreationChallengeResponse =
+            serde_json::from_value(json["options"].clone()).unwrap();
+        let credential = register_soft(&mut authenticator, options);
+        let finished = post_json(
+            &app,
+            "/api/auth/reset/passkey",
+            json!({"flow_id": flow_id, "credential": credential}),
+            None,
+            None,
+        )
+        .await;
+        let (status, json) = body_json(finished).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert!(json["token"].is_string());
+    }
+
+    #[tokio::test]
+    async fn logout_all_revokes_every_session() {
+        let (app, db) = app().await;
+        let token = invite(&db, "multi@example.com").await;
+        post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({"token": token, "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let second = post_json(
+            &app,
+            "/api/auth/login",
+            json!({"email": "multi@example.com", "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&second);
+        let (status, json) = body_json(second).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        let bearer = json["token"].as_str().unwrap().to_string();
+        let third = post_json(
+            &app,
+            "/api/auth/login",
+            json!({"email": "multi@example.com", "password": "unique-passphrase-ok"}),
+            None,
+            None,
+        )
+        .await;
+        let other = cookie_pair(&third);
+        let logout = app
+            .clone()
+            .oneshot(
+                Request::post("/api/auth/logout_all")
+                    .header("authorization", format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(logout.status(), HttpStatus::NO_CONTENT);
+        let still = app
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", other)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(still.status(), HttpStatus::UNAUTHORIZED);
+        let _ = cookie;
     }
 }

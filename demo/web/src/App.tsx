@@ -1,6 +1,5 @@
-import { LoginForm, LogoutButton, TokenPanel } from './LoginForm.tsx'
+import { AccountPanel, LoginForm } from './LoginForm.tsx'
 import { SessionProvider, useSession } from './session.tsx'
-import { UsersPanel } from './UsersPanel.tsx'
 
 function SessionGate() {
   const { status, user } = useSession()
@@ -14,17 +13,9 @@ function SessionGate() {
       </div>
     )
   }
-  if (user.role === 'Admin') {
-    return (
-      <div className="mt-10 flex w-full max-w-md flex-col items-end gap-4">
-        <LogoutButton />
-        <UsersPanel />
-      </div>
-    )
-  }
   return (
-    <div className="mt-10 w-full max-w-md">
-      <TokenPanel />
+    <div className="mt-10 flex w-full max-w-md flex-col gap-4">
+      <AccountPanel />
     </div>
   )
 }

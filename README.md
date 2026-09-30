@@ -59,16 +59,24 @@ npm run dev --prefix demo
 | Vite | `fe` | http://localhost:5173 | SPA with HMR — **open this in the browser** |
 | API | `api` | http://localhost:8787 | Native Axum server |
 
-Auth routes need these environment variables (the dev script sets only `DATABASE_URL`):
+Auth routes need `AUTH_HASH_PEPPER` (exactly 32 bytes). The dev script sets `DATABASE_URL` and a local pepper. WebAuthn uses RP id `localhost`, origin `http://localhost:5173`, and name `rundtisch` unless `AUTH_WEBAUTHN_RP_ID`, `AUTH_WEBAUTHN_RP_ORIGIN`, or `AUTH_WEBAUTHN_RP_NAME` is set. Passkey registration requires a discoverable credential. Login does not ask for an email: the browser fills it from the passkey. Credentials created before that requirement must be registered again.
 
 | Name | Length |
 |------|--------|
-| `AUTH_JWT_ACCESS_SECRET` | ≥ 32 bytes |
-| `AUTH_JWT_VERIFY_SECRET` | ≥ 32 bytes |
-| `AUTH_HASH_PEPPER` | exactly 32 bytes |
+| `AUTH_HASH_PEPPER` | exactly 32 bytes; HMAC for session, invitation, and recovery tokens |
+| `AUTH_WEBAUTHN_RP_ID` | optional; default `localhost` |
+| `AUTH_WEBAUTHN_RP_ORIGIN` | optional; default `http://localhost:5173` |
+| `AUTH_WEBAUTHN_RP_NAME` | optional; default `rundtisch` |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional migrate seed; skip if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; required with the email; upserts the password for that email |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
+
+Invitation and recovery links are opaque database tokens. The SPA never prints a recovery link. Mint one with the demo CLI (same pepper and database as the API):
+
+```bash
+cargo run -p rundtisch-demo --bin auth-link -- invite --email user@example.com
+cargo run -p rundtisch-demo --bin auth-link -- recover --email user@example.com
+```
 
 ### Verify
 
@@ -89,11 +97,12 @@ curl http://localhost:8787/api/health
 ## Build and test
 
 ```bash
+cargo test --manifest-path crates/rundtisch/Cargo.toml
 cargo test
 npm run build --prefix demo/web
 ```
 
-CI (`.github/workflows/deploy.yml`) runs `cargo test` and the frontend build.
+The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo. CI (`.github/workflows/ci.yml`) runs both, then the frontend build.
 
 ## Related documentation
 

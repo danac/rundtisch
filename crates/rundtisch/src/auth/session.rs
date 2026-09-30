@@ -8,6 +8,10 @@ use subtle::ConstantTimeEq;
 
 type HmacSha256 = Hmac<Sha256>;
 
+pub fn credential_id_key(bytes: &[u8]) -> String {
+    URL_SAFE_NO_PAD.encode(bytes)
+}
+
 pub fn generate_session_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|err| err.to_string())?;
