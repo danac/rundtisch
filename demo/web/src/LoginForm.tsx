@@ -109,6 +109,7 @@ function PasskeyCreateStep({
   label,
   onLabelChange,
   onBack,
+  backLabel = 'Back',
   onCreate,
   children,
 }: {
@@ -117,6 +118,7 @@ function PasskeyCreateStep({
   label: string
   onLabelChange: (value: string) => void
   onBack?: () => void
+  backLabel?: string
   onCreate: () => void
   children?: ReactNode
 }) {
@@ -146,7 +148,7 @@ function PasskeyCreateStep({
           onClick={onBack}
           disabled={busy}
         >
-          Back
+          {backLabel}
         </button>
       ) : null}
     </form>
@@ -734,18 +736,14 @@ export function AccountPanel() {
             canPasskey={canPasskey}
             label={passkeyLabel}
             onLabelChange={setPasskeyLabel}
+            backLabel="Cancel"
+            onBack={() => {
+              setPasskeyLabel('')
+              setError(null)
+              setAddingPasskey(false)
+            }}
             onCreate={() => void addPasskey()}
-          >
-            <StepSummary
-              label="Passkey"
-              disabled={busy}
-              onChange={() => {
-                setPasskeyLabel('')
-                setError(null)
-                setAddingPasskey(false)
-              }}
-            />
-          </PasskeyCreateStep>
+          />
         ) : passkeys.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No passkeys yet.</p>
         ) : (
