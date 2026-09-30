@@ -723,6 +723,10 @@ mod tests {
         assert_eq!(selection["requireResidentKey"], true);
     }
 
+    fn assert_direct_attestation(json: &serde_json::Value) {
+        assert_eq!(json["options"]["publicKey"]["attestation"], "direct");
+    }
+
     fn assert_discoverable_request(json: &serde_json::Value) {
         let allow = &json["options"]["publicKey"]["allowCredentials"];
         assert!(
@@ -998,6 +1002,7 @@ mod tests {
         let (status, json) = body_json(started).await;
         assert_eq!(status, HttpStatus::OK, "{json}");
         assert_resident_key_required(&json);
+        assert_direct_attestation(&json);
         let flow_id = json["flow_id"].as_str().unwrap().to_string();
         let options: CreationChallengeResponse =
             serde_json::from_value(json["options"].clone()).expect("creation options");
@@ -1120,6 +1125,7 @@ mod tests {
         assert_eq!(status, HttpStatus::OK, "{json}");
         let flow_id = json["flow_id"].as_str().unwrap().to_string();
         assert_resident_key_required(&json);
+        assert_direct_attestation(&json);
         let options: CreationChallengeResponse =
             serde_json::from_value(json["options"].clone()).unwrap();
         let credential = register_soft(&mut authenticator, options);
