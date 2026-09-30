@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useSession, type AuthUser } from './session.tsx'
 import {
   conditionalMediationAvailable,
@@ -56,6 +56,105 @@ function ignoredPasskeyError(err: unknown): boolean {
   )
 }
 
+function StepSummary({
+  label,
+  onChange,
+  disabled,
+}: {
+  label: string
+  onChange: () => void
+  disabled: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-ring/80 bg-paper px-3 py-2 text-left text-sm transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
+    >
+      <span className="min-w-0 truncate text-ink">{label}</span>
+      <span className="shrink-0 font-semibold tracking-wide text-ink-muted">Change</span>
+    </button>
+  )
+}
+
+function OptionalPasskeyName({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: string
+  onChange: (value: string) => void
+  disabled: boolean
+}) {
+  return (
+    <label className="block text-sm text-ink-muted">
+      Name <span className="font-normal">(optional)</span>
+      <input
+        type="text"
+        maxLength={64}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="MacBook Touch ID"
+        className={inputClassName}
+        disabled={disabled}
+      />
+    </label>
+  )
+}
+
+function PasskeyCreateStep({
+  busy,
+  canPasskey,
+  label,
+  onLabelChange,
+  onBack,
+  backLabel = 'Back',
+  onCreate,
+  children,
+}: {
+  busy: boolean
+  canPasskey: boolean
+  label: string
+  onLabelChange: (value: string) => void
+  onBack?: () => void
+  backLabel?: string
+  onCreate: () => void
+  children?: ReactNode
+}) {
+  return (
+    <form
+      className="mt-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        onCreate()
+      }}
+    >
+      <div className="space-y-4">
+        {children}
+        <OptionalPasskeyName value={label} onChange={onLabelChange} disabled={busy} />
+      </div>
+      <button
+        type="submit"
+        className={`mt-6 w-full ${primaryButtonClassName}`}
+        disabled={busy || !canPasskey}
+      >
+        {canPasskey ? 'Create passkey' : 'Passkeys are not available in this browser'}
+      </button>
+      {onBack ? (
+        <button
+          type="button"
+          className={`mt-3 w-full ${secondaryButtonClassName}`}
+          onClick={onBack}
+          disabled={busy}
+        >
+          {backLabel}
+        </button>
+      ) : null}
+    </form>
+  )
+}
+
 export function LoginForm() {
   const { api, establish } = useSession()
   const recovering = recoverFromQuery.length > 0
@@ -68,6 +167,7 @@ export function LoginForm() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
+  const [registerPhase, setRegisterPhase] = useState<'method' | 'password' | 'passkey'>('method')
   const canPasskey = passkeySupported()
   const conditionalAbort = useRef<AbortController | null>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
@@ -255,7 +355,9 @@ export function LoginForm() {
             onClick={() => {
               setMode(mode === 'register' ? 'login' : 'register')
               setLoginPhase('email')
+              setRegisterPhase('method')
               setPassword('')
+              setPasskeyLabel('')
               setError(null)
             }}
             disabled={busy}
@@ -321,8 +423,117 @@ export function LoginForm() {
           </button>
         </form>
       ) : mode === 'register' ? (
-        <form onSubmit={handleRegister} className="mt-4">
-          <div className="space-y-4">
+        registerPhase === 'method' ? (
+          <div className="mt-4">
+            <p className="text-sm text-ink-muted">Choose a password or a passkey for this account.</p>
+            <button
+              type="button"
+              className={`mt-6 w-full ${primaryButtonClassName}`}
+              disabled={busy}
+              onClick={() => {
+                setError(null)
+                setRegisterPhase('password')
+              }}
+            >
+              Create a password
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy || !canPasskey}
+              onClick={() => {
+                setError(null)
+                setRegisterPhase('passkey')
+              }}
+            >
+              {canPasskey ? 'Create a passkey' : 'Passkeys are not available in this browser'}
+            </button>
+          </div>
+        ) : registerPhase === 'password' ? (
+          <form onSubmit={handleRegister} className="mt-4">
+            <StepSummary
+              label="Password"
+              disabled={busy}
+              onChange={() => {
+                setPassword('')
+                setError(null)
+                setRegisterPhase('method')
+              }}
+            />
+            <div className="mt-4 space-y-4">
+              <label className="block text-sm text-ink-muted">
+                Invitation
+                <input
+                  type="text"
+                  name="invitation"
+                  autoComplete="off"
+                  required
+                  value={inviteToken}
+                  onChange={(event) => setInviteToken(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+              <label className="block text-sm text-ink-muted">
+                Alias
+                <input
+                  type="text"
+                  name="alias"
+                  autoComplete="nickname"
+                  value={alias}
+                  onChange={(event) => setAlias(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+              <label className="block text-sm text-ink-muted">
+                Password
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="new-password"
+                  required
+                  minLength={15}
+                  maxLength={256}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className={inputClassName}
+                  disabled={busy}
+                />
+              </label>
+            </div>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Register
+            </button>
+          </form>
+        ) : (
+          <PasskeyCreateStep
+            busy={busy}
+            canPasskey={canPasskey}
+            label={passkeyLabel}
+            onLabelChange={setPasskeyLabel}
+            onCreate={() =>
+              void runCeremony(
+                '/api/auth/register/passkey/options',
+                '/api/auth/register/passkey',
+                {
+                  token: inviteToken.trim(),
+                  alias: alias.trim() || undefined,
+                  label: passkeyLabel.trim() || undefined,
+                },
+                'create',
+              )
+            }
+          >
+            <StepSummary
+              label="Passkey"
+              disabled={busy}
+              onChange={() => {
+                setPasskeyLabel('')
+                setError(null)
+                setRegisterPhase('method')
+              }}
+            />
             <label className="block text-sm text-ink-muted">
               Invitation
               <input
@@ -348,57 +559,8 @@ export function LoginForm() {
                 disabled={busy}
               />
             </label>
-            <label className="block text-sm text-ink-muted">
-              Passkey label (optional)
-              <input
-                type="text"
-                maxLength={64}
-                value={passkeyLabel}
-                onChange={(event) => setPasskeyLabel(event.target.value)}
-                placeholder="MacBook Touch ID"
-                className={inputClassName}
-                disabled={busy}
-              />
-            </label>
-            <label className="block text-sm text-ink-muted">
-              Password
-              <input
-                type="password"
-                name="password"
-                autoComplete="new-password"
-                required
-                minLength={15}
-                maxLength={256}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                className={inputClassName}
-                disabled={busy}
-              />
-            </label>
-          </div>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Register
-          </button>
-          <button
-            type="button"
-            className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey || inviteToken.trim() === ''}
-            onClick={() =>
-              void runCeremony(
-                '/api/auth/register/passkey/options',
-                '/api/auth/register/passkey',
-                {
-                  token: inviteToken.trim(),
-                  alias: alias.trim() || undefined,
-                  label: passkeyLabel.trim() || undefined,
-                },
-                'create',
-              )
-            }
-          >
-            {canPasskey ? 'Register with a passkey' : 'Passkeys are not available in this browser'}
-          </button>
-        </form>
+          </PasskeyCreateStep>
+        )
       ) : loginPhase === 'email' ? (
         <form onSubmit={handleEmailNext} className="mt-4">
           <label className="block text-sm text-ink-muted">
@@ -429,15 +591,7 @@ export function LoginForm() {
         </form>
       ) : (
         <form onSubmit={handleLogin} className="mt-4">
-          <button
-            type="button"
-            onClick={showEmailStep}
-            disabled={busy}
-            className="flex w-full items-center justify-between gap-3 rounded-lg border border-ring/80 bg-paper px-3 py-2 text-left text-sm transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
-          >
-            <span className="min-w-0 truncate text-ink">{email}</span>
-            <span className="shrink-0 font-semibold tracking-wide text-ink-muted">Change</span>
-          </button>
+          <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
           <label className="mt-4 block text-sm text-ink-muted">
             Password
             <input
@@ -467,6 +621,7 @@ export function AccountPanel() {
   const { api, user, logout, logoutAll } = useSession()
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
   const [passkeyLabel, setPasskeyLabel] = useState('')
+  const [addingPasskey, setAddingPasskey] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canPasskey = passkeySupported()
@@ -508,6 +663,7 @@ export function AccountPanel() {
         return
       }
       setPasskeyLabel('')
+      setAddingPasskey(false)
       await loadPasskeys()
     } catch (err) {
       setError(messageFrom(err))
@@ -559,30 +715,36 @@ export function AccountPanel() {
       <div className="mt-5 border-t border-ring/50 pt-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Passkeys</h3>
-          <div className="flex items-end gap-2">
-            <label className="text-xs text-ink-muted">
-              Label (optional)
-              <input
-                type="text"
-                maxLength={64}
-                value={passkeyLabel}
-                onChange={(event) => setPasskeyLabel(event.target.value)}
-                placeholder="MacBook Touch ID"
-                className={`${inputClassName} min-w-48`}
-                disabled={busy}
-              />
-            </label>
+          {addingPasskey ? null : (
             <button
               type="button"
               className={secondaryButtonClassName}
               disabled={busy || !canPasskey}
-              onClick={() => void addPasskey()}
+              onClick={() => {
+                setError(null)
+                setPasskeyLabel('')
+                setAddingPasskey(true)
+              }}
             >
               Add
             </button>
-          </div>
+          )}
         </div>
-        {passkeys.length === 0 ? (
+        {addingPasskey ? (
+          <PasskeyCreateStep
+            busy={busy}
+            canPasskey={canPasskey}
+            label={passkeyLabel}
+            onLabelChange={setPasskeyLabel}
+            backLabel="Cancel"
+            onBack={() => {
+              setPasskeyLabel('')
+              setError(null)
+              setAddingPasskey(false)
+            }}
+            onCreate={() => void addPasskey()}
+          />
+        ) : passkeys.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No passkeys yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
