@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - cursor/auth-opaque-sessions-f574
+      - cursor/gmail-style-login-a9eb
   workflow_dispatch:
 
 permissions:
