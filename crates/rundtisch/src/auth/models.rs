@@ -218,6 +218,7 @@ pub struct PasskeyRecord {
 pub struct PasskeyInfo {
     pub public_id: uuid::Uuid,
     pub label: Option<String>,
+    pub aaguid: Option<uuid::Uuid>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: DateTime,
     #[serde(with = "time::serde::rfc3339::option")]
@@ -229,6 +230,7 @@ impl From<&PasskeyRecord> for PasskeyInfo {
         Self {
             public_id: row.public_id,
             label: row.label.clone(),
+            aaguid: crate::auth::webauthn::passkey_aaguid_from_json(&row.passkey),
             created_at: row.created_at,
             last_used_at: row.last_used_at,
         }

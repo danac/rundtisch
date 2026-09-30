@@ -212,6 +212,20 @@ pub fn passkey_from_json(json: &str) -> Result<Passkey, AuthError> {
     serde_json::from_str(json).map_err(|_| AuthError::Backend("stored passkey is invalid".into()))
 }
 
+/// AAGUID from packed/TPM attestation metadata in a stored Passkey JSON blob.
+/// Absent when registration used `none` attestation or the authenticator omitted it.
+pub fn passkey_aaguid_from_json(json: &str) -> Option<Uuid> {
+    let value: Value = serde_json::from_str(json).ok()?;
+    let metadata = value.get("cred")?.get("attestation")?.get("metadata")?;
+    metadata
+        .get("Packed")
+        .or_else(|| metadata.get("Tpm"))
+        .and_then(|entry| entry.get("aaguid"))
+        .and_then(Value::as_str)
+        .and_then(|raw| Uuid::parse_str(raw).ok())
+        .filter(|id| *id != Uuid::nil())
+}
+
 pub fn passkey_credential_id(passkey: &Passkey) -> Vec<u8> {
     passkey.cred_id().to_vec()
 }
@@ -234,5 +248,26 @@ fn env_or(state: &AppState, name: &str, default: &str) -> String {
     match state.secret(name) {
         Ok(value) if !value.trim().is_empty() => value,
         _ => default.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::passkey_aaguid_from_json;
+    use uuid::Uuid;
+
+    #[test]
+    fn reads_packed_aaguid_and_ignores_nil() {
+        let id = Uuid::parse_str("fbfc3007-154e-4ecc-8c0b-6e020557d7bd").unwrap();
+        let packed = format!(
+            r#"{{"cred":{{"attestation":{{"data":"None","metadata":{{"Packed":{{"aaguid":"{id}"}}}}}}}}}}"#
+        );
+        assert_eq!(passkey_aaguid_from_json(&packed), Some(id));
+
+        let nil = r#"{"cred":{"attestation":{"data":"None","metadata":{"Packed":{"aaguid":"00000000-0000-0000-0000-000000000000"}}}}}"#;
+        assert_eq!(passkey_aaguid_from_json(nil), None);
+
+        let none = r#"{"cred":{"attestation":{"data":"None","metadata":"None"}}}"#;
+        assert_eq!(passkey_aaguid_from_json(none), None);
     }
 }

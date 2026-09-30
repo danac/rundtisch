@@ -382,6 +382,7 @@ pub async fn finish_session_passkey(
                 PasskeyInfo {
                     public_id,
                     label: record.passkey_label,
+                    aaguid: crate::auth::webauthn::passkey_aaguid_from_json(&passkey_body),
                     created_at: created,
                     last_used_at: None,
                 },

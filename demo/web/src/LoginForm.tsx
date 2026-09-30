@@ -12,6 +12,7 @@ type CeremonyStart = { flow_id: string; options: unknown }
 type PasskeyRow = {
   public_id: string
   label: string | null
+  aaguid: string | null
   created_at: string
   last_used_at: string | null
 }
@@ -542,6 +543,11 @@ export function AccountPanel() {
                   <span className="block text-xs text-ink-muted">
                     Added {passkey.created_at.slice(0, 10)}
                   </span>
+                  {passkey.aaguid ? (
+                    <span className="mt-0.5 block break-all font-mono text-xs text-ink-muted">
+                      AAGUID {passkey.aaguid}
+                    </span>
+                  ) : null}
                 </span>
                 <button
                   type="button"
