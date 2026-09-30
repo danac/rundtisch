@@ -24,11 +24,27 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::session::Entity")]
     Session,
+    #[sea_orm(has_many = "super::passkey::Entity")]
+    Passkey,
+    #[sea_orm(has_many = "super::recovery_token::Entity")]
+    RecoveryToken,
 }
 
 impl Related<super::session::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Session.def()
+    }
+}
+
+impl Related<super::passkey::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Passkey.def()
+    }
+}
+
+impl Related<super::recovery_token::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::RecoveryToken.def()
     }
 }
 

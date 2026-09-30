@@ -8,7 +8,7 @@ use zeroize::Zeroize;
 
 use crate::auth::config::AUTH_HASH_PEPPER;
 use crate::auth::error::DbError;
-use crate::auth::models::{NewUser, Role};
+use crate::auth::models::{NewUser, Role, normalize_email};
 use crate::auth::password::{
     Argon2idHasher, PasswordHashError, PasswordHasher, check_password_policy,
 };
@@ -161,6 +161,9 @@ pub async fn seed_bootstrap_admin(
     hasher: &dyn PasswordHasher,
 ) -> Result<BootstrapAdminOutcome, BootstrapAdminError> {
     let email = parse_email(secrets.email())?;
+    let email: EmailAddress = normalize_email(&email)
+        .parse()
+        .map_err(|_| BootstrapAdminError::InvalidEmail)?;
     if check_password_policy(secrets.password()).is_err() {
         return Err(BootstrapAdminError::InvalidPassword);
     }
