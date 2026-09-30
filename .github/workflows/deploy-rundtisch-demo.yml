@@ -2,10 +2,7 @@ name: Deploy Rundtisch Demo on Wasmer Edge
 
 on:
   push:
-    branches:
-      - main
-      - cursor/auth-opaque-sessions-f574
-      - cursor/gmail-style-login-a9eb
+  pull_request:
   workflow_dispatch:
 
 permissions:
