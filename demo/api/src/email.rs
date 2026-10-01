@@ -17,6 +17,7 @@ impl EmailSender for SendmailEmailSender {
         let started = Instant::now();
         eprintln!("sendmail: spawning");
         let mut child = Command::new("sendmail")
+            .arg("-v")
             .arg("-t")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
