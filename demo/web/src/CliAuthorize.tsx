@@ -7,6 +7,16 @@ const primaryButtonClassName =
   'rounded-full bg-ink px-4 py-2.5 text-sm font-semibold tracking-wide text-paper transition hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
 const secondaryButtonClassName =
   'rounded-full border border-ring/80 bg-paper px-4 py-2.5 text-sm font-semibold tracking-wide text-ink transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
+const homeLinkClassName =
+  'mt-4 inline-block text-sm font-semibold tracking-wide text-ink underline decoration-ring underline-offset-4 hover:decoration-ink'
+
+function HomeLink() {
+  return (
+    <a href="/" className={homeLinkClassName}>
+      Home
+    </a>
+  )
+}
 
 type CliLink = {
   redirect: URL
@@ -74,6 +84,7 @@ export function CliAuthorized() {
         {heading}
       </h2>
       <p className="mt-4 text-sm text-ink-muted">{detail}</p>
+      <HomeLink />
     </section>
   )
 }
@@ -176,11 +187,15 @@ export function CliAuthorize() {
               Cancel
             </button>
           </div>
+          <HomeLink />
         </>
       ) : (
-        <p className="mt-4 text-sm text-ink" role="alert">
-          This authorization link is missing a loopback redirect, state, or machine details.
-        </p>
+        <>
+          <p className="mt-4 text-sm text-ink" role="alert">
+            This authorization link is missing a loopback redirect, state, or machine details.
+          </p>
+          <HomeLink />
+        </>
       )}
     </section>
   )

@@ -62,7 +62,9 @@ function App() {
 
       <div className="relative z-10 flex w-full max-w-4xl flex-col items-center text-center">
         <h1 className="font-display text-5xl font-semibold tracking-tight text-ink sm:text-6xl md:text-7xl">
-          rundtisch
+          <a href="/" className="text-inherit no-underline">
+            rundtisch
+          </a>
         </h1>
         <p className="mt-4 text-lg text-ink-muted sm:text-xl">
           a round table for building on the web
