@@ -12,6 +12,7 @@ env:
   CARGO_INCREMENTAL: "0"
   # The WASIX crate index sometimes fails over HTTP/2 (nghttp2 PROTOCOL_ERROR).
   CARGO_HTTP_MULTIPLEXING: "false"
+  GITHUB_TOKEN: ${{ github.token }}
 
 jobs:
   deploy:
@@ -21,6 +22,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Check GitHub API rate limit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/rate_limit
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
