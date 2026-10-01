@@ -118,8 +118,7 @@ Workflow: `.github/workflows/deploy-crockis.yml`
 
 | Trigger | Action |
 |---------|--------|
-| Push to `main` | Build `crockis/web` → `wasmer deploy` to Edge app `crockis` |
-| Pull request to `main` | Same as production deploy |
+| Push | Build `crockis/web` → `wasmer deploy` to Edge app `crockis` |
 | **workflow_dispatch** | Same as production deploy |
 
 There is no Rust/WASM build; Wasmer Edge serves the Vite SPA from `crockis/web/dist/` via `wasmer/static-web-server` (`crockis/wasmer.toml`, `crockis/app.yaml`).

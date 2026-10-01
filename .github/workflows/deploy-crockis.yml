@@ -2,11 +2,6 @@ name: Deploy Crockis on Wasmer Edge
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 jobs:

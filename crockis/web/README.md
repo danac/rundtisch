@@ -60,4 +60,4 @@ npm run preview --prefix crockis/web
 
 In local dev, Vite proxies `/api` to `http://localhost:8787` (same convention as the rundtisch demo).
 
-Production deploy is the Wasmer Edge static app `crockis` (`../wasmer.toml`, `../app.yaml`). GitHub Actions **Deploy Crockis on Wasmer Edge** runs on `main`, pull requests, and `workflow_dispatch`, using the **Wasmer** environment.
+Production deploy is the Wasmer Edge static app `crockis` (`../wasmer.toml`, `../app.yaml`). GitHub Actions **Deploy Crockis on Wasmer Edge** runs on every push and on `workflow_dispatch`, using the **Wasmer** environment.
