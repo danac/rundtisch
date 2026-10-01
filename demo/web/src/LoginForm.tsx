@@ -685,7 +685,7 @@ export function LoginForm() {
 }
 
 export function AccountPanel() {
-  const { api, user, establish, logout, logoutAll } = useSession()
+  const { api, user, establish, logout } = useSession()
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
   const [sessions, setSessions] = useState<SessionRow[]>([])
   const [passkeysLoaded, setPasskeysLoaded] = useState(false)
@@ -837,6 +837,7 @@ export function AccountPanel() {
   }, [])
 
   async function revokeSession(session: SessionRow) {
+    if (session.current) return
     setBusy(true)
     setError(null)
     try {
@@ -845,9 +846,31 @@ export function AccountPanel() {
         setError(await readError(response))
         return
       }
-      if (session.current) {
-        await logout()
+      await loadSessions()
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revokeOtherSessions() {
+    setBusy(true)
+    setError(null)
+    try {
+      const listed = await api('/api/auth/sessions')
+      if (!listed.ok) {
+        setError(await readError(listed))
         return
+      }
+      const body = (await listed.json()) as { sessions: SessionRow[] }
+      for (const session of body.sessions) {
+        if (session.current) continue
+        const response = await api(`/api/auth/sessions/${session.public_id}`, { method: 'DELETE' })
+        if (!response.ok) {
+          setError(await readError(response))
+          break
+        }
       }
       await loadSessions()
     } catch (err) {
@@ -977,14 +1000,9 @@ export function AccountPanel() {
         <h2 id="account-heading" className="text-sm font-semibold tracking-wide text-ink">
           Account
         </h2>
-        <div className="flex gap-2">
-          <button type="button" className={secondaryButtonClassName} onClick={() => void logoutAll()}>
-            Log out everywhere
-          </button>
-          <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
-            Log out
-          </button>
-        </div>
+        <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
+          Log out
+        </button>
       </div>
       <p className="mt-4 text-sm text-ink">{user?.alias}</p>
       <p className="mt-1 text-sm text-ink-muted">{user?.email}</p>
@@ -1175,7 +1193,17 @@ export function AccountPanel() {
         )}
       </div>
       <div className="mt-5 border-t border-ring/50 pt-5">
-        <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            disabled={busy || !sessions.some((session) => !session.current)}
+            onClick={() => void revokeOtherSessions()}
+          >
+            Revoke all other sessions
+          </button>
+        </div>
         {sessions.length === 0 ? (
           <p className="mt-3 text-sm text-ink-muted">No sessions.</p>
         ) : (
@@ -1195,14 +1223,16 @@ export function AccountPanel() {
                     {session.expires_at.slice(0, 10)}
                   </span>
                 </span>
-                <button
-                  type="button"
-                  className={secondaryButtonClassName}
-                  disabled={busy}
-                  onClick={() => void revokeSession(session)}
-                >
-                  Revoke
-                </button>
+                {session.current ? null : (
+                  <button
+                    type="button"
+                    className={secondaryButtonClassName}
+                    disabled={busy}
+                    onClick={() => void revokeSession(session)}
+                  >
+                    Revoke
+                  </button>
+                )}
               </li>
             ))}
           </ul>
