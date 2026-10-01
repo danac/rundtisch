@@ -234,7 +234,9 @@ function PasskeyCreateStep({
 export function LoginForm() {
   const { api, establish } = useSession()
   const recovering = recoverFromQuery.length > 0
-  const [mode, setMode] = useState<'login' | 'register'>(inviteFromQuery ? 'register' : 'login')
+  const [mode, setMode] = useState<'login' | 'register' | 'request_recovery'>(
+    inviteFromQuery ? 'register' : 'login',
+  )
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [alias, setAlias] = useState('')
@@ -242,6 +244,7 @@ export function LoginForm() {
   const [inviteToken, setInviteToken] = useState(inviteFromQuery)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
   const [registerPhase, setRegisterPhase] = useState<'method' | 'password' | 'passkey'>('method')
   const canPasskey = passkeySupported()
@@ -263,6 +266,48 @@ export function LoginForm() {
     setPassword('')
     clearAuthQuery()
     establish(body.user)
+  }
+
+  function showLogin() {
+    setMode('login')
+    setLoginPhase('email')
+    setPassword('')
+    setError(null)
+    setRecoveryNotice(null)
+  }
+
+  function showRequestRecovery() {
+    setMode('request_recovery')
+    setPassword('')
+    setError(null)
+    setRecoveryNotice(null)
+  }
+
+  async function handleRequestRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    begin()
+    setRecoveryNotice(null)
+    try {
+      const recoveryEmail =
+        String(new FormData(event.currentTarget).get('email') ?? '').trim() || email.trim()
+      setEmail(recoveryEmail)
+      const response = await api('/api/auth/request_reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: recoveryEmail }),
+      })
+      if (!response.ok) {
+        setError(await readError(response))
+        return
+      }
+      const body = (await response.json()) as { message?: string }
+      setRecoveryNotice(
+        body.message ?? 'If that account exists, a recovery link has been sent.',
+      )
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   useEffect(() => {
@@ -421,7 +466,13 @@ export function LoginForm() {
     }
   }
 
-  const heading = recovering ? 'Set a new credential' : mode === 'register' ? 'Register' : 'Log in'
+  const heading = recovering
+    ? 'Set a new credential'
+    : mode === 'register'
+      ? 'Register'
+      : mode === 'request_recovery'
+        ? 'Recover account'
+        : 'Log in'
 
   return (
     <section className={panelClassName} aria-labelledby="login-heading">
@@ -429,7 +480,16 @@ export function LoginForm() {
         <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">
           {heading}
         </h2>
-        {recovering ? null : (
+        {recovering ? null : mode === 'request_recovery' ? (
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={showLogin}
+            disabled={busy}
+          >
+            Back to login
+          </button>
+        ) : (
           <button
             type="button"
             className={secondaryButtonClassName}
@@ -440,6 +500,7 @@ export function LoginForm() {
               setPassword('')
               setPasskeyLabel('')
               setError(null)
+              setRecoveryNotice(null)
             }}
             disabled={busy}
           >
@@ -628,6 +689,34 @@ export function LoginForm() {
             </label>
           </PasskeyCreateStep>
         )
+      ) : mode === 'request_recovery' ? (
+        <form onSubmit={(event) => void handleRequestRecovery(event)} className="mt-4">
+          <p className="text-sm text-ink-muted">
+            Enter the email for your account. If it exists, we will send a recovery link.
+          </p>
+          {recoveryNotice ? (
+            <p className="mt-4 text-sm text-ink" role="status">
+              {recoveryNotice}
+            </p>
+          ) : null}
+          <label className="mt-4 block text-sm text-ink-muted">
+            Email
+            <input
+              type="email"
+              name="email"
+              autoComplete="username"
+              autoFocus
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              className={inputClassName}
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            Send recovery link
+          </button>
+        </form>
       ) : loginPhase === 'email' ? (
         <form onSubmit={handleEmailNext} className="mt-4">
           <label className="block text-sm text-ink-muted">
@@ -655,6 +744,14 @@ export function LoginForm() {
           >
             {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
           </button>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy}
+            onClick={showRequestRecovery}
+          >
+            Recover account
+          </button>
         </form>
       ) : (
         <form onSubmit={handleLogin} className="mt-4">
@@ -677,6 +774,14 @@ export function LoginForm() {
           </label>
           <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
             Log in
+          </button>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy}
+            onClick={showRequestRecovery}
+          >
+            Recover account
           </button>
         </form>
       )}

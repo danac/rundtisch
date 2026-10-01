@@ -87,27 +87,30 @@ pub async fn create_recovery_token(
     Ok(Some(raw))
 }
 
+/// Mint a recovery token when the account exists and is not rate-limited.
+///
+/// Returns `Ok(Some(raw))` when a new token was stored, or `Ok(None)` when the
+/// email is unknown or a token was issued within [`RECOVERY_MIN_INTERVAL`].
 pub async fn request_recovery(
     db: &DatabaseConnection,
     pepper: &[u8],
     email: &str,
     ttl: time::Duration,
-) -> Result<(), AuthError> {
+) -> Result<Option<String>, AuthError> {
     let email = parse_email(email)?;
     let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
         let _ = generate_session_token().map_err(AuthError::Backend)?;
-        return Ok(());
+        return Ok(None);
     };
     let since = now() - RECOVERY_MIN_INTERVAL;
     if recovery_issued_since(db, user.id, since).await? > 0 {
-        return Ok(());
+        return Ok(None);
     }
     let raw = generate_session_token().map_err(AuthError::Backend)?;
     let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
-    let _ = raw;
     let created = now();
     insert_recovery_token(db, user.id, &hash, created, created + ttl).await?;
-    Ok(())
+    Ok(Some(raw))
 }
 
 pub async fn complete_password_registration(

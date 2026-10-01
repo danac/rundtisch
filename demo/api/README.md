@@ -20,6 +20,7 @@ demo/api/
     lib.rs
     routes.rs
     handlers.rs
+    email.rs              # SendmailEmailSender (rundtisch::EmailSender)
     native_platform.rs    # Database::connect(DATABASE_URL)
     migrator.rs           # re-exports rundtisch::auth::Migrator
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8787
@@ -41,7 +42,7 @@ demo/api/
 | POST | `/api/auth/logout` | Revoke this session, clear cookie |
 | POST | `/api/auth/logout_all` | Revoke every session for the account |
 | GET | `/api/auth/me` | Cookie or `Authorization: Bearer` |
-| POST | `/api/auth/request_reset` | `202`; does not return a token |
+| POST | `/api/auth/request_reset` | `202`; emails a recovery link via sendmail when the account exists (does not return a token) |
 | POST | `/api/auth/reset` | Password recovery |
 | POST | `/api/auth/reset/passkey/options`, `/api/auth/reset/passkey` | Passkey recovery |
 | GET | `/api/auth/passkeys` | List passkeys |
@@ -79,6 +80,8 @@ curl -i http://localhost:8787/api/health
 | `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
+
+`POST /api/auth/request_reset` emails a recovery link through `SendmailEmailSender` (`sendmail -t`). On Wasmer Edge, that needs `enable_email: true` in `app.yaml` and the `sendmail/sendmail` package. Locally, if sendmail is unavailable, mint a link with `auth-link -- recover` instead.
 
 `auth-link` prints an invitation or recovery URL. `recover` exits non-zero when the email has no user. The raw token is not stored.
 
