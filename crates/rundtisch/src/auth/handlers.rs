@@ -9,7 +9,7 @@ use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
     delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
     clear_session_password, finish_session_passkey, finish_step_up_passkey_login, list_passkey_info,
-    login_with_password, logout_all_for_user, logout_current, request_recovery,
+    login_with_password, logout_all_for_user, logout_current, mint_cli_session, request_recovery,
     set_session_password, start_invite_passkey, start_passkey_login, start_recovery_passkey,
     start_session_passkey, start_step_up_passkey_login, step_up_with_password, authenticate_step_up,
 };
@@ -122,18 +122,17 @@ fn normalize_passkey_label(label: Option<String>) -> Result<Option<String>, Auth
     Ok(Some(label))
 }
 
+fn session_json(grant: &SessionGrant) -> serde_json::Value {
+    json!({
+        "token": grant.token,
+        "token_type": "Bearer",
+        "expires_in": grant.expires_in,
+        "user": AccountView::from(&grant.user),
+    })
+}
+
 fn session_response(status: StatusCode, grant: SessionGrant) -> axum::response::Response {
-    let account = AccountView::from(&grant.user);
-    let mut response = (
-        status,
-        Json(json!({
-            "token": grant.token,
-            "token_type": "Bearer",
-            "expires_in": grant.expires_in,
-            "user": account,
-        })),
-    )
-        .into_response();
+    let mut response = (status, Json(session_json(&grant))).into_response();
     if let Ok(cookie) = session_cookie_header(&grant.token) {
         response.headers_mut().insert(header::SET_COOKIE, cookie);
     }
@@ -465,6 +464,47 @@ pub async fn me(SessionUser(user): SessionUser) -> impl IntoResponse {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MintSessionBody {
+    pub os: String,
+    pub os_version: String,
+}
+
+fn cli_user_agent(os: &str, os_version: &str) -> Result<String, AuthError> {
+    let os = os.trim();
+    let os_version = os_version.trim();
+    if os.is_empty()
+        || os_version.is_empty()
+        || os.chars().count() > 64
+        || os_version.chars().count() > 64
+        || os.chars().any(char::is_control)
+        || os_version.chars().any(char::is_control)
+    {
+        return Err(AuthError::TypeMismatch);
+    }
+    Ok(format!("cli {os} {os_version}"))
+}
+
+/// Mint a bearer session for a local command-line tool. Does not replace the
+/// browser session cookie.
+pub async fn mint_session(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(body): Json<MintSessionBody>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let user_agent = cli_user_agent(&body.os, &body.os_version)?;
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let grant = mint_cli_session(&state.db, &pepper, &user, &user_agent).await?;
+        Ok(Json(session_json(&grant)).into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SetPasswordBody {
     pub password: String,
 }
@@ -789,6 +829,7 @@ mod tests {
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
+            .route("/api/auth/sessions", axum::routing::post(mint_session))
             .route(
                 "/api/auth/password",
                 axum::routing::put(set_password).delete(clear_password),
@@ -1124,6 +1165,87 @@ mod tests {
         let (status, json) = body_json(response).await;
         assert_eq!(status, HttpStatus::UNAUTHORIZED);
         assert_eq!(json["error"], "invalid_credentials");
+    }
+
+    #[tokio::test]
+    async fn cli_session_is_a_second_bearer_and_keeps_the_browser_cookie() {
+        let (app, db) = app().await;
+        let token = invite(&db, "cli@example.com").await;
+        let registered = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok",
+                "alias": "cli"
+            }),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&registered);
+        assert!(registered.headers().get(header::SET_COOKIE).is_some());
+
+        let anonymous = post_json(
+            &app,
+            "/api/auth/sessions",
+            json!({"os": "linux", "os_version": "6.8"}),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(anonymous.status(), HttpStatus::UNAUTHORIZED);
+
+        let minted = post_json(
+            &app,
+            "/api/auth/sessions",
+            json!({"os": "linux", "os_version": "6.8"}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert!(minted.headers().get(header::SET_COOKIE).is_none());
+        let (status, json) = body_json(minted).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_eq!(json["token_type"], "Bearer");
+        assert!(json["expires_in"].as_i64().unwrap() > 60 * 60 * 24);
+        let cli_token = json["token"].as_str().unwrap().to_string();
+
+        let browser = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(browser.status(), HttpStatus::OK);
+
+        let cli = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("authorization", format!("Bearer {cli_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, me) = body_json(cli).await;
+        assert_eq!(status, HttpStatus::OK, "{me}");
+        assert_eq!(me["email"], "cli@example.com");
+
+        let bad = post_json(
+            &app,
+            "/api/auth/sessions",
+            json!({"os": " ", "os_version": "6.8"}),
+            Some(&cookie),
+            None,
+        )
+        .await;
+        assert_eq!(bad.status(), HttpStatus::BAD_REQUEST);
     }
 
     #[tokio::test]

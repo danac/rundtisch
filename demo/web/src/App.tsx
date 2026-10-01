@@ -1,8 +1,13 @@
 import { AccountPanel, LoginForm } from './LoginForm.tsx'
+import { CliAuthorize, CliAuthorized, authorizeScreen } from './CliAuthorize.tsx'
 import { SessionProvider, useSession } from './session.tsx'
 
 function SessionGate() {
   const { status, user } = useSession()
+  const screen = authorizeScreen()
+  if (screen === 'done') {
+    return <CliAuthorized />
+  }
   if (status === 'checking') {
     return <p className="mt-10 text-sm text-ink-muted">Checking session…</p>
   }
@@ -12,6 +17,9 @@ function SessionGate() {
         <LoginForm />
       </div>
     )
+  }
+  if (screen === 'authorize') {
+    return <CliAuthorize />
   }
   return (
     <div className="mt-10 flex w-full max-w-md flex-col gap-4">

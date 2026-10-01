@@ -819,6 +819,16 @@ pub async fn finish_recovery_passkey(
     .await
 }
 
+/// A second session for a command-line tool. The browser cookie is left alone.
+pub async fn mint_cli_session(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    user: &User,
+    user_agent: &str,
+) -> Result<SessionGrant, AuthError> {
+    issue_session(db, pepper, user, Some(user_agent), now()).await
+}
+
 async fn issue_session<C: sea_orm::ConnectionTrait>(
     db: &C,
     pepper: &[u8],

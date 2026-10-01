@@ -41,6 +41,8 @@ async function readError(response: Response): Promise<string> {
 }
 
 function clearAuthQuery() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/'
+  if (path === '/authorize') return
   window.history.replaceState({}, '', window.location.pathname)
 }
 
