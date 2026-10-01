@@ -1,8 +1,13 @@
 import { AccountPanel, LoginForm } from './LoginForm.tsx'
+import { CliAuthorize, CliAuthorized, authorizeScreen } from './CliAuthorize.tsx'
 import { SessionProvider, useSession } from './session.tsx'
 
 function SessionGate() {
   const { status, user } = useSession()
+  const screen = authorizeScreen()
+  if (screen === 'done') {
+    return <CliAuthorized />
+  }
   if (status === 'checking') {
     return <p className="mt-10 text-sm text-ink-muted">Checking session…</p>
   }
@@ -12,6 +17,9 @@ function SessionGate() {
         <LoginForm />
       </div>
     )
+  }
+  if (screen === 'authorize') {
+    return <CliAuthorize />
   }
   return (
     <div className="mt-10 flex w-full max-w-md flex-col gap-4">
@@ -54,7 +62,9 @@ function App() {
 
       <div className="relative z-10 flex w-full max-w-4xl flex-col items-center text-center">
         <h1 className="font-display text-5xl font-semibold tracking-tight text-ink sm:text-6xl md:text-7xl">
-          rundtisch
+          <a href="/" className="text-inherit no-underline">
+            rundtisch
+          </a>
         </h1>
         <p className="mt-4 text-lg text-ink-muted sm:text-xl">
           a round table for building on the web

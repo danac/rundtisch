@@ -6,7 +6,9 @@ use sea_orm::{
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::auth::entities::{invitation, passkey, recovery_token, session, user, webauthn_state};
+use crate::auth::entities::{
+    invitation, passkey, recovery_token, session, step_up, user, webauthn_state,
+};
 use crate::auth::error::DbError;
 use crate::auth::models::{
     CeremonyRecord, InvitationRecord, NewUser, PasskeyRecord, Session, User,
@@ -85,6 +87,23 @@ pub async fn update_user_password_hash<C: ConnectionTrait>(
     Ok(1)
 }
 
+pub async fn clear_password_hash_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    updated_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.password_hash = Set(None);
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
 pub async fn set_password_hash_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,
@@ -148,6 +167,7 @@ pub async fn insert_session<C: ConnectionTrait>(
     user_agent: Option<&str>,
 ) -> Result<(), DbError> {
     let model = session::ActiveModel {
+        public_id: Set(crate::auth::models::new_public_id()),
         user_id: Set(user_id),
         token_hash: Set(token_hash.to_owned()),
         created_at: Set(created_at),
@@ -158,6 +178,39 @@ pub async fn insert_session<C: ConnectionTrait>(
     };
     model.insert(db).await.map_err(DbError::from)?;
     Ok(())
+}
+
+pub async fn list_active_sessions_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    now: OffsetDateTime,
+) -> Result<Vec<Session>, DbError> {
+    let rows = session::Entity::find()
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .filter(session::Column::ExpiresAt.gt(now))
+        .order_by_desc(session::Column::LastUsedAt)
+        .all(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(rows.into_iter().map(Session::from).collect())
+}
+
+pub async fn get_active_session_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    public_id: Uuid,
+    now: OffsetDateTime,
+) -> Result<Option<Session>, DbError> {
+    let row = session::Entity::find()
+        .filter(session::Column::PublicId.eq(public_id))
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .filter(session::Column::ExpiresAt.gt(now))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(Session::from))
 }
 
 pub async fn get_session_by_token_hash<C: ConnectionTrait>(
@@ -215,6 +268,50 @@ pub async fn revoke_all_sessions<C: ConnectionTrait>(
         .col_expr(session::Column::RevokedAt, Expr::value(revoked_at))
         .filter(session::Column::UserId.eq(user_id))
         .filter(session::Column::RevokedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn insert_step_up<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    token_hash: &str,
+    created_at: OffsetDateTime,
+    expires_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let model = step_up::ActiveModel {
+        user_id: Set(user_id),
+        token_hash: Set(token_hash.to_owned()),
+        created_at: Set(created_at),
+        expires_at: Set(expires_at),
+        ..Default::default()
+    };
+    model.insert(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
+pub async fn get_step_up_by_token_hash<C: ConnectionTrait>(
+    db: &C,
+    token_hash: &str,
+) -> Result<Option<step_up::Model>, DbError> {
+    step_up::Entity::find()
+        .filter(step_up::Column::TokenHash.eq(token_hash))
+        .one(db)
+        .await
+        .map_err(DbError::from)
+}
+
+pub async fn revoke_all_step_ups<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    revoked_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    step_up::Entity::update_many()
+        .col_expr(step_up::Column::RevokedAt, Expr::value(revoked_at))
+        .filter(step_up::Column::UserId.eq(user_id))
+        .filter(step_up::Column::RevokedAt.is_null())
         .exec(db)
         .await
         .map_err(DbError::from)?;
@@ -561,6 +658,7 @@ impl From<session::Model> for Session {
     fn from(model: session::Model) -> Self {
         Self {
             id: model.id,
+            public_id: model.public_id,
             user_id: model.user_id,
             token_hash: model.token_hash,
             created_at: model.created_at,

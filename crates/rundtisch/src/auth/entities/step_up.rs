@@ -1,20 +1,16 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
-#[sea_orm(table_name = "auth_sessions")]
+#[sea_orm(table_name = "auth_step_up_tokens")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    #[sea_orm(unique)]
-    pub public_id: Uuid,
     pub user_id: i64,
     #[sea_orm(unique)]
     pub token_hash: String,
     pub created_at: TimeDateTimeWithTimeZone,
-    pub last_used_at: TimeDateTimeWithTimeZone,
     pub expires_at: TimeDateTimeWithTimeZone,
     pub revoked_at: Option<TimeDateTimeWithTimeZone>,
-    pub user_agent: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
