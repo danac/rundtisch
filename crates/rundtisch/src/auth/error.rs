@@ -64,6 +64,8 @@ pub enum AuthError {
     InvalidToken,
     InvalidPassword,
     LastCredential,
+    StepUpRequired,
+    StepUpInvalid,
     TypeMismatch,
     Secrets,
     Db(DbError),
@@ -115,6 +117,8 @@ impl AuthError {
             AuthError::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
             AuthError::InvalidPassword => (StatusCode::BAD_REQUEST, "invalid_password"),
             AuthError::LastCredential => (StatusCode::CONFLICT, "last_credential"),
+            AuthError::StepUpRequired => (StatusCode::FORBIDDEN, "step_up_required"),
+            AuthError::StepUpInvalid => (StatusCode::FORBIDDEN, "step_up_invalid"),
             AuthError::TypeMismatch => (StatusCode::BAD_REQUEST, "type mismatch"),
             AuthError::Secrets | AuthError::Password(_) | AuthError::Backend(_) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
