@@ -183,6 +183,7 @@ pub fn datetime_to_rfc3339(dt: DateTime) -> String {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Session {
     pub id: i64,
+    pub public_id: uuid::Uuid,
     pub user_id: i64,
     pub token_hash: String,
     #[serde(with = "time::serde::rfc3339")]
@@ -205,6 +206,7 @@ impl Session {
 /// Active session fields safe to show the account owner. No row id or token hash.
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionInfo {
+    pub public_id: uuid::Uuid,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: DateTime,
     #[serde(with = "time::serde::rfc3339")]

@@ -7,12 +7,13 @@ use crate::auth::models::{
 };
 use crate::auth::password::{PasswordHasher, dummy_verify};
 use crate::auth::queries::{
-    consume_ceremony, consume_invitation, consume_recovery_token, count_passkeys_for_user,
-    delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation, find_open_recovery_user,
-    clear_password_hash_by_id, get_ceremony, get_passkey_by_credential_id, get_passkey_for_user,
-    get_session_by_token_hash, get_step_up_by_token_hash, get_user_by_email, get_user_by_id,
-    insert_ceremony, insert_invitation, insert_passkey, insert_recovery_token, insert_session,
-    insert_step_up, list_active_sessions_for_user, list_passkeys_for_user, lock_user_row, recovery_issued_since,
+    clear_password_hash_by_id, consume_ceremony, consume_invitation, consume_recovery_token,
+    count_passkeys_for_user, delete_expired_ceremonies, delete_passkey_by_id, find_open_invitation,
+    find_open_recovery_user, get_active_session_for_user, get_ceremony,
+    get_passkey_by_credential_id, get_passkey_for_user, get_session_by_token_hash,
+    get_step_up_by_token_hash, get_user_by_email, get_user_by_id, insert_ceremony,
+    insert_invitation, insert_passkey, insert_recovery_token, insert_session, insert_step_up,
+    list_active_sessions_for_user, list_passkeys_for_user, lock_user_row, recovery_issued_since,
     revoke_all_sessions, revoke_all_step_ups, revoke_session, set_password_hash_by_id,
     touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
 };
@@ -210,6 +211,7 @@ pub async fn list_session_info(
     Ok(rows
         .into_iter()
         .map(|row| SessionInfo {
+            public_id: row.public_id,
             current: current_token_hash.is_some_and(|hash| hash == row.token_hash),
             created_at: row.created_at,
             last_used_at: row.last_used_at,
@@ -217,6 +219,28 @@ pub async fn list_session_info(
             user_agent: row.user_agent,
         })
         .collect())
+}
+
+/// Revoke one active session that belongs to `user_id`. Returns whether that
+/// session is the one presenting `current_token_hash`. Missing, expired, or
+/// another user's session is not found.
+pub async fn revoke_session_for_user(
+    db: &DatabaseConnection,
+    user_id: i64,
+    public_id: uuid::Uuid,
+    current_token_hash: Option<&str>,
+) -> Result<bool, AuthError> {
+    let revoked_at = now();
+    let Some(session) = get_active_session_for_user(db, user_id, public_id, revoked_at).await?
+    else {
+        return Err(AuthError::Db(DbError::NotFound));
+    };
+    let current = current_token_hash.is_some_and(|hash| hash == session.token_hash);
+    revoke_session(db, session.id, revoked_at).await?;
+    if current {
+        revoke_all_step_ups(db, user_id, revoked_at).await?;
+    }
+    Ok(current)
 }
 
 pub async fn logout_current(

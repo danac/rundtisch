@@ -10,6 +10,7 @@ import {
 type ErrorResponse = { error: string }
 type CeremonyStart = { flow_id: string; options: unknown }
 type SessionRow = {
+  public_id: string
   created_at: string
   last_used_at: string
   expires_at: string
@@ -823,15 +824,38 @@ export function AccountPanel() {
     setPasskeysLoaded(true)
   }
 
+  async function loadSessions() {
+    const response = await api('/api/auth/sessions')
+    if (!response.ok) return
+    const body = (await response.json()) as { sessions: SessionRow[] }
+    setSessions(body.sessions)
+  }
+
   useEffect(() => {
     void loadPasskeys()
-    void (async () => {
-      const response = await api('/api/auth/sessions')
-      if (!response.ok) return
-      const body = (await response.json()) as { sessions: SessionRow[] }
-      setSessions(body.sessions)
-    })()
+    void loadSessions()
   }, [])
+
+  async function revokeSession(session: SessionRow) {
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await api(`/api/auth/sessions/${session.public_id}`, { method: 'DELETE' })
+      if (!response.ok) {
+        setError(await readError(response))
+        return
+      }
+      if (session.current) {
+        await logout()
+        return
+      }
+      await loadSessions()
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function addPasskey() {
     setBusy(true)
@@ -1157,14 +1181,28 @@ export function AccountPanel() {
         ) : (
           <ul className="mt-3 space-y-2">
             {sessions.map((session) => (
-              <li key={`${session.created_at}-${session.expires_at}`} className="text-sm">
-                <span className="block text-ink">
-                  {sessionLabel(session.user_agent)}
-                  {session.current ? ' · This session' : ''}
+              <li
+                key={session.public_id}
+                className="flex items-center justify-between gap-3 text-sm"
+              >
+                <span>
+                  <span className="block text-ink">
+                    {sessionLabel(session.user_agent)}
+                    {session.current ? ' · This session' : ''}
+                  </span>
+                  <span className="block text-xs text-ink-muted">
+                    Last used {session.last_used_at.slice(0, 10)} · Expires{' '}
+                    {session.expires_at.slice(0, 10)}
+                  </span>
                 </span>
-                <span className="block text-xs text-ink-muted">
-                  Last used {session.last_used_at.slice(0, 10)} · Expires {session.expires_at.slice(0, 10)}
-                </span>
+                <button
+                  type="button"
+                  className={secondaryButtonClassName}
+                  disabled={busy}
+                  onClick={() => void revokeSession(session)}
+                >
+                  Revoke
+                </button>
               </li>
             ))}
           </ul>

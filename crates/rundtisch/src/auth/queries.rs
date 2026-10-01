@@ -167,6 +167,7 @@ pub async fn insert_session<C: ConnectionTrait>(
     user_agent: Option<&str>,
 ) -> Result<(), DbError> {
     let model = session::ActiveModel {
+        public_id: Set(crate::auth::models::new_public_id()),
         user_id: Set(user_id),
         token_hash: Set(token_hash.to_owned()),
         created_at: Set(created_at),
@@ -193,6 +194,23 @@ pub async fn list_active_sessions_for_user<C: ConnectionTrait>(
         .await
         .map_err(DbError::from)?;
     Ok(rows.into_iter().map(Session::from).collect())
+}
+
+pub async fn get_active_session_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    public_id: Uuid,
+    now: OffsetDateTime,
+) -> Result<Option<Session>, DbError> {
+    let row = session::Entity::find()
+        .filter(session::Column::PublicId.eq(public_id))
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .filter(session::Column::ExpiresAt.gt(now))
+        .one(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(row.map(Session::from))
 }
 
 pub async fn get_session_by_token_hash<C: ConnectionTrait>(
@@ -640,6 +658,7 @@ impl From<session::Model> for Session {
     fn from(model: session::Model) -> Self {
         Self {
             id: model.id,
+            public_id: model.public_id,
             user_id: model.user_id,
             token_hash: model.token_hash,
             created_at: model.created_at,

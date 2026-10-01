@@ -6,12 +6,14 @@ use crate::auth::extract::{SessionUser, secret_bytes};
 use crate::auth::models::{AccountView, SessionGrant};
 use crate::auth::password::{Argon2idHasher, PasswordHasher, check_password_policy};
 use crate::auth::services::{
-    complete_password_recovery, complete_password_registration, create_recovery_token,
-    delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
-    clear_session_password, finish_session_passkey, finish_step_up_passkey_login, list_passkey_info,
-    list_session_info, login_with_password, logout_all_for_user, logout_current, mint_cli_session, request_recovery,
-    set_session_password, start_invite_passkey, start_passkey_login, start_recovery_passkey,
-    start_session_passkey, start_step_up_passkey_login, step_up_with_password, authenticate_step_up,
+    authenticate_step_up, clear_session_password, complete_password_recovery,
+    complete_password_registration, create_recovery_token, delete_passkey, finish_invite_passkey,
+    finish_passkey_login, finish_recovery_passkey, finish_session_passkey,
+    finish_step_up_passkey_login, list_passkey_info, list_session_info, login_with_password,
+    logout_all_for_user, logout_current, mint_cli_session, request_recovery,
+    revoke_session_for_user, set_session_password, start_invite_passkey, start_passkey_login,
+    start_recovery_passkey, start_session_passkey, start_step_up_passkey_login,
+    step_up_with_password,
 };
 use crate::auth::session::{
     cap_user_agent, clear_session_cookie_header, session_cookie_header, token_hash,
@@ -472,10 +474,39 @@ pub async fn list_sessions(
 ) -> impl IntoResponse {
     let result: Result<axum::response::Response, AuthError> = async {
         let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
-        let current_hash = presented_token(&headers)
-            .and_then(|token| token_hash(&pepper, &token).ok());
+        let current_hash =
+            presented_token(&headers).and_then(|token| token_hash(&pepper, &token).ok());
         let sessions = list_session_info(&state.db, user.id, current_hash.as_deref()).await?;
         Ok(Json(json!({ "sessions": sessions })).into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
+/// Revoke one of the signed-in user's sessions. Revoking the session that
+/// presented this request clears its cookie.
+pub async fn revoke_listed_session(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    SessionUser(user): SessionUser,
+    Path(public_id): Path<Uuid>,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let current_hash =
+            presented_token(&headers).and_then(|token| token_hash(&pepper, &token).ok());
+        let current =
+            revoke_session_for_user(&state.db, user.id, public_id, current_hash.as_deref()).await?;
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        if current {
+            response
+                .headers_mut()
+                .insert(header::SET_COOKIE, clear_session_cookie_header());
+        }
+        Ok(response)
     }
     .await;
     match result {
@@ -853,6 +884,10 @@ mod tests {
             .route(
                 "/api/auth/sessions",
                 axum::routing::get(list_sessions).post(mint_session),
+            )
+            .route(
+                "/api/auth/sessions/{public_id}",
+                axum::routing::delete(revoke_listed_session),
             )
             .route(
                 "/api/auth/password",
@@ -1261,12 +1296,32 @@ mod tests {
         assert_eq!(status, HttpStatus::OK, "{listed_json}");
         let sessions = listed_json["sessions"].as_array().unwrap();
         assert_eq!(sessions.len(), 2, "{listed_json}");
-        assert!(sessions.iter().any(|row| row["current"] == true && row["user_agent"].is_null()));
-        assert!(sessions.iter().any(|row| {
-            row["current"] == false && row["user_agent"] == "cli linux 6.8"
-        }));
+        assert!(
+            sessions
+                .iter()
+                .any(|row| row["current"] == true && row["user_agent"].is_null())
+        );
+        assert!(
+            sessions
+                .iter()
+                .any(|row| { row["current"] == false && row["user_agent"] == "cli linux 6.8" })
+        );
         assert!(listed_json["sessions"][0].get("token_hash").is_none());
         assert!(listed_json["sessions"][0].get("id").is_none());
+        let cli_public_id = sessions
+            .iter()
+            .find(|row| row["user_agent"] == "cli linux 6.8")
+            .unwrap()["public_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let current_public_id =
+            sessions.iter().find(|row| row["current"] == true).unwrap()["public_id"]
+                .as_str()
+                .unwrap()
+                .to_string();
+        assert_ne!(cli_public_id, current_public_id);
+        Uuid::parse_str(&cli_public_id).unwrap();
 
         let cli = app
             .clone()
@@ -1291,6 +1346,123 @@ mod tests {
         )
         .await;
         assert_eq!(bad.status(), HttpStatus::BAD_REQUEST);
+
+        let other_token = invite(&db, "other@example.com").await;
+        let other = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": other_token,
+                "password": "unique-passphrase-ok",
+                "alias": "other"
+            }),
+            None,
+            None,
+        )
+        .await;
+        let other_cookie = cookie_pair(&other);
+        let foreign = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/auth/sessions/{cli_public_id}"))
+                    .header("cookie", &other_cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(foreign.status(), HttpStatus::NOT_FOUND);
+
+        let missing = app
+            .clone()
+            .oneshot(
+                Request::delete("/api/auth/sessions/00000000-0000-4000-8000-000000000099")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(missing.status(), HttpStatus::NOT_FOUND);
+
+        let revoked = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/auth/sessions/{cli_public_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(revoked.status(), HttpStatus::NO_CONTENT);
+        assert!(revoked.headers().get(header::SET_COOKIE).is_none());
+
+        let cli_after = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("authorization", format!("Bearer {cli_token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(cli_after.status(), HttpStatus::UNAUTHORIZED);
+
+        let listed_after = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/sessions")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, listed_after_json) = body_json(listed_after).await;
+        assert_eq!(status, HttpStatus::OK, "{listed_after_json}");
+        let remaining = listed_after_json["sessions"].as_array().unwrap();
+        assert_eq!(remaining.len(), 1, "{listed_after_json}");
+        assert_eq!(remaining[0]["public_id"], current_public_id);
+        assert_eq!(remaining[0]["current"], true);
+
+        let again = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/auth/sessions/{cli_public_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(again.status(), HttpStatus::NOT_FOUND);
+
+        let current = app
+            .clone()
+            .oneshot(
+                Request::delete(format!("/api/auth/sessions/{current_public_id}"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(current.status(), HttpStatus::NO_CONTENT);
+        assert!(current.headers().get(header::SET_COOKIE).is_some());
+
+        let browser_after = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(browser_after.status(), HttpStatus::UNAUTHORIZED);
     }
 
     #[tokio::test]
