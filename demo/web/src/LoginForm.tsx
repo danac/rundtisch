@@ -9,6 +9,20 @@ import {
 
 type ErrorResponse = { error: string }
 type CeremonyStart = { flow_id: string; options: unknown }
+type SessionRow = {
+  created_at: string
+  last_used_at: string
+  expires_at: string
+  user_agent: string | null
+  current: boolean
+}
+
+function sessionLabel(userAgent: string | null): string {
+  if (!userAgent) return 'This browser'
+  if (userAgent.startsWith('cli ')) return userAgent.slice(4)
+  return userAgent
+}
+
 type PasskeyRow = {
   public_id: string
   label: string | null
@@ -672,6 +686,7 @@ export function LoginForm() {
 export function AccountPanel() {
   const { api, user, establish, logout, logoutAll } = useSession()
   const [passkeys, setPasskeys] = useState<PasskeyRow[]>([])
+  const [sessions, setSessions] = useState<SessionRow[]>([])
   const [passkeysLoaded, setPasskeysLoaded] = useState(false)
   const [passkeyLabel, setPasskeyLabel] = useState('')
   const [addingPasskey, setAddingPasskey] = useState(false)
@@ -810,6 +825,12 @@ export function AccountPanel() {
 
   useEffect(() => {
     void loadPasskeys()
+    void (async () => {
+      const response = await api('/api/auth/sessions')
+      if (!response.ok) return
+      const body = (await response.json()) as { sessions: SessionRow[] }
+      setSessions(body.sessions)
+    })()
   }, [])
 
   async function addPasskey() {
@@ -1124,6 +1145,26 @@ export function AccountPanel() {
                 >
                   Remove
                 </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="mt-5 border-t border-ring/50 pt-5">
+        <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
+        {sessions.length === 0 ? (
+          <p className="mt-3 text-sm text-ink-muted">No sessions.</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {sessions.map((session) => (
+              <li key={`${session.created_at}-${session.expires_at}`} className="text-sm">
+                <span className="block text-ink">
+                  {sessionLabel(session.user_agent)}
+                  {session.current ? ' · This session' : ''}
+                </span>
+                <span className="block text-xs text-ink-muted">
+                  Last used {session.last_used_at.slice(0, 10)} · Expires {session.expires_at.slice(0, 10)}
+                </span>
               </li>
             ))}
           </ul>

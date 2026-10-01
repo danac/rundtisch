@@ -9,11 +9,13 @@ use crate::auth::services::{
     complete_password_recovery, complete_password_registration, create_recovery_token,
     delete_passkey, finish_invite_passkey, finish_passkey_login, finish_recovery_passkey,
     clear_session_password, finish_session_passkey, finish_step_up_passkey_login, list_passkey_info,
-    login_with_password, logout_all_for_user, logout_current, mint_cli_session, request_recovery,
+    list_session_info, login_with_password, logout_all_for_user, logout_current, mint_cli_session, request_recovery,
     set_session_password, start_invite_passkey, start_passkey_login, start_recovery_passkey,
     start_session_passkey, start_step_up_passkey_login, step_up_with_password, authenticate_step_up,
 };
-use crate::auth::session::{cap_user_agent, clear_session_cookie_header, session_cookie_header};
+use crate::auth::session::{
+    cap_user_agent, clear_session_cookie_header, session_cookie_header, token_hash,
+};
 use crate::auth::webauthn::PasskeyCeremony;
 use axum::Json;
 use axum::extract::{Path, State};
@@ -463,6 +465,25 @@ pub async fn me(SessionUser(user): SessionUser) -> impl IntoResponse {
     Json(AccountView::from(&user)).into_response()
 }
 
+pub async fn list_sessions(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    SessionUser(user): SessionUser,
+) -> impl IntoResponse {
+    let result: Result<axum::response::Response, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        let current_hash = presented_token(&headers)
+            .and_then(|token| token_hash(&pepper, &token).ok());
+        let sessions = list_session_info(&state.db, user.id, current_hash.as_deref()).await?;
+        Ok(Json(json!({ "sessions": sessions })).into_response())
+    }
+    .await;
+    match result {
+        Ok(response) => response,
+        Err(err) => err.into_response(),
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct MintSessionBody {
     pub os: String,
@@ -829,7 +850,10 @@ mod tests {
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
-            .route("/api/auth/sessions", axum::routing::post(mint_session))
+            .route(
+                "/api/auth/sessions",
+                axum::routing::get(list_sessions).post(mint_session),
+            )
             .route(
                 "/api/auth/password",
                 axum::routing::put(set_password).delete(clear_password),
@@ -1222,6 +1246,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(browser.status(), HttpStatus::OK);
+
+        let listed = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/sessions")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, listed_json) = body_json(listed).await;
+        assert_eq!(status, HttpStatus::OK, "{listed_json}");
+        let sessions = listed_json["sessions"].as_array().unwrap();
+        assert_eq!(sessions.len(), 2, "{listed_json}");
+        assert!(sessions.iter().any(|row| row["current"] == true && row["user_agent"].is_null()));
+        assert!(sessions.iter().any(|row| {
+            row["current"] == false && row["user_agent"] == "cli linux 6.8"
+        }));
+        assert!(listed_json["sessions"][0].get("token_hash").is_none());
+        assert!(listed_json["sessions"][0].get("id").is_none());
 
         let cli = app
             .clone()

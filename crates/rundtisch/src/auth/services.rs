@@ -3,7 +3,7 @@ use crate::auth::error::{AuthError, DbError};
 use crate::auth::models::{
     CEREMONY_INVITE_REGISTER, CEREMONY_LOGIN, CEREMONY_RECOVERY_REGISTER,
     CEREMONY_SESSION_REGISTER, CEREMONY_STEP_UP_LOGIN, CeremonyRecord, NewUser, PasskeyInfo, Role,
-    SessionGrant, User, alias_from_email, new_public_id,
+    SessionGrant, SessionInfo, User, alias_from_email, new_public_id,
 };
 use crate::auth::password::{PasswordHasher, dummy_verify};
 use crate::auth::queries::{
@@ -12,7 +12,7 @@ use crate::auth::queries::{
     clear_password_hash_by_id, get_ceremony, get_passkey_by_credential_id, get_passkey_for_user,
     get_session_by_token_hash, get_step_up_by_token_hash, get_user_by_email, get_user_by_id,
     insert_ceremony, insert_invitation, insert_passkey, insert_recovery_token, insert_session,
-    insert_step_up, list_passkeys_for_user, lock_user_row, recovery_issued_since,
+    insert_step_up, list_active_sessions_for_user, list_passkeys_for_user, lock_user_row, recovery_issued_since,
     revoke_all_sessions, revoke_all_step_ups, revoke_session, set_password_hash_by_id,
     touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
 };
@@ -199,6 +199,24 @@ pub async fn authenticate_token(
         let _ = touch_session_last_used(db, session.id, created).await;
     }
     Ok((user, session.id))
+}
+
+pub async fn list_session_info(
+    db: &DatabaseConnection,
+    user_id: i64,
+    current_token_hash: Option<&str>,
+) -> Result<Vec<SessionInfo>, AuthError> {
+    let rows = list_active_sessions_for_user(db, user_id, now()).await?;
+    Ok(rows
+        .into_iter()
+        .map(|row| SessionInfo {
+            current: current_token_hash.is_some_and(|hash| hash == row.token_hash),
+            created_at: row.created_at,
+            last_used_at: row.last_used_at,
+            expires_at: row.expires_at,
+            user_agent: row.user_agent,
+        })
+        .collect())
 }
 
 pub async fn logout_current(

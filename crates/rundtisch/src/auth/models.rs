@@ -202,6 +202,19 @@ impl Session {
     }
 }
 
+/// Active session fields safe to show the account owner. No row id or token hash.
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionInfo {
+    #[serde(with = "time::serde::rfc3339")]
+    pub created_at: DateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub last_used_at: DateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    pub expires_at: DateTime,
+    pub user_agent: Option<String>,
+    pub current: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasskeyRecord {
     pub id: i64,

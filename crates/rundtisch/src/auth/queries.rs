@@ -179,6 +179,22 @@ pub async fn insert_session<C: ConnectionTrait>(
     Ok(())
 }
 
+pub async fn list_active_sessions_for_user<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    now: OffsetDateTime,
+) -> Result<Vec<Session>, DbError> {
+    let rows = session::Entity::find()
+        .filter(session::Column::UserId.eq(user_id))
+        .filter(session::Column::RevokedAt.is_null())
+        .filter(session::Column::ExpiresAt.gt(now))
+        .order_by_desc(session::Column::LastUsedAt)
+        .all(db)
+        .await
+        .map_err(DbError::from)?;
+    Ok(rows.into_iter().map(Session::from).collect())
+}
+
 pub async fn get_session_by_token_hash<C: ConnectionTrait>(
     db: &C,
     token_hash: &str,
