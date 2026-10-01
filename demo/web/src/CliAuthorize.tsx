@@ -187,15 +187,11 @@ export function CliAuthorize() {
               Cancel
             </button>
           </div>
-          <HomeLink />
         </>
       ) : (
-        <>
-          <p className="mt-4 text-sm text-ink" role="alert">
-            This authorization link is missing a loopback redirect, state, or machine details.
-          </p>
-          <HomeLink />
-        </>
+        <p className="mt-4 text-sm text-ink" role="alert">
+          This authorization link is missing a loopback redirect, state, or machine details.
+        </p>
       )}
     </section>
   )
