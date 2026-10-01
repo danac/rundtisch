@@ -5,6 +5,8 @@ const panelClassName =
   'w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[0_12px_40px_rgba(44,36,22,0.08)] backdrop-blur-[2px]'
 const primaryButtonClassName =
   'rounded-full bg-ink px-4 py-2.5 text-sm font-semibold tracking-wide text-paper transition hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
+const secondaryButtonClassName =
+  'rounded-full border border-ring/80 bg-paper px-4 py-2.5 text-sm font-semibold tracking-wide text-ink transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
 
 type CliLink = {
   redirect: URL
@@ -47,12 +49,31 @@ export function authorizeScreen(): 'authorize' | 'done' | null {
 }
 
 export function CliAuthorized() {
+  const params = new URLSearchParams(window.location.search)
+  const decision = params.get('decision')
+  const callback = params.get('callback')
+  const delivered = callback === 'ok'
+  let heading = 'Authorization finished'
+  let detail = 'This page does not have an authorization result.'
+  if (decision === 'authorized' && delivered) {
+    heading = 'Command line tool signed in'
+    detail = 'The command line tool received the session. You can close this tab.'
+  } else if (decision === 'authorized') {
+    heading = 'Command line tool not reached'
+    detail = 'A session was created, but the command line tool could not be reached.'
+  } else if (decision === 'declined' && delivered) {
+    heading = 'Authorization declined'
+    detail = 'The command line tool was notified. You can close this tab.'
+  } else if (decision === 'declined') {
+    heading = 'Authorization declined'
+    detail = 'The command line tool could not be reached.'
+  }
   return (
     <section className={`${panelClassName} mt-10 max-w-md`} aria-labelledby="cli-done-heading">
       <h2 id="cli-done-heading" className="text-sm font-semibold tracking-wide text-ink">
-        Command line tool signed in
+        {heading}
       </h2>
-      <p className="mt-4 text-sm text-ink-muted">You can close this tab.</p>
+      <p className="mt-4 text-sm text-ink-muted">{detail}</p>
     </section>
   )
 }
@@ -62,6 +83,23 @@ export function CliAuthorize() {
   const link = readCliLink()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  async function notifyCli(target: URL): Promise<boolean> {
+    try {
+      await fetch(target.toString(), { mode: 'no-cors', cache: 'no-store' })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  function showDone(decision: 'authorized' | 'declined', callbackOk: boolean) {
+    const params = new URLSearchParams({
+      decision,
+      callback: callbackOk ? 'ok' : 'error',
+    })
+    window.location.assign(`/authorize/done?${params}`)
+  }
 
   async function authorize() {
     if (!link) return
@@ -87,12 +125,21 @@ export function CliAuthorize() {
       if (body.expires_in !== undefined) {
         target.searchParams.set('expires_in', String(body.expires_in))
       }
-      window.location.assign(target.toString())
+      showDone('authorized', await notifyCli(target))
     } catch {
       setError('Could not create a session for this machine.')
     } finally {
       setBusy(false)
     }
+  }
+
+  async function decline() {
+    if (!link) return
+    setBusy(true)
+    setError(null)
+    const target = new URL(link.redirect.href)
+    target.searchParams.set('state', link.state)
+    showDone('declined', await notifyCli(target))
   }
 
   return (
@@ -111,14 +158,24 @@ export function CliAuthorize() {
               {error}
             </p>
           ) : null}
-          <button
-            type="button"
-            className={`mt-6 w-full ${primaryButtonClassName}`}
-            disabled={busy}
-            onClick={() => void authorize()}
-          >
-            Authorize
-          </button>
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              className={`flex-1 ${primaryButtonClassName}`}
+              disabled={busy}
+              onClick={() => void authorize()}
+            >
+              Authorize
+            </button>
+            <button
+              type="button"
+              className={`flex-1 ${secondaryButtonClassName}`}
+              disabled={busy}
+              onClick={() => void decline()}
+            >
+              Cancel
+            </button>
+          </div>
         </>
       ) : (
         <p className="mt-4 text-sm text-ink" role="alert">
