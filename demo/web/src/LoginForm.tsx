@@ -702,6 +702,8 @@ export function AccountPanel() {
   const passwordSet = user?.has_password ?? false
   const canRemovePassword = passkeysLoaded && passwordSet && passkeys.length > 0
   const solePasskey = !passwordSet && passkeys.length <= 1
+  const currentSession = sessions.find((session) => session.current) ?? null
+  const otherSessions = sessions.filter((session) => !session.current)
   const stepUpToken = useRef<{ token: string; expiresAt: number } | null>(null)
   const stepUpWait = useRef<{
     resolve: (token: string) => void
@@ -1193,37 +1195,51 @@ export function AccountPanel() {
         )}
       </div>
       <div className="mt-5 border-t border-ring/50 pt-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
-          <button
-            type="button"
-            className={secondaryButtonClassName}
-            disabled={busy || !sessions.some((session) => !session.current)}
-            onClick={() => void revokeOtherSessions()}
-          >
-            Revoke all other sessions
-          </button>
-        </div>
-        {sessions.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">No sessions.</p>
-        ) : (
-          <ul className="mt-3 space-y-2">
-            {sessions.map((session) => (
-              <li
-                key={session.public_id}
-                className="flex items-center justify-between gap-3 text-sm"
-              >
-                <span>
-                  <span className="block text-ink">
-                    {sessionLabel(session.user_agent)}
-                    {session.current ? ' · This session' : ''}
-                  </span>
-                  <span className="block text-xs text-ink-muted">
-                    Last used {session.last_used_at.slice(0, 10)} · Expires{' '}
-                    {session.expires_at.slice(0, 10)}
-                  </span>
+        <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
+        <div className="mt-4">
+          <h4 className="text-sm font-semibold tracking-wide text-ink">Current session</h4>
+          {currentSession ? (
+            <ul className="mt-3 space-y-2">
+              <li className="text-sm">
+                <span className="block text-ink">{sessionLabel(currentSession.user_agent)}</span>
+                <span className="block text-xs text-ink-muted">
+                  Last used {currentSession.last_used_at.slice(0, 10)} · Expires{' '}
+                  {currentSession.expires_at.slice(0, 10)}
                 </span>
-                {session.current ? null : (
+              </li>
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-ink-muted">No sessions.</p>
+          )}
+        </div>
+        <div className="mt-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold tracking-wide text-ink">Other active sessions</h4>
+            <button
+              type="button"
+              className={secondaryButtonClassName}
+              disabled={busy || otherSessions.length === 0}
+              onClick={() => void revokeOtherSessions()}
+            >
+              Revoke all
+            </button>
+          </div>
+          {otherSessions.length === 0 ? (
+            <p className="mt-3 text-sm text-ink-muted">No other active sessions.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {otherSessions.map((session) => (
+                <li
+                  key={session.public_id}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <span>
+                    <span className="block text-ink">{sessionLabel(session.user_agent)}</span>
+                    <span className="block text-xs text-ink-muted">
+                      Last used {session.last_used_at.slice(0, 10)} · Expires{' '}
+                      {session.expires_at.slice(0, 10)}
+                    </span>
+                  </span>
                   <button
                     type="button"
                     className={secondaryButtonClassName}
@@ -1232,11 +1248,11 @@ export function AccountPanel() {
                   >
                     Revoke
                   </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
     </section>
   )
