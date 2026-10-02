@@ -26,9 +26,11 @@ auth = [
     "dep:base64",
     "dep:serde_cbor_2",
     "dep:zeroize",
+    "dep:tokio",
 ]
 
 [dependencies]
+async-trait = "0.1"
 sea-orm = { version = "2.0.3", default-features = false }
 sea-orm-migration = { version = "2.0.3", default-features = false, optional = true }
 serde = { version = "1.0.229", default-features = false, features = ["derive"], optional = true }
@@ -46,6 +48,7 @@ subtle = { version = "2", optional = true }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"], optional = true }
 serde_cbor_2 = { version = "0.13.0", default-features = false, features = ["std"], optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc"], optional = true }
+tokio = { version = "1.47.0", default-features = false, features = ["rt"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt"] }

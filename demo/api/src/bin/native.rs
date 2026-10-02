@@ -1,5 +1,8 @@
+use std::sync::Arc;
+
 use axum::Router;
 use rundtisch::AppState;
+use rundtisch_demo::SendmailEmailSender;
 use rundtisch_demo::build_router;
 use rundtisch_demo::listen_addr;
 use rundtisch_demo::native_platform;
@@ -12,7 +15,10 @@ async fn main() {
     let db = native_platform::connect()
         .await
         .expect("database connection");
-    let state = AppState { db };
+    let state = AppState {
+        db,
+        email: Arc::new(SendmailEmailSender),
+    };
     let mut router = build_router(state);
     if let Some(dir) = static_dir() {
         println!("Serving frontend from {}", dir.display());
