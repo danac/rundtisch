@@ -122,6 +122,24 @@ pub async fn set_password_hash_by_id<C: ConnectionTrait>(
     Ok(())
 }
 
+pub async fn set_alias_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    alias: String,
+    updated_at: OffsetDateTime,
+) -> Result<(), DbError> {
+    let row = user::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(DbError::from)?
+        .ok_or(DbError::NotFound)?;
+    let mut active: user::ActiveModel = row.into();
+    active.alias = Set(alias);
+    active.updated_at = Set(updated_at);
+    active.update(db).await.map_err(DbError::from)?;
+    Ok(())
+}
+
 pub async fn touch_last_login_by_id<C: ConnectionTrait>(
     db: &C,
     id: i64,

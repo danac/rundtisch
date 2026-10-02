@@ -41,6 +41,7 @@ demo/api/
 | POST | `/api/auth/logout` | Revoke this session, clear cookie |
 | POST | `/api/auth/logout_all` | Revoke every session for the account |
 | GET | `/api/auth/me` | Cookie or `Authorization: Bearer` |
+| PUT | `/api/auth/alias` | Update the signed-in user's display alias |
 | POST | `/api/auth/request_reset` | `202`; does not return a token |
 | POST | `/api/auth/reset` | Password recovery |
 | POST | `/api/auth/reset/passkey/options`, `/api/auth/reset/passkey` | Passkey recovery |

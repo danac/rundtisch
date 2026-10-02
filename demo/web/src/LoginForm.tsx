@@ -693,6 +693,8 @@ export function AccountPanel() {
   const [addingPasskey, setAddingPasskey] = useState(false)
   const [password, setPassword] = useState('')
   const [settingPassword, setSettingPassword] = useState(false)
+  const [aliasDraft, setAliasDraft] = useState('')
+  const [settingAlias, setSettingAlias] = useState(false)
   const [stepUpPassword, setStepUpPassword] = useState('')
   const [stepUpError, setStepUpError] = useState<string | null>(null)
   const [stepUpBusy, setStepUpBusy] = useState(false)
@@ -996,6 +998,29 @@ export function AccountPanel() {
     }
   }
 
+  async function saveAlias(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const response = await api('/api/auth/alias', {
+        method: 'PUT',
+        body: JSON.stringify({ alias: aliasDraft.trim() }),
+      })
+      if (!response.ok) {
+        setError(accountError(await readError(response)))
+        return
+      }
+      establish((await response.json()) as AuthUser)
+      setAliasDraft('')
+      setSettingAlias(false)
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <section className={panelClassName} aria-labelledby="account-heading">
       <div className="flex items-center justify-between gap-3">
@@ -1006,7 +1031,59 @@ export function AccountPanel() {
           Log out
         </button>
       </div>
-      <p className="mt-4 text-sm text-ink">{user?.alias}</p>
+      {settingAlias ? (
+        <form onSubmit={(event) => void saveAlias(event)} className="mt-4">
+          <label className="block text-sm text-ink-muted">
+            Alias
+            <input
+              type="text"
+              name="alias"
+              autoComplete="nickname"
+              required
+              maxLength={128}
+              autoFocus
+              value={aliasDraft}
+              onChange={(event) => setAliasDraft(event.target.value)}
+              className={inputClassName}
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+            Save alias
+          </button>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy}
+            onClick={() => {
+              setAliasDraft('')
+              setError(null)
+              setSettingAlias(false)
+            }}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="min-w-0 truncate text-sm text-ink">{user?.alias}</p>
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            disabled={busy}
+            onClick={() => {
+              setError(null)
+              setPassword('')
+              setSettingPassword(false)
+              setAddingPasskey(false)
+              setAliasDraft(user?.alias ?? '')
+              setSettingAlias(true)
+            }}
+          >
+            Change
+          </button>
+        </div>
+      )}
       <p className="mt-1 text-sm text-ink-muted">{user?.email}</p>
       <p className="mt-1 break-all font-mono text-xs text-ink-muted">{user?.public_id}</p>
       {error ? (
@@ -1082,6 +1159,7 @@ export function AccountPanel() {
                   setError(null)
                   setPassword('')
                   setAddingPasskey(false)
+                  setSettingAlias(false)
                   setSettingPassword(true)
                 }}
               >
@@ -1140,6 +1218,7 @@ export function AccountPanel() {
                 setError(null)
                 setPasskeyLabel('')
                 setSettingPassword(false)
+                setSettingAlias(false)
                 setAddingPasskey(true)
               }}
             >
