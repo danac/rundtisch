@@ -234,7 +234,9 @@ function PasskeyCreateStep({
 export function LoginForm() {
   const { api, establish } = useSession()
   const recovering = recoverFromQuery.length > 0
-  const [mode, setMode] = useState<'login' | 'register'>(inviteFromQuery ? 'register' : 'login')
+  const [mode, setMode] = useState<
+    'login' | 'register' | 'request_recovery' | 'recovery_sent'
+  >(inviteFromQuery ? 'register' : 'login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [alias, setAlias] = useState('')
@@ -242,8 +244,10 @@ export function LoginForm() {
   const [inviteToken, setInviteToken] = useState(inviteFromQuery)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
   const [registerPhase, setRegisterPhase] = useState<'method' | 'password' | 'passkey'>('method')
+  const [recoverPhase, setRecoverPhase] = useState<'method' | 'password' | 'passkey'>('method')
   const canPasskey = passkeySupported()
   const conditionalAbort = useRef<AbortController | null>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
@@ -263,6 +267,53 @@ export function LoginForm() {
     setPassword('')
     clearAuthQuery()
     establish(body.user)
+  }
+
+  function showLogin() {
+    setMode('login')
+    setLoginPhase('email')
+    setRecoverPhase('method')
+    setPassword('')
+    setPasskeyLabel('')
+    setError(null)
+    setRecoveryNotice(null)
+  }
+
+  function showRequestRecovery() {
+    setMode('request_recovery')
+    setRecoverPhase('method')
+    setPassword('')
+    setPasskeyLabel('')
+    setError(null)
+    setRecoveryNotice(null)
+  }
+
+  async function handleRequestRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    begin()
+    setRecoveryNotice(null)
+    try {
+      const recoveryEmail =
+        String(new FormData(event.currentTarget).get('email') ?? '').trim() || email.trim()
+      setEmail(recoveryEmail)
+      const response = await api('/api/auth/request_reset', {
+        method: 'POST',
+        body: JSON.stringify({ email: recoveryEmail }),
+      })
+      if (!response.ok) {
+        setError(await readError(response))
+        return
+      }
+      const body = (await response.json()) as { message?: string }
+      setRecoveryNotice(
+        body.message ?? 'If that account exists, a recovery link has been sent.',
+      )
+      setMode('recovery_sent')
+    } catch (err) {
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
   }
 
   useEffect(() => {
@@ -421,7 +472,13 @@ export function LoginForm() {
     }
   }
 
-  const heading = recovering ? 'Set a new credential' : mode === 'register' ? 'Register' : 'Log in'
+  const heading = recovering
+    ? 'Set a new credential'
+    : mode === 'register'
+      ? 'Register'
+      : mode === 'request_recovery' || mode === 'recovery_sent'
+        ? 'Recover account'
+        : 'Log in'
 
   return (
     <section className={panelClassName} aria-labelledby="login-heading">
@@ -429,7 +486,16 @@ export function LoginForm() {
         <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">
           {heading}
         </h2>
-        {recovering ? null : (
+        {recovering ? null : mode === 'request_recovery' || mode === 'recovery_sent' ? (
+          <button
+            type="button"
+            className={secondaryButtonClassName}
+            onClick={showLogin}
+            disabled={busy}
+          >
+            Back to login
+          </button>
+        ) : (
           <button
             type="button"
             className={secondaryButtonClassName}
@@ -437,9 +503,11 @@ export function LoginForm() {
               setMode(mode === 'register' ? 'login' : 'register')
               setLoginPhase('email')
               setRegisterPhase('method')
+              setRecoverPhase('method')
               setPassword('')
               setPasskeyLabel('')
               setError(null)
+              setRecoveryNotice(null)
             }}
             disabled={busy}
           >
@@ -455,43 +523,68 @@ export function LoginForm() {
       ) : null}
 
       {recovering ? (
-        <form onSubmit={(event) => void handleRecoverPassword(event)} className="mt-4">
-          <p className="text-sm text-ink-muted">Choose a new password or a passkey for this account.</p>
-          <label className="mt-4 block text-sm text-ink-muted">
-            New password
-            <input
-              type="password"
-              name="password"
-              autoComplete="new-password"
-              required
-              minLength={15}
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={inputClassName}
+        recoverPhase === 'method' ? (
+          <div className="mt-4">
+            <p className="text-sm text-ink-muted">
+              Choose a new password or a passkey for this account.
+            </p>
+            <button
+              type="button"
+              className={`mt-6 w-full ${primaryButtonClassName}`}
               disabled={busy}
-            />
-          </label>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Save password
-          </button>
-          <label className="mt-4 block text-sm text-ink-muted">
-            Passkey label (optional)
-            <input
-              type="text"
-              maxLength={64}
-              value={passkeyLabel}
-              onChange={(event) => setPasskeyLabel(event.target.value)}
-              placeholder="MacBook Touch ID"
-              className={inputClassName}
+              onClick={() => {
+                setError(null)
+                setRecoverPhase('password')
+              }}
+            >
+              Set a password
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy || !canPasskey}
+              onClick={() => {
+                setError(null)
+                setRecoverPhase('passkey')
+              }}
+            >
+              {canPasskey ? 'Create a passkey' : 'Passkeys are not available in this browser'}
+            </button>
+          </div>
+        ) : recoverPhase === 'password' ? (
+          <form
+            key="recover-password"
+            onSubmit={(event) => void handleRecoverPassword(event)}
+            className="mt-4"
+          >
+            <StepSummary
+              label="Password"
               disabled={busy}
+              onChange={() => {
+                setPassword('')
+                setError(null)
+                setRecoverPhase('method')
+              }}
             />
-          </label>
-          <button
-            type="button"
-            className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey}
-            onClick={() =>
+            <div className="mt-4">
+              <NewPasswordField
+                value={password}
+                onChange={setPassword}
+                disabled={busy}
+                autoFocus
+              />
+            </div>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Save password
+            </button>
+          </form>
+        ) : (
+          <PasskeyCreateStep
+            busy={busy}
+            canPasskey={canPasskey}
+            label={passkeyLabel}
+            onLabelChange={setPasskeyLabel}
+            onCreate={() =>
               void runCeremony(
                 '/api/auth/reset/passkey/options',
                 '/api/auth/reset/passkey',
@@ -500,9 +593,17 @@ export function LoginForm() {
               )
             }
           >
-            {canPasskey ? 'Use a passkey instead' : 'Passkeys are not available in this browser'}
-          </button>
-        </form>
+            <StepSummary
+              label="Passkey"
+              disabled={busy}
+              onChange={() => {
+                setPasskeyLabel('')
+                setError(null)
+                setRecoverPhase('method')
+              }}
+            />
+          </PasskeyCreateStep>
+        )
       ) : mode === 'register' ? (
         registerPhase === 'method' ? (
           <div className="mt-4">
@@ -628,14 +729,25 @@ export function LoginForm() {
             </label>
           </PasskeyCreateStep>
         )
-      ) : loginPhase === 'email' ? (
-        <form onSubmit={handleEmailNext} className="mt-4">
-          <label className="block text-sm text-ink-muted">
+      ) : mode === 'recovery_sent' ? (
+        <p className="mt-4 text-sm text-ink" role="status">
+          {recoveryNotice ?? 'If that account exists, a recovery link has been sent.'}
+        </p>
+      ) : mode === 'request_recovery' ? (
+        <form
+          key="request-recovery"
+          onSubmit={(event) => void handleRequestRecovery(event)}
+          className="mt-4"
+        >
+          <p className="text-sm text-ink-muted">
+            Enter the email for your account. If it exists, we will send a recovery link.
+          </p>
+          <label className="mt-4 block text-sm text-ink-muted">
             Email
             <input
               type="email"
               name="email"
-              autoComplete="username webauthn"
+              autoComplete="username"
               autoFocus
               required
               value={email}
@@ -645,40 +757,80 @@ export function LoginForm() {
             />
           </label>
           <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Next
+            Send recovery link
           </button>
+        </form>
+      ) : loginPhase === 'email' ? (
+        <div className="mt-4">
+          <form key="login-email" onSubmit={handleEmailNext}>
+            <label className="block text-sm text-ink-muted">
+              Email
+              <input
+                type="email"
+                name="email"
+                autoComplete="username webauthn"
+                autoFocus
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Next
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy || !canPasskey}
+              onClick={startPasskeyLogin}
+            >
+              {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
+            </button>
+          </form>
           <button
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey}
-            onClick={startPasskeyLogin}
+            disabled={busy}
+            onClick={showRequestRecovery}
           >
-            {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
+            Recover account
           </button>
-        </form>
+        </div>
       ) : (
-        <form onSubmit={handleLogin} className="mt-4">
-          <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
-          <label className="mt-4 block text-sm text-ink-muted">
-            Password
-            <input
-              ref={passwordInputRef}
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              required
-              minLength={15}
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={inputClassName}
-              disabled={busy}
-            />
-          </label>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Log in
+        <div className="mt-4">
+          <form key="login-password" onSubmit={handleLogin}>
+            <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
+            <label className="mt-4 block text-sm text-ink-muted">
+              Password
+              <input
+                ref={passwordInputRef}
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                required
+                minLength={15}
+                maxLength={256}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Log in
+            </button>
+          </form>
+          <button
+            type="button"
+            className={`mt-3 w-full ${secondaryButtonClassName}`}
+            disabled={busy}
+            onClick={showRequestRecovery}
+          >
+            Recover account
           </button>
-        </form>
+        </div>
       )}
     </section>
   )

@@ -2585,6 +2585,7 @@ name = "rundtisch"
 version = "0.1.0"
 dependencies = [
  "argon2 0.6.0",
+ "async-trait",
  "axum",
  "base64 0.23.1",
  "email_address",
