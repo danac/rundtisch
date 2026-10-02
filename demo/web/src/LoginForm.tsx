@@ -247,6 +247,7 @@ export function LoginForm() {
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
   const [registerPhase, setRegisterPhase] = useState<'method' | 'password' | 'passkey'>('method')
+  const [recoverPhase, setRecoverPhase] = useState<'method' | 'password' | 'passkey'>('method')
   const canPasskey = passkeySupported()
   const conditionalAbort = useRef<AbortController | null>(null)
   const passwordInputRef = useRef<HTMLInputElement>(null)
@@ -271,14 +272,18 @@ export function LoginForm() {
   function showLogin() {
     setMode('login')
     setLoginPhase('email')
+    setRecoverPhase('method')
     setPassword('')
+    setPasskeyLabel('')
     setError(null)
     setRecoveryNotice(null)
   }
 
   function showRequestRecovery() {
     setMode('request_recovery')
+    setRecoverPhase('method')
     setPassword('')
+    setPasskeyLabel('')
     setError(null)
     setRecoveryNotice(null)
   }
@@ -497,6 +502,7 @@ export function LoginForm() {
               setMode(mode === 'register' ? 'login' : 'register')
               setLoginPhase('email')
               setRegisterPhase('method')
+              setRecoverPhase('method')
               setPassword('')
               setPasskeyLabel('')
               setError(null)
@@ -516,43 +522,68 @@ export function LoginForm() {
       ) : null}
 
       {recovering ? (
-        <form onSubmit={(event) => void handleRecoverPassword(event)} className="mt-4">
-          <p className="text-sm text-ink-muted">Choose a new password or a passkey for this account.</p>
-          <label className="mt-4 block text-sm text-ink-muted">
-            New password
-            <input
-              type="password"
-              name="password"
-              autoComplete="new-password"
-              required
-              minLength={15}
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={inputClassName}
+        recoverPhase === 'method' ? (
+          <div className="mt-4">
+            <p className="text-sm text-ink-muted">
+              Choose a new password or a passkey for this account.
+            </p>
+            <button
+              type="button"
+              className={`mt-6 w-full ${primaryButtonClassName}`}
               disabled={busy}
-            />
-          </label>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Save password
-          </button>
-          <label className="mt-4 block text-sm text-ink-muted">
-            Passkey label (optional)
-            <input
-              type="text"
-              maxLength={64}
-              value={passkeyLabel}
-              onChange={(event) => setPasskeyLabel(event.target.value)}
-              placeholder="MacBook Touch ID"
-              className={inputClassName}
+              onClick={() => {
+                setError(null)
+                setRecoverPhase('password')
+              }}
+            >
+              Set a password
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy || !canPasskey}
+              onClick={() => {
+                setError(null)
+                setRecoverPhase('passkey')
+              }}
+            >
+              {canPasskey ? 'Create a passkey' : 'Passkeys are not available in this browser'}
+            </button>
+          </div>
+        ) : recoverPhase === 'password' ? (
+          <form
+            key="recover-password"
+            onSubmit={(event) => void handleRecoverPassword(event)}
+            className="mt-4"
+          >
+            <StepSummary
+              label="Password"
               disabled={busy}
+              onChange={() => {
+                setPassword('')
+                setError(null)
+                setRecoverPhase('method')
+              }}
             />
-          </label>
-          <button
-            type="button"
-            className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey}
-            onClick={() =>
+            <div className="mt-4">
+              <NewPasswordField
+                value={password}
+                onChange={setPassword}
+                disabled={busy}
+                autoFocus
+              />
+            </div>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Save password
+            </button>
+          </form>
+        ) : (
+          <PasskeyCreateStep
+            busy={busy}
+            canPasskey={canPasskey}
+            label={passkeyLabel}
+            onLabelChange={setPasskeyLabel}
+            onCreate={() =>
               void runCeremony(
                 '/api/auth/reset/passkey/options',
                 '/api/auth/reset/passkey',
@@ -561,9 +592,17 @@ export function LoginForm() {
               )
             }
           >
-            {canPasskey ? 'Use a passkey instead' : 'Passkeys are not available in this browser'}
-          </button>
-        </form>
+            <StepSummary
+              label="Passkey"
+              disabled={busy}
+              onChange={() => {
+                setPasskeyLabel('')
+                setError(null)
+                setRecoverPhase('method')
+              }}
+            />
+          </PasskeyCreateStep>
+        )
       ) : mode === 'register' ? (
         registerPhase === 'method' ? (
           <div className="mt-4">
