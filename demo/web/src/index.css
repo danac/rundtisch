@@ -8,6 +8,24 @@
   --font-display: "Fraunces", ui-serif, Georgia, serif;
 }
 
+:root {
+  color-scheme: light;
+  --shadow-panel: 0 12px 40px rgba(44, 36, 22, 0.08);
+  --grain-mid: rgba(44, 36, 22, 0.04);
+  --grain-edge: rgba(44, 36, 22, 0.08);
+}
+
+html.dark {
+  color-scheme: dark;
+  --color-paper: #1a1610;
+  --color-ink: #f0e6d4;
+  --color-ink-muted: #a89880;
+  --color-ring: #5a4e3a;
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --grain-mid: rgba(240, 230, 212, 0.03);
+  --grain-edge: rgba(240, 230, 212, 0.07);
+}
+
 html,
 body,
 #root {
@@ -20,4 +38,14 @@ body {
   color: var(--color-ink);
   font-family: var(--font-display);
   -webkit-font-smoothing: antialiased;
+}
+
+.app-grain {
+  background-image: radial-gradient(
+    circle at 50% 45%,
+    transparent 0%,
+    transparent 40%,
+    var(--grain-mid) 70%,
+    var(--grain-edge) 100%
+  );
 }

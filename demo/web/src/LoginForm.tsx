@@ -39,7 +39,7 @@ const primaryButtonClassName =
 const secondaryButtonClassName =
   'rounded-full border border-ring/80 bg-paper px-3 py-1.5 text-sm font-semibold tracking-wide text-ink transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
 const panelClassName =
-  'w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[0_12px_40px_rgba(44,36,22,0.08)] backdrop-blur-[2px]'
+  'w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[var(--shadow-panel)] backdrop-blur-[2px]'
 
 const query = new URLSearchParams(window.location.search)
 const inviteFromQuery = query.get('invite') ?? ''
