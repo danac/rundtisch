@@ -234,9 +234,9 @@ function PasskeyCreateStep({
 export function LoginForm() {
   const { api, establish } = useSession()
   const recovering = recoverFromQuery.length > 0
-  const [mode, setMode] = useState<'login' | 'register' | 'request_recovery'>(
-    inviteFromQuery ? 'register' : 'login',
-  )
+  const [mode, setMode] = useState<
+    'login' | 'register' | 'request_recovery' | 'recovery_sent'
+  >(inviteFromQuery ? 'register' : 'login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [alias, setAlias] = useState('')
@@ -308,6 +308,7 @@ export function LoginForm() {
       setRecoveryNotice(
         body.message ?? 'If that account exists, a recovery link has been sent.',
       )
+      setMode('recovery_sent')
     } catch (err) {
       setError(messageFrom(err))
     } finally {
@@ -475,7 +476,7 @@ export function LoginForm() {
     ? 'Set a new credential'
     : mode === 'register'
       ? 'Register'
-      : mode === 'request_recovery'
+      : mode === 'request_recovery' || mode === 'recovery_sent'
         ? 'Recover account'
         : 'Log in'
 
@@ -485,7 +486,7 @@ export function LoginForm() {
         <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">
           {heading}
         </h2>
-        {recovering ? null : mode === 'request_recovery' ? (
+        {recovering ? null : mode === 'request_recovery' || mode === 'recovery_sent' ? (
           <button
             type="button"
             className={secondaryButtonClassName}
@@ -728,6 +729,10 @@ export function LoginForm() {
             </label>
           </PasskeyCreateStep>
         )
+      ) : mode === 'recovery_sent' ? (
+        <p className="mt-4 text-sm text-ink" role="status">
+          {recoveryNotice ?? 'If that account exists, a recovery link has been sent.'}
+        </p>
       ) : mode === 'request_recovery' ? (
         <form
           key="request-recovery"
@@ -737,11 +742,6 @@ export function LoginForm() {
           <p className="text-sm text-ink-muted">
             Enter the email for your account. If it exists, we will send a recovery link.
           </p>
-          {recoveryNotice ? (
-            <p className="mt-4 text-sm text-ink" role="status">
-              {recoveryNotice}
-            </p>
-          ) : null}
           <label className="mt-4 block text-sm text-ink-muted">
             Email
             <input
