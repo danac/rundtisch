@@ -8,6 +8,11 @@ package: .
 # `wasmer app secret`). The commented "Ensure auth secrets" step in
 # `.github/workflows/deploy-rundtisch-demo.yml` can create missing ones:
 #   AUTH_HASH_PEPPER
+# SMTP STARTTLS for recovery mail (SmtpEmailSender):
+#   AUTH_SMTP_URL
+#   AUTH_SMTP_USERNAME
+#   AUTH_SMTP_PASSWORD
+#   AUTH_MAIL_FROM   # optional; default rundtisch@localhost
 # Optional first admin. The post-deployment migrate job upserts this email:
 # insert a verified Admin if absent, or reset the password if present
 # (public_id and the rest of the row stay the same):
@@ -22,7 +27,6 @@ env:
   AUTH_WEBAUTHN_RP_ORIGIN: https://rundtisch.wasmer.app
   AUTH_WEBAUTHN_RP_NAME: rundtisch
 debug: false
-enable_email: true
 capabilities:
   database:
     engine: mysql
