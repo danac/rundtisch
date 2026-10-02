@@ -14,7 +14,8 @@ use crate::auth::services::{
     finish_passkey_login, finish_recovery_passkey, finish_session_passkey,
     finish_step_up_passkey_login, list_passkey_info, list_session_info, login_with_password,
     logout_all_for_user, logout_current, mint_cli_session, request_recovery,
-    revoke_session_for_user, set_session_password, start_invite_passkey, start_passkey_login,
+    revoke_session_for_user, set_session_alias, set_session_password, start_invite_passkey,
+    start_passkey_login,
     start_recovery_passkey, start_session_passkey, start_step_up_passkey_login,
     step_up_with_password,
 };
@@ -564,6 +565,28 @@ pub struct SetPasswordBody {
     pub password: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SetAliasBody {
+    pub alias: String,
+}
+
+/// Update the signed-in user's display alias. Does not revoke sessions.
+pub async fn set_alias(
+    State(state): State<AppState>,
+    SessionUser(user): SessionUser,
+    Json(body): Json<SetAliasBody>,
+) -> impl IntoResponse {
+    let result = async {
+        let alias = normalize_alias(body.alias)?;
+        set_session_alias(&state.db, user.id, alias).await
+    }
+    .await;
+    match result {
+        Ok(updated) => Json(AccountView::from(&updated)).into_response(),
+        Err(err) => err.into_response(),
+    }
+}
+
 /// Set or replace the signed-in user's password. Does not ask for the current
 /// password and does not revoke sessions.
 pub async fn set_password(
@@ -914,6 +937,7 @@ mod tests {
             .route("/api/auth/logout", axum::routing::post(logout))
             .route("/api/auth/logout_all", axum::routing::post(logout_all))
             .route("/api/auth/me", axum::routing::get(me))
+            .route("/api/auth/alias", axum::routing::put(set_alias))
             .route(
                 "/api/auth/sessions",
                 axum::routing::get(list_sessions).post(mint_session),
@@ -1610,6 +1634,58 @@ mod tests {
         )
         .await;
         assert_eq!(login.status(), HttpStatus::OK);
+    }
+
+    #[tokio::test]
+    async fn signed_in_user_can_change_alias() {
+        let (app, db, _email) = app().await;
+        let token = invite(&db, "alias@example.com").await;
+        let registered = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok",
+                "alias": "before"
+            }),
+            None,
+            None,
+        )
+        .await;
+        let cookie = cookie_pair(&registered);
+        let (status, json) = body_json(registered).await;
+        assert_eq!(status, HttpStatus::CREATED, "{json}");
+        assert_eq!(json["user"]["alias"], "before");
+
+        let changed = app
+            .clone()
+            .oneshot(
+                Request::put("/api/auth/alias")
+                    .header("cookie", &cookie)
+                    .header("content-type", "application/json")
+                    .body(Body::from(json!({"alias": " after "}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, json) = body_json(changed).await;
+        assert_eq!(status, HttpStatus::OK, "{json}");
+        assert_eq!(json["alias"], "after");
+        assert_eq!(json["email"], "alias@example.com");
+
+        let me = app
+            .clone()
+            .oneshot(
+                Request::get("/api/auth/me")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, me_json) = body_json(me).await;
+        assert_eq!(status, HttpStatus::OK, "{me_json}");
+        assert_eq!(me_json["alias"], "after");
     }
 
     #[tokio::test]
