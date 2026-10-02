@@ -1,5 +1,8 @@
 use crate::AppState;
-use crate::auth::config::{AUTH_HASH_PEPPER, RECOVERY_TTL, STEP_UP_HEADER};
+use crate::auth::config::{
+    AUTH_HASH_PEPPER, AUTH_WEBAUTHN_RP_ORIGIN, DEFAULT_WEBAUTHN_RP_ORIGIN, RECOVERY_TTL,
+    STEP_UP_HEADER,
+};
 use crate::auth::error::AuthError;
 use crate::auth::extract::presented_token;
 use crate::auth::extract::{SessionUser, secret_bytes};
@@ -638,19 +641,39 @@ pub async fn request_reset(
     State(state): State<AppState>,
     Json(body): Json<RequestResetBody>,
 ) -> impl IntoResponse {
-    let response = (
+    let email = body.email.as_ref().to_owned();
+    tokio::spawn(async move {
+        let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) else {
+            eprintln!("recovery: missing AUTH_HASH_PEPPER");
+            return;
+        };
+        match request_recovery(&state.db, &pepper, &email, RECOVERY_TTL).await {
+            Ok(Some(raw)) => {
+                let origin = state
+                    .secret(AUTH_WEBAUTHN_RP_ORIGIN)
+                    .unwrap_or_else(|_| DEFAULT_WEBAUTHN_RP_ORIGIN.to_string());
+                let link = format!("{}/?recover={raw}", origin.trim_end_matches('/'));
+                let mail_body = format!(
+                    "Use this link to set a new credential for your rundtisch account:\n\n{link}\n"
+                );
+                if let Err(err) = state
+                    .email
+                    .send(&email, "Recover your rundtisch account", &mail_body)
+                    .await
+                {
+                    eprintln!("recovery email failed: {err}");
+                }
+            }
+            Ok(None) => {}
+            Err(err) => eprintln!("recovery request failed: {err}"),
+        }
+    });
+    (
         StatusCode::ACCEPTED,
         Json(json!({
             "message": "If that account exists, a recovery link has been sent."
         })),
-    );
-    let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) else {
-        return AuthError::Secrets.into_response();
-    };
-    match request_recovery(&state.db, &pepper, body.email.as_ref(), RECOVERY_TTL).await {
-        Ok(()) => response.into_response(),
-        Err(err) => err.into_response(),
-    }
+    )
 }
 
 pub async fn reset_password(
@@ -836,11 +859,13 @@ mod tests {
     use crate::auth::entities::recovery_token;
     use crate::auth::migrations::Migrator;
     use crate::auth::services::{create_recovery_token, mint_invitation};
+    use crate::email::RecordingEmailSender;
     use axum::body::Body;
     use axum::http::{Request, StatusCode as HttpStatus};
     use sea_orm::{EntityTrait, PaginatorTrait};
     use sea_orm_migration::MigratorTrait;
     use serde_json::json;
+    use std::sync::Arc;
     use time::Duration;
     use tower::ServiceExt;
     use webauthn_authenticator_rs::WebauthnAuthenticator;
@@ -851,7 +876,11 @@ mod tests {
 
     const PEPPER: &str = "cccccccccccccccccccccccccccccccc";
 
-    async fn app() -> (axum::Router, sea_orm::DatabaseConnection) {
+    async fn app() -> (
+        axum::Router,
+        sea_orm::DatabaseConnection,
+        RecordingEmailSender,
+    ) {
         unsafe {
             std::env::set_var(AUTH_HASH_PEPPER, PEPPER);
             std::env::set_var(AUTH_WEBAUTHN_RP_ID, "localhost");
@@ -862,7 +891,11 @@ mod tests {
         opts.max_connections(1);
         let db = sea_orm::Database::connect(opts).await.expect("sqlite");
         Migrator::up(&db, None).await.expect("migrate");
-        let state = AppState { db: db.clone() };
+        let email = RecordingEmailSender::new();
+        let state = AppState {
+            db: db.clone(),
+            email: Arc::new(email.clone()),
+        };
         let router = axum::Router::new()
             .route(
                 "/api/auth/register_with_token",
@@ -944,7 +977,7 @@ mod tests {
                 axum::routing::delete(passkey_delete),
             )
             .with_state(state);
-        (router, db)
+        (router, db, email)
     }
 
     async fn body_json(response: axum::http::Response<Body>) -> (HttpStatus, serde_json::Value) {
@@ -1118,7 +1151,7 @@ mod tests {
 
     #[tokio::test]
     async fn password_register_login_me_logout_and_replay() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "carol@example.com").await;
         let registered = post_json(
             &app,
@@ -1203,7 +1236,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_invitation_consumption_allows_one_account() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "race@example.com").await;
         let body = json!({
             "token": token,
@@ -1236,7 +1269,7 @@ mod tests {
 
     #[tokio::test]
     async fn login_rejects_unknown_user_and_missing_password() {
-        let (app, _) = app().await;
+        let (app, _, _email) = app().await;
         let response = post_json(
             &app,
             "/api/auth/login",
@@ -1252,7 +1285,7 @@ mod tests {
 
     #[tokio::test]
     async fn cli_session_is_a_second_bearer_and_keeps_the_browser_cookie() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "cli@example.com").await;
         let registered = post_json(
             &app,
@@ -1491,7 +1524,7 @@ mod tests {
 
     #[tokio::test]
     async fn request_reset_does_not_enumerate_or_return_token() {
-        let (app, db) = app().await;
+        let (app, db, email) = app().await;
         let token = invite(&db, "ada@example.com").await;
         post_json(
             &app,
@@ -1524,13 +1557,33 @@ mod tests {
         assert_eq!(missing_status, status);
         assert_eq!(known_json, missing_json);
         assert!(known_json.get("token").is_none());
-        let count = recovery_token::Entity::find().count(&db).await.unwrap();
+
+        let mut count = 0;
+        let mut messages = Vec::new();
+        for _ in 0..200 {
+            count = recovery_token::Entity::find().count(&db).await.unwrap();
+            messages = email.messages();
+            if count == 1 && messages.len() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
         assert_eq!(count, 1);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].to, "ada@example.com");
+        assert_eq!(messages[0].subject, "Recover your rundtisch account");
+        assert!(
+            messages[0]
+                .body
+                .contains("http://localhost:5173/?recover="),
+            "recovery email should include a redeem link: {}",
+            messages[0].body
+        );
     }
 
     #[tokio::test]
     async fn password_recovery_revokes_old_sessions() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let invite_token = invite(&db, "ada@example.com").await;
         let registered = post_json(
             &app,
@@ -1585,7 +1638,7 @@ mod tests {
 
     #[tokio::test]
     async fn signed_in_user_can_change_alias() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "alias@example.com").await;
         let registered = post_json(
             &app,
@@ -1637,7 +1690,7 @@ mod tests {
 
     #[tokio::test]
     async fn session_password_keeps_the_session_and_refuses_the_last_credential() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "pw@example.com").await;
         let registered = post_json(
             &app,
@@ -1902,7 +1955,7 @@ mod tests {
 
     #[tokio::test]
     async fn passkey_register_login_and_last_credential_guard() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "pk@example.com").await;
         let mut authenticator = authenticator();
         let started = post_json(
@@ -2040,7 +2093,7 @@ mod tests {
 
     #[tokio::test]
     async fn recovery_passkey_establishes_credential_and_session() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let invite_token = invite(&db, "recover@example.com").await;
         post_json(
             &app,
@@ -2091,7 +2144,7 @@ mod tests {
 
     #[tokio::test]
     async fn logout_all_revokes_every_session() {
-        let (app, db) = app().await;
+        let (app, db, _email) = app().await;
         let token = invite(&db, "multi@example.com").await;
         post_json(
             &app,

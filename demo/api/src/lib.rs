@@ -1,3 +1,4 @@
+pub mod email;
 mod handlers;
 pub mod listen;
 pub mod migrator;
@@ -5,6 +6,7 @@ pub mod native_platform;
 mod routes;
 pub mod static_files;
 
+pub use email::SendmailEmailSender;
 pub use listen::listen_addr;
 pub use migrator::Migrator;
 pub use routes::build_router;

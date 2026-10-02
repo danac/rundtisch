@@ -22,6 +22,7 @@ env:
   AUTH_WEBAUTHN_RP_ORIGIN: https://rundtisch.wasmer.app
   AUTH_WEBAUTHN_RP_NAME: rundtisch
 debug: false
+enable_email: true
 capabilities:
   database:
     engine: mysql

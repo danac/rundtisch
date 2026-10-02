@@ -10,7 +10,8 @@ The library does not open a database and does not select a backend. Callers pass
 
 | Module | Role |
 |--------|------|
-| `app` | `AppState { db }` and `secret()` (`std::env::var`) |
+| `app` | `AppState { db, email }` and `secret()` (`std::env::var`) |
+| `email` | `EmailSender` trait for outbound mail (recovery links, etc.) |
 | `auth` | Users, opaque sessions, invitations, recovery, passkeys, Argon2id, SeaORM entities and migrations |
 
 `auth` is a default feature. `cargo check --manifest-path crates/rundtisch/Cargo.toml --no-default-features` builds only `app`.
