@@ -690,7 +690,11 @@ export function LoginForm() {
           </PasskeyCreateStep>
         )
       ) : mode === 'request_recovery' ? (
-        <form onSubmit={(event) => void handleRequestRecovery(event)} className="mt-4">
+        <form
+          key="request-recovery"
+          onSubmit={(event) => void handleRequestRecovery(event)}
+          className="mt-4"
+        >
           <p className="text-sm text-ink-muted">
             Enter the email for your account. If it exists, we will send a recovery link.
           </p>
@@ -718,32 +722,34 @@ export function LoginForm() {
           </button>
         </form>
       ) : loginPhase === 'email' ? (
-        <form onSubmit={handleEmailNext} className="mt-4">
-          <label className="block text-sm text-ink-muted">
-            Email
-            <input
-              type="email"
-              name="email"
-              autoComplete="username webauthn"
-              autoFocus
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              className={inputClassName}
-              disabled={busy}
-            />
-          </label>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Next
-          </button>
-          <button
-            type="button"
-            className={`mt-3 w-full ${secondaryButtonClassName}`}
-            disabled={busy || !canPasskey}
-            onClick={startPasskeyLogin}
-          >
-            {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
-          </button>
+        <div className="mt-4">
+          <form key="login-email" onSubmit={handleEmailNext}>
+            <label className="block text-sm text-ink-muted">
+              Email
+              <input
+                type="email"
+                name="email"
+                autoComplete="username webauthn"
+                autoFocus
+                required
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Next
+            </button>
+            <button
+              type="button"
+              className={`mt-3 w-full ${secondaryButtonClassName}`}
+              disabled={busy || !canPasskey}
+              onClick={startPasskeyLogin}
+            >
+              {canPasskey ? 'Log in with a passkey' : 'Passkeys are not available in this browser'}
+            </button>
+          </form>
           <button
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
@@ -752,29 +758,31 @@ export function LoginForm() {
           >
             Recover account
           </button>
-        </form>
+        </div>
       ) : (
-        <form onSubmit={handleLogin} className="mt-4">
-          <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
-          <label className="mt-4 block text-sm text-ink-muted">
-            Password
-            <input
-              ref={passwordInputRef}
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              required
-              minLength={15}
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              className={inputClassName}
-              disabled={busy}
-            />
-          </label>
-          <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
-            Log in
-          </button>
+        <div className="mt-4">
+          <form key="login-password" onSubmit={handleLogin}>
+            <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
+            <label className="mt-4 block text-sm text-ink-muted">
+              Password
+              <input
+                ref={passwordInputRef}
+                type="password"
+                name="password"
+                autoComplete="current-password"
+                required
+                minLength={15}
+                maxLength={256}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Log in
+            </button>
+          </form>
           <button
             type="button"
             className={`mt-3 w-full ${secondaryButtonClassName}`}
@@ -783,7 +791,7 @@ export function LoginForm() {
           >
             Recover account
           </button>
-        </form>
+        </div>
       )}
     </section>
   )
