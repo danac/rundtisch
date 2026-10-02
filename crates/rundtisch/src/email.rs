@@ -25,8 +25,9 @@ impl fmt::Display for EmailSendError {
 impl std::error::Error for EmailSendError {}
 
 /// Outbound email transport used by handlers that need to notify users.
+#[async_trait::async_trait]
 pub trait EmailSender: Send + Sync {
-    fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError>;
+    async fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError>;
 }
 
 /// In-memory `EmailSender` for tests. Records each successful send.
@@ -56,8 +57,9 @@ impl RecordingEmailSender {
 }
 
 #[cfg(test)]
+#[async_trait::async_trait]
 impl EmailSender for RecordingEmailSender {
-    fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError> {
+    async fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError> {
         self.messages
             .lock()
             .map_err(|_| EmailSendError::new("email inbox poisoned"))?

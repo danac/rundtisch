@@ -618,37 +618,39 @@ pub async fn request_reset(
     State(state): State<AppState>,
     Json(body): Json<RequestResetBody>,
 ) -> impl IntoResponse {
-    let response = (
+    let email = body.email.as_ref().to_owned();
+    tokio::spawn(async move {
+        let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) else {
+            eprintln!("recovery: missing AUTH_HASH_PEPPER");
+            return;
+        };
+        match request_recovery(&state.db, &pepper, &email, RECOVERY_TTL).await {
+            Ok(Some(raw)) => {
+                let origin = state
+                    .secret(AUTH_WEBAUTHN_RP_ORIGIN)
+                    .unwrap_or_else(|_| DEFAULT_WEBAUTHN_RP_ORIGIN.to_string());
+                let link = format!("{}/?recover={raw}", origin.trim_end_matches('/'));
+                let mail_body = format!(
+                    "Use this link to set a new credential for your rundtisch account:\n\n{link}\n"
+                );
+                if let Err(err) = state
+                    .email
+                    .send(&email, "Recover your rundtisch account", &mail_body)
+                    .await
+                {
+                    eprintln!("recovery email failed: {err}");
+                }
+            }
+            Ok(None) => {}
+            Err(err) => eprintln!("recovery request failed: {err}"),
+        }
+    });
+    (
         StatusCode::ACCEPTED,
         Json(json!({
             "message": "If that account exists, a recovery link has been sent."
         })),
-    );
-    let Ok(pepper) = secret_bytes(&state, AUTH_HASH_PEPPER, 32) else {
-        return AuthError::Secrets.into_response();
-    };
-    let email = body.email.as_ref();
-    match request_recovery(&state.db, &pepper, email, RECOVERY_TTL).await {
-        Ok(None) => response.into_response(),
-        Ok(Some(raw)) => {
-            let origin = state
-                .secret(AUTH_WEBAUTHN_RP_ORIGIN)
-                .unwrap_or_else(|_| DEFAULT_WEBAUTHN_RP_ORIGIN.to_string());
-            let link = format!("{}/?recover={raw}", origin.trim_end_matches('/'));
-            let body = format!(
-                "Use this link to set a new credential for your rundtisch account:\n\n{link}\n"
-            );
-            match state.email.send(
-                email,
-                "Recover your rundtisch account",
-                &body,
-            ) {
-                Ok(()) => response.into_response(),
-                Err(err) => AuthError::Backend(err.to_string()).into_response(),
-            }
-        }
-        Err(err) => err.into_response(),
-    }
+    )
 }
 
 pub async fn reset_password(
@@ -1531,10 +1533,18 @@ mod tests {
         assert_eq!(missing_status, status);
         assert_eq!(known_json, missing_json);
         assert!(known_json.get("token").is_none());
-        let count = recovery_token::Entity::find().count(&db).await.unwrap();
-        assert_eq!(count, 1);
 
-        let messages = email.messages();
+        let mut count = 0;
+        let mut messages = Vec::new();
+        for _ in 0..200 {
+            count = recovery_token::Entity::find().count(&db).await.unwrap();
+            messages = email.messages();
+            if count == 1 && messages.len() == 1 {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(count, 1);
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].to, "ada@example.com");
         assert_eq!(messages[0].subject, "Recover your rundtisch account");
