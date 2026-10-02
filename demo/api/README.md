@@ -61,6 +61,8 @@ export AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc
 # export AUTH_WEBAUTHN_RP_ID=localhost
 # export AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:5173
 # export AUTH_WEBAUTHN_RP_NAME=rundtisch
+# optional From address for outbound mail (default rundtisch@localhost):
+# export AUTH_MAIL_FROM=rundtisch@localhost
 # optional first admin (insert if absent, or reset the password):
 # export RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 # export RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD=unique-passphrase-ok
@@ -78,6 +80,7 @@ curl -i http://localhost:8787/api/health
 | `AUTH_WEBAUTHN_RP_ID` | optional; default `localhost` |
 | `AUTH_WEBAUTHN_RP_ORIGIN` | optional; default `http://localhost:5173` |
 | `AUTH_WEBAUTHN_RP_NAME` | optional; default `rundtisch` |
+| `AUTH_MAIL_FROM` | optional; default `rundtisch@localhost` |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |

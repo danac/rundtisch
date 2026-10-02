@@ -15,9 +15,10 @@ async fn main() {
     let db = native_platform::connect()
         .await
         .expect("database connection");
+    let email = SendmailEmailSender::from_env().expect("AUTH_MAIL_FROM");
     let state = AppState {
         db,
-        email: Arc::new(SendmailEmailSender),
+        email: Arc::new(email),
     };
     let mut router = build_router(state);
     if let Some(dir) = static_dir() {
