@@ -2,17 +2,13 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use lettre::Message;
-use lettre::message::{Mailbox, header::ContentType};
+use lettre::message::Mailbox;
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::{Duration, sleep};
 
-use super::{EmailSendError, EmailSender};
-
-const DEFAULT_MAIL_FROM: &str = "rundtisch@localhost";
-const AUTH_MAIL_FROM: &str = "AUTH_MAIL_FROM";
+use super::{EmailSendError, EmailSender, build_plain_message, mail_from_env};
 
 /// Delivers mail by handing an RFC822 message to `sendmail -t`.
 ///
@@ -34,27 +30,14 @@ impl SendmailEmailSender {
 
     /// Read `AUTH_MAIL_FROM`, defaulting to `rundtisch@localhost`.
     pub fn from_env() -> Result<Self, EmailSendError> {
-        let raw = std::env::var(AUTH_MAIL_FROM).unwrap_or_else(|_| DEFAULT_MAIL_FROM.to_owned());
-        let from: Mailbox = raw.parse().map_err(|err| {
-            EmailSendError::new(format!("invalid {AUTH_MAIL_FROM} ({raw:?}): {err}"))
-        })?;
-        Ok(Self::new(from))
+        Ok(Self::new(mail_from_env()?))
     }
 }
 
 #[async_trait::async_trait]
 impl EmailSender for SendmailEmailSender {
     async fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError> {
-        let to: Mailbox = to
-            .parse()
-            .map_err(|err| EmailSendError::new(format!("invalid recipient {to:?}: {err}")))?;
-        let message = Message::builder()
-            .from(self.from.clone())
-            .to(to)
-            .subject(subject)
-            .header(ContentType::TEXT_PLAIN)
-            .body(body.to_owned())
-            .map_err(|err| EmailSendError::new(format!("failed to build email: {err}")))?;
+        let message = build_plain_message(self.from.clone(), to, subject, body)?;
         deliver(&message.formatted()).await
     }
 }

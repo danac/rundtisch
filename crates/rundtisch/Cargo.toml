@@ -31,12 +31,21 @@ auth = [
 ]
 sendmail = [
     "dep:lettre",
+    "lettre/builder",
     "dep:tokio",
     "tokio/rt",
     "tokio/fs",
     "tokio/io-util",
     "tokio/process",
     "tokio/time",
+]
+smtp = [
+    "dep:lettre",
+    "lettre/builder",
+    "lettre/smtp-transport",
+    "lettre/tokio1-rustls",
+    "lettre/ring",
+    "lettre/webpki-roots",
 ]
 
 [dependencies]
@@ -59,7 +68,7 @@ base64 = { version = "0.23.1", default-features = false, features = ["alloc"], o
 serde_cbor_2 = { version = "0.13.0", default-features = false, features = ["std"], optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc"], optional = true }
 tokio = { version = "1.47.0", default-features = false, optional = true }
-lettre = { version = "0.11", default-features = false, features = ["builder"], optional = true }
+lettre = { version = "0.11", default-features = false, optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt"] }

@@ -86,6 +86,8 @@ curl -i http://localhost:8787/api/health
 
 `POST /api/auth/request_reset` always returns `202` and runs recovery in the background. When the account exists, `rundtisch::SendmailEmailSender` (crate feature `sendmail`) builds the message with lettre and writes it to a temporary file for `sendmail -t` (WASIX does not deliver EOF on a subprocess pipe). On Wasmer Edge, that needs `enable_email: true` in `app.yaml` and the `sendmail/sendmail` package. Locally, if sendmail is unavailable, mint a link with `auth-link -- recover` instead.
 
+Integrators can instead enable rundtisch’s `smtp` feature and use `SmtpEmailSender::from_env()` with `AUTH_SMTP_URL`, `AUTH_SMTP_USERNAME`, `AUTH_SMTP_PASSWORD`, and optional `AUTH_MAIL_FROM` for STARTTLS delivery over rustls (no native-tls).
+
 `auth-link` prints an invitation or recovery URL. `recover` exits non-zero when the email has no user. The raw token is not stored.
 
 ```bash
