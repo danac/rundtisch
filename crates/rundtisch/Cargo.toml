@@ -41,6 +41,7 @@ sendmail = [
 ]
 smtp = [
     "dep:lettre",
+    "dep:url",
     "lettre/builder",
     "lettre/smtp-transport",
     "lettre/tokio1-rustls",
@@ -69,6 +70,7 @@ serde_cbor_2 = { version = "0.13.0", default-features = false, features = ["std"
 zeroize = { version = "1", default-features = false, features = ["alloc"], optional = true }
 tokio = { version = "1.47.0", default-features = false, optional = true }
 lettre = { version = "0.11", default-features = false, optional = true }
+url = { version = "2", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt"] }

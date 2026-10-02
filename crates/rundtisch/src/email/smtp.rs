@@ -81,28 +81,24 @@ fn parse_smtp_url(raw: &str) -> Result<(String, Option<u16>), EmailSendError> {
             "{AUTH_SMTP_URL} must not be empty"
         )));
     }
-    let authority = match trimmed.split_once("://") {
-        Some((_, rest)) => rest.split('/').next().unwrap_or(rest),
-        None => trimmed,
+    let normalized = if trimmed.contains("://") {
+        trimmed.to_owned()
+    } else {
+        format!("smtp://{trimmed}")
     };
-    let hostport = match authority.rsplit_once('@') {
-        Some((_, hostport)) => hostport,
-        None => authority,
-    };
-    if hostport.is_empty() {
-        return Err(EmailSendError::new(format!(
-            "{AUTH_SMTP_URL} must include a host ({trimmed:?})"
-        )));
-    }
-    if let Some((host, port)) = hostport.rsplit_once(':') {
-        if !host.is_empty() && !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) {
-            let port: u16 = port.parse().map_err(|err| {
-                EmailSendError::new(format!("invalid SMTP port in {AUTH_SMTP_URL}: {err}"))
-            })?;
-            return Ok((host.to_owned(), Some(port)));
-        }
-    }
-    Ok((hostport.to_owned(), None))
+    let url = url::Url::parse(&normalized).map_err(|err| {
+        EmailSendError::new(format!("invalid {AUTH_SMTP_URL} ({trimmed:?}): {err}"))
+    })?;
+    let host = url
+        .host_str()
+        .filter(|host| !host.is_empty())
+        .ok_or_else(|| {
+            EmailSendError::new(format!(
+                "{AUTH_SMTP_URL} must include a host ({trimmed:?})"
+            ))
+        })?
+        .to_owned();
+    Ok((host, url.port()))
 }
 
 #[cfg(test)]
