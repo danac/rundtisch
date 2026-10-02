@@ -60,7 +60,11 @@ export AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc
 # export AUTH_WEBAUTHN_RP_ID=localhost
 # export AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:5173
 # export AUTH_WEBAUTHN_RP_NAME=rundtisch
-# optional From address for outbound mail (default rundtisch@localhost):
+# SMTP STARTTLS (required for recovery mail from the native binary):
+# export AUTH_SMTP_URL=smtp.example.com
+# export AUTH_SMTP_USERNAME=user
+# export AUTH_SMTP_PASSWORD=secret
+# optional From address (default rundtisch@localhost):
 # export AUTH_MAIL_FROM=rundtisch@localhost
 # optional first admin (insert if absent, or reset the password):
 # export RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com
@@ -79,12 +83,15 @@ curl -i http://localhost:8787/api/health
 | `AUTH_WEBAUTHN_RP_ID` | optional; default `localhost` |
 | `AUTH_WEBAUTHN_RP_ORIGIN` | optional; default `http://localhost:5173` |
 | `AUTH_WEBAUTHN_RP_NAME` | optional; default `rundtisch` |
+| `AUTH_SMTP_URL` | SMTP host or `smtp://host[:port]` (STARTTLS) |
+| `AUTH_SMTP_USERNAME` | SMTP auth username |
+| `AUTH_SMTP_PASSWORD` | SMTP auth password |
 | `AUTH_MAIL_FROM` | optional; default `rundtisch@localhost` |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
 
-`POST /api/auth/request_reset` always returns `202` and runs recovery in the background. When the account exists, `rundtisch::SendmailEmailSender` (crate feature `sendmail`) builds the message with lettre and writes it to a temporary file for `sendmail -t` (WASIX does not deliver EOF on a subprocess pipe). On Wasmer Edge, that needs `enable_email: true` in `app.yaml` and the `sendmail/sendmail` package. Locally, if sendmail is unavailable, mint a link with `auth-link -- recover` instead.
+`POST /api/auth/request_reset` always returns `202` and runs recovery in the background. When the account exists, `rundtisch::SmtpEmailSender` (crate feature `smtp`) sends mail over SMTP STARTTLS with lettre (`tokio1-rustls` + `ring` + `webpki-roots`). Set `AUTH_SMTP_*` (and optional `AUTH_MAIL_FROM`) as app secrets on Wasmer Edge. Locally, if SMTP is unavailable, mint a link with `auth-link -- recover` instead.
 
 `auth-link` prints an invitation or recovery URL. `recover` exits non-zero when the email has no user. The raw token is not stored.
 
