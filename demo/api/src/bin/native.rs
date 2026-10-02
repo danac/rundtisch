@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use axum::Router;
-use rundtisch::AppState;
-use rundtisch_demo::SendmailEmailSender;
+use rundtisch::{AppState, SendmailEmailSender};
 use rundtisch_demo::build_router;
 use rundtisch_demo::listen_addr;
 use rundtisch_demo::native_platform;

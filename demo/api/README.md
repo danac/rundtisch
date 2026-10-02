@@ -20,7 +20,6 @@ demo/api/
     lib.rs
     routes.rs
     handlers.rs
-    email.rs              # SendmailEmailSender (rundtisch::EmailSender)
     native_platform.rs    # Database::connect(DATABASE_URL)
     migrator.rs           # re-exports rundtisch::auth::Migrator
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8787
@@ -85,7 +84,7 @@ curl -i http://localhost:8787/api/health
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
 
-`POST /api/auth/request_reset` always returns `202` and runs recovery in the background. When the account exists, `SendmailEmailSender` writes the message to a temporary file and passes that file to `sendmail -t` (WASIX does not deliver EOF on a subprocess pipe). On Wasmer Edge, that needs `enable_email: true` in `app.yaml` and the `sendmail/sendmail` package. Locally, if sendmail is unavailable, mint a link with `auth-link -- recover` instead.
+`POST /api/auth/request_reset` always returns `202` and runs recovery in the background. When the account exists, `rundtisch::SendmailEmailSender` (crate feature `sendmail`) builds the message with lettre and writes it to a temporary file for `sendmail -t` (WASIX does not deliver EOF on a subprocess pipe). On Wasmer Edge, that needs `enable_email: true` in `app.yaml` and the `sendmail/sendmail` package. Locally, if sendmail is unavailable, mint a link with `auth-link -- recover` instead.
 
 `auth-link` prints an invitation or recovery URL. `recover` exits non-zero when the email has no user. The raw token is not stored.
 

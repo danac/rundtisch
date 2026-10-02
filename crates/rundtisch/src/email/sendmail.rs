@@ -4,11 +4,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use lettre::Message;
 use lettre::message::{Mailbox, header::ContentType};
-use rundtisch::{EmailSendError, EmailSender};
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::{Duration, sleep};
+
+use super::{EmailSendError, EmailSender};
 
 const DEFAULT_MAIL_FROM: &str = "rundtisch@localhost";
 const AUTH_MAIL_FROM: &str = "AUTH_MAIL_FROM";

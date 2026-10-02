@@ -2,6 +2,11 @@ use std::fmt;
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "sendmail")]
+mod sendmail;
+#[cfg(feature = "sendmail")]
+pub use sendmail::SendmailEmailSender;
+
 /// Error returned when outbound email cannot be delivered.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmailSendError {

@@ -2695,6 +2695,7 @@ dependencies = [
  "email_address",
  "getrandom 0.4.3",
  "hmac 0.13.0",
+ "lettre",
  "sea-orm",
  "sea-orm-migration",
  "serde",
@@ -2713,9 +2714,7 @@ dependencies = [
 name = "rundtisch-demo"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "axum",
- "lettre",
  "rundtisch",
  "sea-orm",
  "sea-orm-migration",

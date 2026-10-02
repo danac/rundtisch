@@ -14,7 +14,7 @@ The library does not open a database and does not select a backend. Callers pass
 | `email` | `EmailSender` trait for outbound mail (recovery links, etc.) |
 | `auth` | Users, opaque sessions, invitations, recovery, passkeys, Argon2id, SeaORM entities and migrations |
 
-`auth` is a default feature. `cargo check --manifest-path crates/rundtisch/Cargo.toml --no-default-features` builds only `app`.
+`auth` is a default feature. `sendmail` is opt-in and adds `SendmailEmailSender` (lettre message builder + `sendmail -t`). `cargo check --manifest-path crates/rundtisch/Cargo.toml --no-default-features` builds only `app` / `email` trait support.
 
 `auth::Migrator` applies the auth migrations and records them in `rundtisch_migrations_auth`, separate from a host app's `seaql_migrations` table. The demo binary is `migrate`. After `Migrator::up`, that binary can upsert a verified Admin from `RUNDTISCH_BOOTSTRAP_ADMIN_*` secrets: insert when the email is absent, or reset the password on the existing user.
 

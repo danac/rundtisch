@@ -27,6 +27,16 @@ auth = [
     "dep:serde_cbor_2",
     "dep:zeroize",
     "dep:tokio",
+    "tokio/rt",
+]
+sendmail = [
+    "dep:lettre",
+    "dep:tokio",
+    "tokio/rt",
+    "tokio/fs",
+    "tokio/io-util",
+    "tokio/process",
+    "tokio/time",
 ]
 
 [dependencies]
@@ -48,7 +58,8 @@ subtle = { version = "2", optional = true }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"], optional = true }
 serde_cbor_2 = { version = "0.13.0", default-features = false, features = ["std"], optional = true }
 zeroize = { version = "1", default-features = false, features = ["alloc"], optional = true }
-tokio = { version = "1.47.0", default-features = false, features = ["rt"], optional = true }
+tokio = { version = "1.47.0", default-features = false, optional = true }
+lettre = { version = "0.11", default-features = false, features = ["builder"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt"] }
