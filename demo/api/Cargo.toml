@@ -5,10 +5,9 @@ edition.workspace = true
 publish = false
 
 [dependencies]
-rundtisch = { path = "../../crates/rundtisch", features = ["auth"] }
+rundtisch = { path = "../../crates/rundtisch", features = ["auth", "smtp"] }
 axum = { workspace = true, features = ["json", "http1", "tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "fs", "process", "time"] }
-async-trait = "0.1"
 sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
 sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
 serde_json.workspace = true

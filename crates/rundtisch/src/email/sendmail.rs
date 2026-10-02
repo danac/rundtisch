@@ -2,11 +2,13 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rundtisch::{EmailSendError, EmailSender};
+use lettre::message::Mailbox;
 use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::{Duration, sleep};
+
+use super::{EmailSendError, EmailSender, build_plain_message, mail_from_env};
 
 /// Delivers mail by handing an RFC822 message to `sendmail -t`.
 ///
@@ -16,14 +18,27 @@ use tokio::time::{Duration, sleep};
 ///
 /// On Wasmer Edge, enable outbound mail with `enable_email: true` in
 /// `app.yaml` and depend on `sendmail/sendmail` in `wasmer.toml`.
-#[derive(Debug, Clone, Default)]
-pub struct SendmailEmailSender;
+#[derive(Debug, Clone)]
+pub struct SendmailEmailSender {
+    from: Mailbox,
+}
+
+impl SendmailEmailSender {
+    pub fn new(from: Mailbox) -> Self {
+        Self { from }
+    }
+
+    /// Read `AUTH_MAIL_FROM`, defaulting to `rundtisch@localhost`.
+    pub fn from_env() -> Result<Self, EmailSendError> {
+        Ok(Self::new(mail_from_env()?))
+    }
+}
 
 #[async_trait::async_trait]
 impl EmailSender for SendmailEmailSender {
     async fn send(&self, to: &str, subject: &str, body: &str) -> Result<(), EmailSendError> {
-        let message = format!("To: {to}\nSubject: {subject}\n\n{body}");
-        deliver(message.as_bytes()).await
+        let message = build_plain_message(self.from.clone(), to, subject, body)?;
+        deliver(&message.formatted()).await
     }
 }
 

@@ -8,9 +8,6 @@ repository = "https://github.com/danac/rundtisch"
 entrypoint = "native"
 wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
 
-[dependencies]
-"sendmail/sendmail" = "*"
-
 # Guest path /app/web is what the native binary serves as the SPA.
 # Build the frontend first: `npm run build --prefix demo/web`.
 [fs]
