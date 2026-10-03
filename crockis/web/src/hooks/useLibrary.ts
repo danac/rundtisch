@@ -3,28 +3,28 @@ import { api } from '../api'
 import { useAuth } from '../auth/useAuth'
 
 export function useCollections() {
-  const { token } = useAuth()
+  const { user } = useAuth()
   return useQuery({
     queryKey: ['collections'],
-    enabled: Boolean(token),
-    queryFn: () => api.listCollections(token!),
+    enabled: Boolean(user),
+    queryFn: () => api.listCollections(),
   })
 }
 
 export function useCollection(collectionId: string | undefined) {
-  const { token } = useAuth()
+  const { user } = useAuth()
   return useQuery({
     queryKey: ['collections', collectionId],
-    enabled: Boolean(token && collectionId),
-    queryFn: () => api.getCollection(token!, collectionId!),
+    enabled: Boolean(user && collectionId),
+    queryFn: () => api.getCollection(collectionId!),
   })
 }
 
 export function usePhotos(collectionId: string | undefined) {
-  const { token } = useAuth()
+  const { user } = useAuth()
   return useQuery({
     queryKey: ['collections', collectionId, 'photos'],
-    enabled: Boolean(token && collectionId),
-    queryFn: () => api.listPhotos(token!, collectionId!),
+    enabled: Boolean(user && collectionId),
+    queryFn: () => api.listPhotos(collectionId!),
   })
 }

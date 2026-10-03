@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type Collection } from '../api'
-import { useAuth } from '../auth/useAuth'
 import { downloadCollection } from '../download'
 import { DownloadControl } from './DownloadControl'
 
@@ -10,15 +9,13 @@ type CollectionMosaicProps = {
 }
 
 function CollectionCard({ collection, featured }: { collection: Collection; featured: boolean }) {
-  const { token } = useAuth()
   const [busy, setBusy] = useState(false)
 
   async function save() {
-    if (!token) return
     setBusy(true)
     try {
-      const photos = await api.listPhotos(token, collection.id)
-      await downloadCollection(collection, photos, token)
+      const photos = await api.listPhotos(collection.id)
+      await downloadCollection(collection, photos)
     } finally {
       setBusy(false)
     }

@@ -4,7 +4,6 @@ import Lightbox from 'yet-another-react-lightbox'
 import Download from 'yet-another-react-lightbox/plugins/download'
 import Zoom from 'yet-another-react-lightbox/plugins/zoom'
 import type { Photo } from '../api'
-import { useAuth } from '../auth/useAuth'
 import { downloadPhoto } from '../download'
 import { DownloadControl } from './DownloadControl'
 
@@ -16,14 +15,13 @@ type PhotoMosaicProps = {
 }
 
 export function PhotoMosaic({ photos, selecting = false, selectedIds, onToggle }: PhotoMosaicProps) {
-  const { token } = useAuth()
   const [index, setIndex] = useState(-1)
   const [busyId, setBusyId] = useState<string | null>(null)
 
   async function save(photo: Photo) {
     setBusyId(photo.id)
     try {
-      await downloadPhoto(photo, token)
+      await downloadPhoto(photo)
     } finally {
       setBusyId(null)
     }

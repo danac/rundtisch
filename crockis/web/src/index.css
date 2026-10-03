@@ -52,6 +52,10 @@ body {
   border-color: rgb(244 241 234 / 0.45);
 }
 
+.auth-panel [role='alert'] {
+  color: rgb(252 165 165 / 0.9);
+}
+
 .auth-field:-webkit-autofill,
 .auth-field:-webkit-autofill:hover,
 .auth-field:-webkit-autofill:focus {
