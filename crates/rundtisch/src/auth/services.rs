@@ -14,7 +14,8 @@ use crate::auth::queries::{
     get_step_up_by_token_hash, get_user_by_email, get_user_by_id, insert_ceremony,
     insert_invitation, insert_passkey, insert_recovery_token, insert_session, insert_step_up,
     list_active_sessions_for_user, list_passkeys_for_user, lock_user_row, recovery_issued_since,
-    revoke_all_sessions, revoke_all_step_ups, revoke_session, set_password_hash_by_id,
+    revoke_all_sessions, revoke_all_step_ups, revoke_session, set_alias_by_id,
+    set_password_hash_by_id,
     touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
 };
 use crate::auth::session::{credential_id_key, generate_session_token, token_hash};
@@ -87,27 +88,30 @@ pub async fn create_recovery_token(
     Ok(Some(raw))
 }
 
+/// Mint a recovery token when the account exists and is not rate-limited.
+///
+/// Returns `Ok(Some(raw))` when a new token was stored, or `Ok(None)` when the
+/// email is unknown or a token was issued within [`RECOVERY_MIN_INTERVAL`].
 pub async fn request_recovery(
     db: &DatabaseConnection,
     pepper: &[u8],
     email: &str,
     ttl: time::Duration,
-) -> Result<(), AuthError> {
+) -> Result<Option<String>, AuthError> {
     let email = parse_email(email)?;
     let Some(user) = get_user_by_email(db, email.as_ref()).await? else {
         let _ = generate_session_token().map_err(AuthError::Backend)?;
-        return Ok(());
+        return Ok(None);
     };
     let since = now() - RECOVERY_MIN_INTERVAL;
     if recovery_issued_since(db, user.id, since).await? > 0 {
-        return Ok(());
+        return Ok(None);
     }
     let raw = generate_session_token().map_err(AuthError::Backend)?;
     let hash = token_hash(pepper, &raw).map_err(AuthError::Backend)?;
-    let _ = raw;
     let created = now();
     insert_recovery_token(db, user.id, &hash, created, created + ttl).await?;
-    Ok(())
+    Ok(Some(raw))
 }
 
 pub async fn complete_password_registration(
@@ -694,6 +698,25 @@ pub async fn set_session_password(
             let created = now();
             lock_user_row(&txn, user_id, created).await?;
             set_password_hash_by_id(&txn, user_id, password_hash, created).await?;
+            let user = get_user_by_id(&txn, user_id).await?;
+            Ok((txn, user))
+        }
+    })
+    .await
+}
+
+/// Replace the signed-in user's display alias. Existing sessions stay valid.
+pub async fn set_session_alias(
+    db: &DatabaseConnection,
+    user_id: i64,
+    alias: String,
+) -> Result<User, AuthError> {
+    transaction(db, |txn| {
+        let alias = alias.clone();
+        async move {
+            let created = now();
+            lock_user_row(&txn, user_id, created).await?;
+            set_alias_by_id(&txn, user_id, alias, created).await?;
             let user = get_user_by_id(&txn, user_id).await?;
             Ok((txn, user))
         }

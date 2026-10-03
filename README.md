@@ -21,7 +21,7 @@ Browser (localhost:5173)
     ├─ /, /assets/...  →  Vite dev server (HMR)
     │
     └─ /api/*          →  Vite proxy  →  native Axum (localhost:8787)
-                                            └─ AppState { db }
+                                            └─ AppState { db, email }
 ```
 
 `npm run dev --prefix demo` starts both processes. The dev script applies pending migrations to a local SQLite file, then starts the API. The server itself does not migrate on startup.
