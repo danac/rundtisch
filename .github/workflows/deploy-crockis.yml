@@ -1,0 +1,54 @@
+name: Deploy Crockis on Wasmer Edge
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: Wasmer
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          check-latest: true
+          cache: npm
+          cache-dependency-path: crockis/web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: crockis/web
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: crockis/web
+        run: npm run build
+
+      - name: Install wasmer
+        run: |
+          curl https://get.wasmer.io -sSfL | sh
+          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
+
+      - name: Deploy to Wasmer Edge
+        working-directory: crockis
+        env:
+          WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+          WASMER_OWNER: ${{ secrets.WASMER_OWNER || vars.WASMER_OWNER }}
+        run: |
+          if [ -z "$WASMER_TOKEN" ]; then
+            echo "Add WASMER_TOKEN to the Wasmer GitHub environment."
+            exit 1
+          fi
+          if [ -z "$WASMER_OWNER" ]; then
+            echo "Add WASMER_OWNER to the Wasmer GitHub environment."
+            exit 1
+          fi
+          test -f web/dist/index.html
+          wasmer --version
+          wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
