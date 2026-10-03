@@ -90,9 +90,9 @@ The library's WebAuthn defaults are `localhost`, `http://localhost:5173`, and `r
 | Secret | Length |
 |--------|--------|
 | `AUTH_HASH_PEPPER` | exactly 32 bytes |
-| `AUTH_WEBAUTHN_RP_ID` | set to `localhost` in dev; `crockis-photos.wasmer.app` on Edge |
-| `AUTH_WEBAUTHN_RP_ORIGIN` | set to `http://localhost:5174` in dev; `https://crockis-photos.wasmer.app` on Edge |
-| `AUTH_WEBAUTHN_RP_NAME` | `crockis-photos` |
+| `AUTH_WEBAUTHN_RP_ID` | dev script sets `localhost`; on Edge set the secret `crockis-photos.wasmer.app` |
+| `AUTH_WEBAUTHN_RP_ORIGIN` | dev script sets `http://localhost:5174`; on Edge set the secret `https://crockis-photos.wasmer.app` |
+| `AUTH_WEBAUTHN_RP_NAME` | `crockis-photos` (dev script locally, app secret on Edge) |
 | `AUTH_SMTP_URL` | SMTP host or `smtp://host[:port]` (STARTTLS) |
 | `AUTH_SMTP_USERNAME` | SMTP auth username |
 | `AUTH_SMTP_PASSWORD` | SMTP auth password |
