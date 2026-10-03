@@ -1,4 +1,4 @@
-import type { Collection, Photo, User } from './types'
+import type { Collection, Photo } from './types'
 
 function unsplash(photoId: string, width: number, height: number): string {
   return `https://images.unsplash.com/${photoId}?auto=format&fit=crop&w=${width}&h=${height}&q=80`
@@ -114,13 +114,3 @@ export const mockCollections: Collection[] = [
     photoCount: coastPhotos.length,
   },
 ]
-
-export const mockUser: User = {
-  id: 'user-dana',
-  email: 'dana@crockis.test',
-  name: 'Dana',
-  authMethods: [
-    { id: 'password', kind: 'password', label: 'Password', enrolled: true },
-    { id: 'passkey', kind: 'passkey', label: 'Passkey', enrolled: false },
-  ],
-}

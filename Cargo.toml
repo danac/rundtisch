@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["demo/api"]
+members = ["demo/api", "crockis/api"]
 exclude = ["crates/rundtisch"]
 default-members = ["demo/api"]
 

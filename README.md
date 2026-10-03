@@ -2,14 +2,15 @@
 
 Micro web framework with CMS features.
 
-The repository is a **Cargo workspace** plus two frontends: a **demo website** (React SPA + Rust Axum API) and **Crockis**, a photo-library SPA that will later sit on the same `rundtisch` crate. The reusable framework lives in `crates/rundtisch`. See the component READMEs for implementation detail:
+The repository is a **Cargo workspace** plus two apps: a **demo website** (React SPA + Rust Axum API) and **Crockis**, a photo library with the same auth API and a React SPA. The reusable framework lives in `crates/rundtisch`. See the component READMEs for implementation detail:
 
 | Document | Scope |
 |----------|-------|
 | [crates/rundtisch/README.md](crates/rundtisch/README.md) | Library crate — `AppState`, SeaORM auth |
 | [demo/web/README.md](demo/web/README.md) | React SPA — landing page and auth panels |
 | [demo/api/README.md](demo/api/README.md) | Demo Axum app — `/api/*` routes on top of `rundtisch` |
-| [crockis/web/README.md](crockis/web/README.md) | Crockis SPA — collections, photo mosaic, login (frontend only) |
+| [crockis/web/README.md](crockis/web/README.md) | Crockis SPA — library, login, and account |
+| [crockis/api/README.md](crockis/api/README.md) | Crockis Axum app — auth routes on top of `rundtisch` |
 
 ## Architecture
 
@@ -41,10 +42,11 @@ Browser (localhost:5173)
 │   ├── app.yaml               # Wasmer Edge app rundtisch
 │   └── package.json           # concurrently; `npm run dev`
 └── crockis/
-    ├── web/                   # photo library SPA (frontend first)
-    ├── wasmer.toml            # Wasmer package (static-web-server + web/dist)
-    ├── settings/              # static-web-server config (SPA 404 + cache)
-    └── app.yaml               # Wasmer Edge app crockis
+    ├── api/                   # Crockis app crate: auth routes, native + migrate bins
+    │   └── src/bin/native.rs  # listens on 0.0.0.0:8788
+    ├── web/                   # photo library SPA
+    ├── wasmer.toml            # Wasmer package (WASIX binaries + web/dist)
+    └── app.yaml               # Wasmer Edge app crockis-photos
 ```
 
 ## Local development
@@ -110,32 +112,28 @@ cargo test
 npm run build --prefix demo/web
 ```
 
-The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo. CI (`.github/workflows/ci.yml`) runs both, then the frontend build.
+The library is outside the Cargo workspace, so its tests use `crates/rundtisch/Cargo.lock`. Root `cargo test` runs the demo (the default workspace member). `cargo test -p crockis` runs the Crockis API. CI (`.github/workflows/ci.yml`) runs both, then both frontend builds.
 
 ### Crockis
+
+`npm run dev --prefix crockis` starts Vite on http://localhost:5174 and the API on http://localhost:8788. MySQL is `mysql://demo:demo@127.0.0.1:3306/crockis_dev`. See [crockis/README.md](crockis/README.md).
 
 Workflow: `.github/workflows/deploy-crockis.yml`
 
 | Trigger | Action |
 |---------|--------|
-| Push | Build `crockis/web` → `wasmer deploy` to Edge app `crockis` |
+| Push | WASIX release of `crockis` → `wasmer deploy` to Edge app `crockis-photos` |
 | **workflow_dispatch** | Same as production deploy |
 
-There is no Rust/WASM build; Wasmer Edge serves the Vite SPA from `crockis/web/dist/` via `wasmer/static-web-server` (`crockis/wasmer.toml`, `crockis/app.yaml`).
+Wasmer Edge serves the Axum API and the built SPA (`crockis/wasmer.toml`, `crockis/app.yaml`), with managed MySQL in `fr-roub1` and a post-deploy migrate job. Hostname: `crockis-photos.wasmer.app`.
 
 Requires `WASMER_TOKEN` (secret) and `WASMER_OWNER` (variable or secret) in the GitHub **Wasmer** environment.
-
-```bash
-npm install --prefix crockis/web
-npm run build --prefix crockis/web
-# from crockis/; pass --owner if app.yaml has no owner
-wasmer deploy --non-interactive --bump --no-persist-id --publish-package
-```
 
 ## Related documentation
 
 - [crates/rundtisch/README.md](crates/rundtisch/README.md) — library API
 - [demo/web/README.md](demo/web/README.md) — SPA and Vite proxy
 - [demo/api/README.md](demo/api/README.md) — demo routes and the migrate binary
-- [crockis/web/README.md](crockis/web/README.md) — Crockis photo library SPA
+- [crockis/web/README.md](crockis/web/README.md) — Crockis SPA and Vite proxy
+- [crockis/api/README.md](crockis/api/README.md) — Crockis auth routes and the migrate binary
 - [AGENTS.md](AGENTS.md) — Cursor Cloud agent environment notes

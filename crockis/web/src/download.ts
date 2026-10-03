@@ -34,10 +34,10 @@ function sameOrigin(url: string) {
   }
 }
 
-async function fetchAsset(url: string, token: string | null) {
-  const headers = new Headers()
-  if (token && sameOrigin(url)) headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(url, { headers })
+async function fetchAsset(url: string) {
+  const response = await fetch(url, {
+    credentials: sameOrigin(url) ? 'include' : 'omit',
+  })
   if (!response.ok) throw new Error('Unable to download this file.')
   return response.blob()
 }
@@ -60,16 +60,16 @@ function photoName(photo: Photo, blob: Blob) {
   return `${slug(photo.title ?? photo.id)}.${extension(blob, photoUrl(photo))}`
 }
 
-export async function downloadPhoto(photo: Photo, token: string | null) {
+export async function downloadPhoto(photo: Photo) {
   const url = photoUrl(photo)
-  const blob = await fetchAsset(url, token)
+  const blob = await fetchAsset(url)
   saveBlob(blob, photoName(photo, blob))
 }
 
-export async function downloadPhotos(name: string, photos: Photo[], token: string | null) {
+export async function downloadPhotos(name: string, photos: Photo[]) {
   if (photos.length === 1) {
     const only = photos[0]
-    if (only) await downloadPhoto(only, token)
+    if (only) await downloadPhoto(only)
     return
   }
 
@@ -80,7 +80,7 @@ export async function downloadPhotos(name: string, photos: Photo[], token: strin
     while (queue.length > 0) {
       const next = queue.shift()
       if (!next) return
-      const blob = await fetchAsset(photoUrl(next.photo), token)
+      const blob = await fetchAsset(photoUrl(next.photo))
       let filename = `${String(next.index + 1).padStart(2, '0')}-${photoName(next.photo, blob)}`
       while (used.has(filename)) filename = `copy-${filename}`
       used.add(filename)
@@ -91,10 +91,6 @@ export async function downloadPhotos(name: string, photos: Photo[], token: strin
   saveBlob(await zip.generateAsync({ type: 'blob' }), `${slug(name)}.zip`)
 }
 
-export async function downloadCollection(
-  collection: Collection,
-  photos: Photo[],
-  token: string | null,
-) {
-  await downloadPhotos(collection.name, photos, token)
+export async function downloadCollection(collection: Collection, photos: Photo[]) {
+  await downloadPhotos(collection.name, photos)
 }

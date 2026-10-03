@@ -1,27 +1,38 @@
 [package]
-name = "crockis"
+name = "crockis-photos"
 version = "0.1.0"
-description = "Crockis photo library: static React SPA on Wasmer Edge"
+description = "Crockis photo library: Axum API and React SPA on Wasmer Edge"
 license = "MIT"
 readme = "./README.md"
 repository = "https://github.com/danac/rundtisch"
-entrypoint = "script"
+entrypoint = "native"
+wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
 
-[dependencies]
-"wasmer/static-web-server" = "^1"
-
-# Guest path /public is what static-web-server serves as the website root.
+# Guest path /app/web is what the native binary serves as the SPA.
 # Build the frontend first: `npm run build --prefix crockis/web`.
 [fs]
-"/public" = "./web/dist"
-"/settings" = "./settings"
+"/app/web" = "./web/dist"
+
+[[module]]
+name = "native"
+source = "../target/wasm32-wasmer-wasi/release/crockis-native.wasi.wasm"
+abi = "wasi"
+
+[[module]]
+name = "migrate"
+source = "../target/wasm32-wasmer-wasi/release/crockis-migrate.wasi.wasm"
+abi = "wasi"
 
 [[command]]
-name = "script"
-module = "wasmer/static-web-server:webserver"
+name = "native"
+module = "native"
 runner = "wasi"
 
 [command.annotations.wasi]
-# --config-file (not -w) is the flag this 1.x build accepts.
-# Cache and SPA 404 fallback live in settings/config.toml.
-main-args = ["--config-file", "/settings/config.toml"]
+env = ["PORT=80", "BIND_ADDR=127.0.0.1"]
+
+# Edge `jobs` in app.yaml run this command once per deploy.
+[[command]]
+name = "migrate"
+module = "migrate"
+runner = "wasi"

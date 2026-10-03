@@ -1,18 +1,59 @@
 kind: wasmer.io/App.v0
-name: crockis
+name: crockis-photos
 package: .
-# Set this to your Wasmer account or namespace, or pass --owner to `wasmer deploy`.
+# Set this to your Wasmer account or namespace, or let `wasmer deploy` prompt.
 # owner: YOUR_WASMER_USERNAME
+#
+# Auth secrets are not committed here. Set them on the app (dashboard or
+# `wasmer app secret`). The commented "Ensure auth secrets" step in
+# `.github/workflows/deploy-crockis.yml` can create missing ones:
+#   AUTH_HASH_PEPPER
+# SMTP STARTTLS for recovery mail (SmtpEmailSender):
+#   AUTH_SMTP_URL
+#   AUTH_SMTP_USERNAME
+#   AUTH_SMTP_PASSWORD
+#   AUTH_MAIL_FROM   # optional; default rundtisch@localhost
+# Optional first admin. The post-deployment migrate job upserts this email:
+# insert a verified Admin if absent, or reset the password if present
+# (public_id and the rest of the row stay the same):
+#   RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL
+#   RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
+#   RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS   # optional; insert only; defaults to the email local-part
+#
+# Public WebAuthn RP settings for this Edge hostname (not secrets).
+# Local Vite still uses localhost:5174 when the dev script sets these env vars.
+env:
+  AUTH_WEBAUTHN_RP_ID: crockis-photos.wasmer.app
+  AUTH_WEBAUTHN_RP_ORIGIN: https://crockis-photos.wasmer.app
+  AUTH_WEBAUTHN_RP_NAME: crockis-photos
 debug: false
-volumes:
-  - name: data
-    mount: /app/data
+capabilities:
+  database:
+    engine: mysql
+# Managed MySQL is only offered in some regions. Apps with a database must
+# name exactly one of those regions.
+locality:
+  regions:
+    - fr-roub1
+# Run the package `migrate` command once after each new version is created.
+# The job gets the app's DB_* env and secrets. SeaORM applies
+# pending migrations, then upserts a bootstrap Admin when
+# RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL and RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
+# are set. Do not call migrate from native startup or HTTP handlers.
+jobs:
+  - name: migrate-database
+    trigger: post-deployment
+    timeout: 5m
+    retries: 2
+    action:
+      execute:
+        command: migrate
 # HealthCheckV1 is an externally tagged serde enum. serde_yaml 0.9 expects a
 # YAML tag (`!http`), not a map (`http:`). Nested `expect` matches HttpRequest.
 health_checks:
   - !http
     method: GET
-    path: /
+    path: /api/health
     interval: 30s
     timeout: 10s
     unhealthy_threshold: 2
