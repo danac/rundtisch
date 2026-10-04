@@ -246,7 +246,9 @@ export function LoginForm() {
   const [error, setError] = useState<string | null>(null)
   const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null)
   const [loginPhase, setLoginPhase] = useState<'email' | 'password'>('email')
-  const [registerPhase, setRegisterPhase] = useState<'method' | 'password' | 'passkey'>('method')
+  const [registerPhase, setRegisterPhase] = useState<
+    'checking' | 'token' | 'invalid' | 'alias' | 'method' | 'password' | 'passkey'
+  >(inviteFromQuery ? 'checking' : 'token')
   const [recoverPhase, setRecoverPhase] = useState<'method' | 'password' | 'passkey'>('method')
   const canPasskey = passkeySupported()
   const conditionalAbort = useRef<AbortController | null>(null)
@@ -269,15 +271,46 @@ export function LoginForm() {
     establish(body.user)
   }
 
+  const previewGeneration = useRef(0)
+
   function showLogin() {
+    previewGeneration.current += 1
     setMode('login')
     setLoginPhase('email')
+    setRegisterPhase('token')
+    setInviteToken('')
+    setAlias('')
     setRecoverPhase('method')
     setPassword('')
     setPasskeyLabel('')
     setError(null)
     setRecoveryNotice(null)
+    clearAuthQuery()
   }
+
+  const previewApi = useRef(api)
+  previewApi.current = api
+
+  useEffect(() => {
+    if (!inviteFromQuery) return
+    const generation = previewGeneration.current + 1
+    previewGeneration.current = generation
+    setBusy(true)
+    void (async () => {
+      try {
+        const response = await previewApi.current('/api/auth/register/invitation', {
+          method: 'POST',
+          body: JSON.stringify({ token: inviteFromQuery }),
+        })
+        if (previewGeneration.current !== generation) return
+        setRegisterPhase(response.ok ? 'alias' : 'invalid')
+      } catch {
+        if (previewGeneration.current === generation) setRegisterPhase('invalid')
+      } finally {
+        if (previewGeneration.current === generation) setBusy(false)
+      }
+    })()
+  }, [])
 
   function showRequestRecovery() {
     setMode('request_recovery')
@@ -402,6 +435,44 @@ export function LoginForm() {
     }
   }
 
+  async function handleInvitation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    begin()
+    try {
+      const response = await api('/api/auth/register/invitation', {
+        method: 'POST',
+        body: JSON.stringify({ token: inviteToken.trim() }),
+      })
+      if (!response.ok) {
+        const message = await readError(response)
+        if (response.status === 401 || message === 'invalid_token') {
+          setRegisterPhase('invalid')
+          return
+        }
+        setError(message)
+        return
+      }
+      setRegisterPhase('alias')
+    } catch (err) {
+      if (err instanceof Error && err.message === 'cancelled') return
+      setError(messageFrom(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function handleAlias(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const next = alias.trim()
+    if (!next || next.length > 128) {
+      setError('Enter an alias of at most 128 characters.')
+      return
+    }
+    setAlias(next)
+    setError(null)
+    setRegisterPhase('method')
+  }
+
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     begin()
@@ -411,7 +482,7 @@ export function LoginForm() {
         body: JSON.stringify({
           token: inviteToken.trim(),
           password,
-          alias: alias.trim() || undefined,
+          alias: alias.trim(),
         }),
       })
       await finishSession(response)
@@ -475,7 +546,11 @@ export function LoginForm() {
   const heading = recovering
     ? 'Set a new credential'
     : mode === 'register'
-      ? 'Register'
+      ? registerPhase === 'token' || registerPhase === 'checking' || registerPhase === 'invalid'
+        ? 'Invitation'
+        : registerPhase === 'alias'
+          ? 'Alias'
+          : 'Register'
       : mode === 'request_recovery' || mode === 'recovery_sent'
         ? 'Recover account'
         : 'Log in'
@@ -500,9 +575,13 @@ export function LoginForm() {
             type="button"
             className={secondaryButtonClassName}
             onClick={() => {
-              setMode(mode === 'register' ? 'login' : 'register')
+              if (mode === 'register') {
+                showLogin()
+                return
+              }
+              setMode('register')
               setLoginPhase('email')
-              setRegisterPhase('method')
+              setRegisterPhase('token')
               setRecoverPhase('method')
               setPassword('')
               setPasskeyLabel('')
@@ -605,7 +684,59 @@ export function LoginForm() {
           </PasskeyCreateStep>
         )
       ) : mode === 'register' ? (
-        registerPhase === 'method' ? (
+        registerPhase === 'checking' ? (
+          <p className="mt-4 text-sm text-ink-muted">Checking invitation…</p>
+        ) : registerPhase === 'invalid' ? (
+          <div className="mt-4">
+            <p className="text-sm text-ink" role="alert">
+              This invitation is not valid.
+            </p>
+            <a href={window.location.pathname} className="mt-6 inline-block text-sm font-semibold text-ink underline underline-offset-4">
+              Back to login
+            </a>
+          </div>
+        ) : registerPhase === 'token' ? (
+          <form onSubmit={(event) => void handleInvitation(event)} className="mt-4">
+            <label className="block text-sm text-ink-muted">
+              Invitation
+              <input
+                type="text"
+                name="invitation"
+                autoComplete="off"
+                required
+                value={inviteToken}
+                onChange={(event) => setInviteToken(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+                autoFocus
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Continue
+            </button>
+          </form>
+        ) : registerPhase === 'alias' ? (
+          <form onSubmit={handleAlias} className="mt-4">
+            <label className="block text-sm text-ink-muted">
+              Alias
+              <input
+                type="text"
+                name="alias"
+                autoComplete="nickname"
+                required
+                maxLength={128}
+                value={alias}
+                onChange={(event) => setAlias(event.target.value)}
+                className={inputClassName}
+                disabled={busy}
+                autoFocus
+              />
+            </label>
+            <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
+              Continue
+            </button>
+          </form>
+        ) : registerPhase === 'method' ? (
           <div className="mt-4">
             <p className="text-sm text-ink-muted">Choose a password or a passkey for this account.</p>
             <button
@@ -642,33 +773,8 @@ export function LoginForm() {
                 setRegisterPhase('method')
               }}
             />
-            <div className="mt-4 space-y-4">
-              <label className="block text-sm text-ink-muted">
-                Invitation
-                <input
-                  type="text"
-                  name="invitation"
-                  autoComplete="off"
-                  required
-                  value={inviteToken}
-                  onChange={(event) => setInviteToken(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
-              <label className="block text-sm text-ink-muted">
-                Alias
-                <input
-                  type="text"
-                  name="alias"
-                  autoComplete="nickname"
-                  value={alias}
-                  onChange={(event) => setAlias(event.target.value)}
-                  className={inputClassName}
-                  disabled={busy}
-                />
-              </label>
-              <NewPasswordField value={password} onChange={setPassword} disabled={busy} />
+            <div className="mt-4">
+              <NewPasswordField value={password} onChange={setPassword} disabled={busy} autoFocus />
             </div>
             <button type="submit" className={`mt-6 w-full ${primaryButtonClassName}`} disabled={busy}>
               Register
@@ -686,7 +792,7 @@ export function LoginForm() {
                 '/api/auth/register/passkey',
                 {
                   token: inviteToken.trim(),
-                  alias: alias.trim() || undefined,
+                  alias: alias.trim(),
                   label: passkeyLabel.trim() || undefined,
                 },
                 'create',
@@ -702,31 +808,6 @@ export function LoginForm() {
                 setRegisterPhase('method')
               }}
             />
-            <label className="block text-sm text-ink-muted">
-              Invitation
-              <input
-                type="text"
-                name="invitation"
-                autoComplete="off"
-                required
-                value={inviteToken}
-                onChange={(event) => setInviteToken(event.target.value)}
-                className={inputClassName}
-                disabled={busy}
-              />
-            </label>
-            <label className="block text-sm text-ink-muted">
-              Alias
-              <input
-                type="text"
-                name="alias"
-                autoComplete="nickname"
-                value={alias}
-                onChange={(event) => setAlias(event.target.value)}
-                className={inputClassName}
-                disabled={busy}
-              />
-            </label>
           </PasskeyCreateStep>
         )
       ) : mode === 'recovery_sent' ? (

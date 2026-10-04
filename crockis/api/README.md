@@ -38,6 +38,7 @@ Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so
 | Method | Path | Response |
 |--------|------|----------|
 | GET | `/api/health` | `{ "status": "ok", "headers": [...] }` |
+| POST | `/api/auth/register/invitation` | `204` when the invitation token is still open |
 | POST | `/api/auth/register/password`, `/api/auth/register_with_token` | Consume an invitation and set a password |
 | POST | `/api/auth/register/passkey/options`, `/api/auth/register/passkey` | Invitation passkey ceremony |
 | POST | `/api/auth/login` | Password login; `session` cookie and opaque bearer |

@@ -15,8 +15,8 @@ use crate::auth::queries::{
     insert_invitation, insert_passkey, insert_recovery_token, insert_session, insert_step_up,
     list_active_sessions_for_user, list_passkeys_for_user, lock_user_row, recovery_issued_since,
     revoke_all_sessions, revoke_all_step_ups, revoke_session, set_alias_by_id,
-    set_password_hash_by_id,
-    touch_last_login_by_id, touch_passkey_last_used, touch_session_last_used, update_passkey_json,
+    set_password_hash_by_id, touch_last_login_by_id, touch_passkey_last_used,
+    touch_session_last_used, update_passkey_json,
 };
 use crate::auth::session::{credential_id_key, generate_session_token, token_hash};
 use crate::auth::webauthn::{
@@ -265,6 +265,19 @@ pub async fn logout_all_for_user(db: &DatabaseConnection, user_id: i64) -> Resul
     let revoked_at = now();
     revoke_all_sessions(db, user_id, revoked_at).await?;
     revoke_all_step_ups(db, user_id, revoked_at).await?;
+    Ok(())
+}
+
+/// Confirm an invitation is still open. Does not consume the token.
+pub async fn preview_invitation(
+    db: &DatabaseConnection,
+    pepper: &[u8],
+    invitation_token: &str,
+) -> Result<(), AuthError> {
+    let token_hash = token_hash(pepper, invitation_token).map_err(AuthError::Backend)?;
+    find_open_invitation(db, &token_hash, now())
+        .await?
+        .ok_or(AuthError::InvalidToken)?;
     Ok(())
 }
 
