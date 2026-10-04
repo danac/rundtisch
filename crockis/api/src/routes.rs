@@ -5,16 +5,17 @@ use rundtisch::AppState;
 use rundtisch::auth::handlers::{
     clear_password, list_passkeys, list_sessions, login, logout, logout_all, me, mint_session,
     passkey_delete, passkey_login, passkey_login_options, passkey_register,
-    passkey_register_options, register_passkey, register_passkey_options, register_password,
-    register_with_token, request_reset, reset_passkey, reset_passkey_options, reset_password,
-    revoke_listed_session, set_alias, set_password, step_up_login, step_up_passkey_login,
-    step_up_passkey_login_options,
+    passkey_register_options, preview_invitation, register_passkey, register_passkey_options,
+    register_password, register_with_token, request_reset, reset_passkey, reset_passkey_options,
+    reset_password, revoke_listed_session, set_alias, set_password, step_up_login,
+    step_up_passkey_login, step_up_passkey_login_options,
 };
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health))
         .route("/api/auth/register_with_token", post(register_with_token))
+        .route("/api/auth/register/invitation", post(preview_invitation))
         .route("/api/auth/register/password", post(register_password))
         .route(
             "/api/auth/register/passkey/options",
