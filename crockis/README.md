@@ -1,39 +1,47 @@
 # Crockis
 
-Private photo library for sharing collections with friends. The product will eventually sit on a [rundtisch](../crates/rundtisch/README.md) backend; this folder currently holds the frontend only.
+Private photo library. Auth is a rundtisch Axum API, modelled on the demo app. Collections and photos still come from the frontend mock client.
 
 ```
 crockis/
+├── api/              # Axum app: auth routes, native + migrate + auth-link
 ├── web/              # Vite + React SPA
-├── wasmer.toml       # Wasmer package (static-web-server + web/dist)
-├── settings/         # static-web-server config (SPA 404 + cache headers)
-├── app.yaml          # Wasmer Edge app (name: crockis)
-├── wrangler.jsonc    # unused by CI (Cloudflare Worker config)
-└── package.json
+├── wasmer.toml       # Wasmer package (WASIX binaries + web/dist)
+├── app.yaml          # Wasmer Edge app (name: crockis-photos)
+└── package.json      # concurrently; `npm run dev`
 ```
-
-## Current state
-
-Frontend-only. Collections, photos, and login are served from a typed API client that reads placeholder data today and can switch to REST (`GET /api/collections`, `GET /api/collections/:id/photos`, `POST /api/auth/login`) without changing the UI.
 
 ## Commands
 
 ```bash
+npm install --prefix crockis
 npm install --prefix crockis/web
-npm run dev --prefix crockis          # or: npm run dev --prefix crockis/web
-npm run build --prefix crockis
+npm run dev --prefix crockis
 ```
 
-Dev server: http://localhost:5174 (5173 is reserved for the rundtisch demo).
+| Process | URL | Role |
+|---------|-----|------|
+| Vite | http://localhost:5174 | SPA — open this in the browser |
+| API | http://localhost:8788 | `crockis-native` (proxied at `/api`) |
+
+Create the MySQL database once (`demo` / `demo`, same server as the demo):
+
+```bash
+mysql -h 127.0.0.1 -P 3306 -udemo -pdemo -e 'CREATE DATABASE IF NOT EXISTS crockis_dev'
+DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/crockis_dev \
+  AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc \
+  cargo run -p crockis --bin crockis-migrate
+```
+
+`npm run dev` sets `AUTH_HASH_PEPPER`, WebAuthn RP id `localhost`, origin `http://localhost:5174`, name `crockis-photos`, and placeholder SMTP variables so the process can start. Real recovery mail needs a reachable SMTP server. Mint links with:
+
+```bash
+cargo run -p crockis --bin crockis-auth-link -- invite --email user@example.com
+cargo run -p crockis --bin crockis-auth-link -- recover --email user@example.com
+```
 
 ## Deploy
 
-Wasmer Edge serves `web/dist/` as a static SPA (`wasmer.toml` + `app.yaml`, app name `crockis`). GitHub Actions workflow **Deploy Crockis on Wasmer Edge** (`.github/workflows/deploy-crockis.yml`) runs on every push and on manual `workflow_dispatch`. It uses the **Wasmer** GitHub environment (`WASMER_TOKEN` secret, `WASMER_OWNER` variable). There is no Rust/WASM build.
+Wasmer Edge app `crockis-photos` (`https://crockis-photos.wasmer.app`): WASIX binaries, managed MySQL in `fr-roub1`, and a post-deploy `migrate` job. Workflow **Deploy Crockis on Wasmer Edge** (`.github/workflows/deploy-crockis.yml`) matches the demo deploy: every push and `workflow_dispatch`, GitHub environment **Wasmer** (`WASMER_TOKEN`, `WASMER_OWNER`).
 
-```bash
-# local (Wasmer CLI + `wasmer login`; pass --owner if app.yaml has no owner)
-npm run build --prefix crockis/web
-npm run deploy --prefix crockis
-```
-
-See [web/README.md](web/README.md) for the SPA stack and API contract.
+See [api/README.md](api/README.md) and [web/README.md](web/README.md).

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ApiError } from '../api'
-import { useAuth } from '../auth/useAuth'
 import { Header } from '../components/Header'
 import { PhotoMosaic } from '../components/PhotoMosaic'
 import { StatusState } from '../components/StatusState'
@@ -9,7 +8,6 @@ import { downloadPhotos } from '../download'
 import { useCollection, usePhotos } from '../hooks/useLibrary'
 
 export function CollectionPage() {
-  const { token } = useAuth()
   const { collectionId } = useParams()
   const collection = useCollection(collectionId)
   const photos = usePhotos(collectionId)
@@ -84,7 +82,7 @@ export function CollectionPage() {
     if (chosen.length === 0) return
     setDownloading(true)
     try {
-      await downloadPhotos(name, chosen, token)
+      await downloadPhotos(name, chosen)
     } finally {
       setDownloading(false)
     }

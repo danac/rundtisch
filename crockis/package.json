@@ -2,13 +2,12 @@
   "name": "crockis",
   "private": true,
   "scripts": {
-    "dev": "npm run dev --prefix web",
+    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/crockis_dev AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc AUTH_WEBAUTHN_RP_ID=localhost AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:5174 AUTH_WEBAUTHN_RP_NAME=crockis-photos AUTH_SMTP_URL=localhost AUTH_SMTP_USERNAME=crockis AUTH_SMTP_PASSWORD=crockis AUTH_MAIL_FROM=crockis-photos@localhost cargo run -p crockis --bin crockis-native\"",
     "build": "npm run build --prefix web",
     "lint": "npm run lint --prefix web",
-    "preview": "npm run preview --prefix web",
-    "deploy": "npm run build --prefix web && wasmer deploy --non-interactive --bump --no-persist-id --publish-package"
+    "preview": "npm run preview --prefix web"
   },
   "devDependencies": {
-    "wrangler": "^4.132.0"
+    "concurrently": "^10.0.3"
   }
 }

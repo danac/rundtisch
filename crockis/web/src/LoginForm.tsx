@@ -32,14 +32,12 @@ type PasskeyRow = {
   last_used_at: string | null
 }
 
-const inputClassName =
-  'mt-1.5 block w-full rounded-lg border border-ring/80 bg-paper px-3 py-2 text-ink outline-none transition focus:border-ink/40 focus:ring-2 focus:ring-ring/60'
+const inputClassName = 'auth-field'
 const primaryButtonClassName =
-  'rounded-full bg-ink px-4 py-2.5 text-sm font-semibold tracking-wide text-paper transition hover:bg-ink/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
+  'border border-ink/70 bg-transparent px-6 py-3.5 font-display text-[12px] font-medium tracking-[0.28em] uppercase text-ink transition-colors hover:bg-ink hover:text-void focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-wait disabled:opacity-60'
 const secondaryButtonClassName =
-  'rounded-full border border-ring/80 bg-paper px-3 py-1.5 text-sm font-semibold tracking-wide text-ink transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50'
-const panelClassName =
-  'w-full rounded-2xl border border-ring/70 bg-paper/80 px-6 py-6 text-left shadow-[var(--shadow-panel)] backdrop-blur-[2px]'
+  'border border-line bg-transparent px-4 py-2 font-display text-[11px] font-medium tracking-[0.18em] uppercase text-mist transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-60'
+const panelClassName = 'auth-panel w-full text-left'
 
 const query = new URLSearchParams(window.location.search)
 const inviteFromQuery = query.get('invite') ?? ''
@@ -107,7 +105,7 @@ function NewPasswordField({
   autoFocus?: boolean
 }) {
   return (
-    <label className="block text-sm text-ink-muted">
+    <label className="block text-sm text-mist">
       Password
       <input
         type="password"
@@ -146,10 +144,10 @@ function StepSummary({
       type="button"
       onClick={onChange}
       disabled={disabled}
-      className="flex w-full items-center justify-between gap-3 rounded-lg border border-ring/80 bg-paper px-3 py-2 text-left text-sm transition hover:bg-ring/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
+      className="flex w-full items-center justify-between gap-3 rounded-lg border border-line bg-[#0c0c0c] px-3 py-2 text-left text-sm transition hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
     >
       <span className="min-w-0 truncate text-ink">{label}</span>
-      <span className="shrink-0 font-semibold tracking-wide text-ink-muted">Change</span>
+      <span className="shrink-0 font-semibold tracking-wide text-mist">Change</span>
     </button>
   )
 }
@@ -164,7 +162,7 @@ function OptionalPasskeyName({
   disabled: boolean
 }) {
   return (
-    <label className="block text-sm text-ink-muted">
+    <label className="block text-sm text-mist">
       Name <span className="font-normal">(optional)</span>
       <input
         type="text"
@@ -557,8 +555,8 @@ export function LoginForm() {
 
   return (
     <section className={panelClassName} aria-labelledby="login-heading">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="login-heading" className="text-sm font-semibold tracking-wide text-ink">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="login-heading" className="font-display text-2xl font-medium tracking-[0.18em] uppercase text-ink">
           {heading}
         </h2>
         {recovering ? null : mode === 'request_recovery' || mode === 'recovery_sent' ? (
@@ -604,7 +602,7 @@ export function LoginForm() {
       {recovering ? (
         recoverPhase === 'method' ? (
           <div className="mt-4">
-            <p className="text-sm text-ink-muted">
+            <p className="text-sm text-mist">
               Choose a new password or a passkey for this account.
             </p>
             <button
@@ -685,19 +683,19 @@ export function LoginForm() {
         )
       ) : mode === 'register' ? (
         registerPhase === 'checking' ? (
-          <p className="mt-4 text-sm text-ink-muted">Checking invitation…</p>
+          <p className="mt-4 text-sm text-mist">Checking invitation…</p>
         ) : registerPhase === 'invalid' ? (
           <div className="mt-4">
             <p className="text-sm text-ink" role="alert">
               This invitation is not valid.
             </p>
-            <a href={window.location.pathname} className="mt-6 inline-block text-sm font-semibold text-ink underline underline-offset-4">
+            <a href={window.location.pathname} className="account-link">
               Back to login
             </a>
           </div>
         ) : registerPhase === 'token' ? (
           <form onSubmit={(event) => void handleInvitation(event)} className="mt-4">
-            <label className="block text-sm text-ink-muted">
+            <label className="block text-sm text-mist">
               Invitation
               <input
                 type="text"
@@ -717,7 +715,7 @@ export function LoginForm() {
           </form>
         ) : registerPhase === 'alias' ? (
           <form onSubmit={handleAlias} className="mt-4">
-            <label className="block text-sm text-ink-muted">
+            <label className="block text-sm text-mist">
               Alias
               <input
                 type="text"
@@ -738,7 +736,7 @@ export function LoginForm() {
           </form>
         ) : registerPhase === 'method' ? (
           <div className="mt-4">
-            <p className="text-sm text-ink-muted">Choose a password or a passkey for this account.</p>
+            <p className="text-sm text-mist">Choose a password or a passkey for this account.</p>
             <button
               type="button"
               className={`mt-6 w-full ${primaryButtonClassName}`}
@@ -820,10 +818,10 @@ export function LoginForm() {
           onSubmit={(event) => void handleRequestRecovery(event)}
           className="mt-4"
         >
-          <p className="text-sm text-ink-muted">
+          <p className="text-sm text-mist">
             Enter the email for your account. If it exists, we will send a recovery link.
           </p>
-          <label className="mt-4 block text-sm text-ink-muted">
+          <label className="mt-4 block text-sm text-mist">
             Email
             <input
               type="email"
@@ -844,7 +842,7 @@ export function LoginForm() {
       ) : loginPhase === 'email' ? (
         <div className="mt-4">
           <form key="login-email" onSubmit={handleEmailNext}>
-            <label className="block text-sm text-ink-muted">
+            <label className="block text-sm text-mist">
               Email
               <input
                 type="email"
@@ -883,7 +881,7 @@ export function LoginForm() {
         <div className="mt-4">
           <form key="login-password" onSubmit={handleLogin}>
             <StepSummary label={email} disabled={busy} onChange={showEmailStep} />
-            <label className="mt-4 block text-sm text-ink-muted">
+            <label className="mt-4 block text-sm text-mist">
               Password
               <input
                 ref={passwordInputRef}
@@ -1256,8 +1254,8 @@ export function AccountPanel() {
 
   return (
     <section className={panelClassName} aria-labelledby="account-heading">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="account-heading" className="text-sm font-semibold tracking-wide text-ink">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="account-heading" className="font-display text-2xl font-medium tracking-[0.18em] uppercase text-ink">
           Account
         </h2>
         <button type="button" className={secondaryButtonClassName} onClick={() => void logout()}>
@@ -1266,7 +1264,7 @@ export function AccountPanel() {
       </div>
       {settingAlias ? (
         <form onSubmit={(event) => void saveAlias(event)} className="mt-4">
-          <label className="block text-sm text-ink-muted">
+          <label className="block text-sm text-mist">
             Alias
             <input
               type="text"
@@ -1317,15 +1315,15 @@ export function AccountPanel() {
           </button>
         </div>
       )}
-      <p className="mt-1 text-sm text-ink-muted">{user?.email}</p>
-      <p className="mt-1 break-all font-mono text-xs text-ink-muted">{user?.public_id}</p>
+      <p className="mt-1 text-sm text-mist">{user?.email}</p>
+      <p className="mt-1 break-all font-mono text-xs text-mist">{user?.public_id}</p>
       {error ? (
         <p className="mt-3 text-sm text-ink" role="alert">
           {error}
         </p>
       ) : null}
       {stepUpOpen ? (
-        <div className="mt-5 border-t border-ring/50 pt-5">
+        <div className="mt-5 border-t border-line pt-5">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Confirm it's you</h3>
           <p className="mt-3 text-sm text-ink">{user?.email}</p>
           {stepUpError ? (
@@ -1335,7 +1333,7 @@ export function AccountPanel() {
           ) : null}
           {passwordSet ? (
             <form onSubmit={(event) => void submitStepUpPassword(event)} className="mt-4">
-              <label className="block text-sm text-ink-muted">
+              <label className="block text-sm text-mist">
                 Password
                 <input
                   type="password"
@@ -1379,7 +1377,7 @@ export function AccountPanel() {
           </button>
         </div>
       ) : null}
-      <div className="mt-5 border-t border-ring/50 pt-5">
+      <div className="mt-5 border-t border-line pt-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Password</h3>
           {settingPassword ? null : (
@@ -1431,7 +1429,7 @@ export function AccountPanel() {
             </button>
           </form>
         ) : (
-          <p className="mt-3 text-sm text-ink-muted">
+          <p className="mt-3 text-sm text-mist">
             {passwordSet ? 'Password is set.' : 'No password is set.'}
             {passwordSet && passkeysLoaded && passkeys.length === 0
               ? ' Add a passkey before removing it.'
@@ -1439,7 +1437,7 @@ export function AccountPanel() {
           </p>
         )}
       </div>
-      <div className="mt-5 border-t border-ring/50 pt-5">
+      <div className="mt-5 border-t border-line pt-5">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold tracking-wide text-ink">Passkeys</h3>
           {addingPasskey ? null : (
@@ -1474,7 +1472,7 @@ export function AccountPanel() {
             onCreate={() => void addPasskey()}
           />
         ) : passkeys.length === 0 ? (
-          <p className="mt-3 text-sm text-ink-muted">No passkeys yet.</p>
+          <p className="mt-3 text-sm text-mist">No passkeys yet.</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {passkeys.map((passkey) => (
@@ -1484,11 +1482,11 @@ export function AccountPanel() {
               >
                 <span>
                   <span className="block text-ink">{passkey.label || 'Passkey'}</span>
-                  <span className="block text-xs text-ink-muted">
+                  <span className="block text-xs text-mist">
                     Added {passkey.created_at.slice(0, 10)}
                   </span>
                   {passkey.aaguid ? (
-                    <span className="mt-0.5 block break-all font-mono text-xs text-ink-muted">
+                    <span className="mt-0.5 block break-all font-mono text-xs text-mist">
                       AAGUID {passkey.aaguid}
                     </span>
                   ) : null}
@@ -1506,7 +1504,7 @@ export function AccountPanel() {
           </ul>
         )}
       </div>
-      <div className="mt-5 border-t border-ring/50 pt-5">
+      <div className="mt-5 border-t border-line pt-5">
         <h3 className="text-sm font-semibold tracking-wide text-ink">Sessions</h3>
         <div className="mt-4">
           <h4 className="text-sm font-semibold tracking-wide text-ink">Current session</h4>
@@ -1514,14 +1512,14 @@ export function AccountPanel() {
             <ul className="mt-3 space-y-2">
               <li className="text-sm">
                 <span className="block text-ink">{sessionLabel(currentSession.user_agent)}</span>
-                <span className="block text-xs text-ink-muted">
+                <span className="block text-xs text-mist">
                   Last used {currentSession.last_used_at.slice(0, 10)} · Expires{' '}
                   {currentSession.expires_at.slice(0, 10)}
                 </span>
               </li>
             </ul>
           ) : (
-            <p className="mt-3 text-sm text-ink-muted">No sessions.</p>
+            <p className="mt-3 text-sm text-mist">No sessions.</p>
           )}
         </div>
         <div className="mt-5">
@@ -1537,7 +1535,7 @@ export function AccountPanel() {
             </button>
           </div>
           {otherSessions.length === 0 ? (
-            <p className="mt-3 text-sm text-ink-muted">No other active sessions.</p>
+            <p className="mt-3 text-sm text-mist">No other active sessions.</p>
           ) : (
             <ul className="mt-3 space-y-2">
               {otherSessions.map((session) => (
@@ -1547,7 +1545,7 @@ export function AccountPanel() {
                 >
                   <span>
                     <span className="block text-ink">{sessionLabel(session.user_agent)}</span>
-                    <span className="block text-xs text-ink-muted">
+                    <span className="block text-xs text-mist">
                       Last used {session.last_used_at.slice(0, 10)} · Expires{' '}
                       {session.expires_at.slice(0, 10)}
                     </span>

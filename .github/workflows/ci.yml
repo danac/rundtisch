@@ -19,7 +19,9 @@ jobs:
           node-version: "24"
           check-latest: true
           cache: npm
-          cache-dependency-path: demo/web/package-lock.json
+          cache-dependency-path: |
+            demo/web/package-lock.json
+            crockis/web/package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -41,10 +43,21 @@ jobs:
       - name: Test demo
         run: cargo test
 
+      - name: Test Crockis
+        run: cargo test -p crockis
+
       - name: Install dependencies
         working-directory: demo/web
         run: npm ci
 
       - name: Build frontend
         working-directory: demo/web
+        run: npm run build
+
+      - name: Install Crockis dependencies
+        working-directory: crockis/web
+        run: npm ci
+
+      - name: Build Crockis frontend
+        working-directory: crockis/web
         run: npm run build

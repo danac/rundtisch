@@ -717,6 +717,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "217698eaf96b4a3f0bc4f3662aaa55bdf913cd54d7204591faa790070c6d0853"
 
 [[package]]
+name = "crockis"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "rundtisch",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde_json",
+ "time",
+ "tokio",
+ "tower",
+ "tower-http",
+]
+
+[[package]]
 name = "crossbeam-queue"
 version = "0.3.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"

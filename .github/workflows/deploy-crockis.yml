@@ -4,15 +4,32 @@ on:
   push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  # The WASIX crate index sometimes fails over HTTP/2 (nghttp2 PROTOCOL_ERROR).
+  CARGO_HTTP_MULTIPLEXING: "false"
+  GITHUB_TOKEN: ${{ github.token }}
+
 jobs:
   deploy:
+    name: WASIX release and Edge deploy
     runs-on: ubuntu-latest
     environment: Wasmer
-    permissions:
-      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Check GitHub API rate limit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            https://api.github.com/rate_limit
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -22,7 +39,38 @@ jobs:
           cache: npm
           cache-dependency-path: crockis/web/package-lock.json
 
-      - name: Install dependencies
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry, git, and WASIX target
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.wasix
+            target
+          key: ${{ runner.os }}-wasix-${{ hashFiles('Cargo.wasix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasix-
+
+      - name: Install lld
+        run: sudo apt-get update && sudo apt-get install -y lld
+
+      - name: Install wasix
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall cargo-wasix --no-confirm
+
+      - name: Install wasmer
+        run: |
+          curl https://get.wasmer.io -sSfL | sh
+          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
+
+      - name: Use the WASIX lockfile
+        run: cp Cargo.wasix.lock Cargo.lock
+
+      - name: Install frontend dependencies
         working-directory: crockis/web
         run: npm ci
 
@@ -30,10 +78,25 @@ jobs:
         working-directory: crockis/web
         run: npm run build
 
-      - name: Install wasmer
+      - name: Build WASIX release
         run: |
-          curl https://get.wasmer.io -sSfL | sh
-          echo "$HOME/.wasmer/bin" >> "$GITHUB_PATH"
+          n=0
+          until cargo wasix build --release -p crockis; do
+            n=$((n + 1))
+            if [ "$n" -ge 3 ]; then
+              echo "WASIX build failed after $n attempts"
+              exit 1
+            fi
+            echo "WASIX build failed (attempt $n), retrying..."
+            sleep $((n * 8))
+          done
+
+      - name: Verify WASIX artifacts
+        run: |
+          test -f target/wasm32-wasmer-wasi/release/crockis-native.wasi.wasm
+          test -f target/wasm32-wasmer-wasi/release/crockis-migrate.wasi.wasm
+          test -f crockis/web/dist/index.html
+          ls -lh target/wasm32-wasmer-wasi/release/crockis-*.wasm crockis/web/dist
 
       - name: Deploy to Wasmer Edge
         working-directory: crockis
@@ -49,6 +112,39 @@ jobs:
             echo "Add WASMER_OWNER to the Wasmer GitHub environment."
             exit 1
           fi
-          test -f web/dist/index.html
           wasmer --version
           wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
+
+      # One-shot: create a missing AUTH_HASH_PEPPER app secret and redeploy.
+      # Uncomment when a new Edge app has no pepper yet. WebAuthn RP id,
+      # origin, and name are app secrets, not entries in crockis/app.yaml.
+      # - name: Ensure auth secrets
+      #   working-directory: crockis
+      #   env:
+      #     WASMER_TOKEN: ${{ secrets.WASMER_TOKEN }}
+      #     WASMER_OWNER: ${{ secrets.WASMER_OWNER || vars.WASMER_OWNER }}
+      #     AUTH_HASH_PEPPER: ${{ secrets.AUTH_HASH_PEPPER }}
+      #   run: |
+      #     set +x
+      #     APP="$WASMER_OWNER/crockis-photos"
+      #     list="$(wasmer app secret list --app "$APP" --non-interactive --format json)"
+      #     if printf '%s' "$list" | grep -q AUTH_HASH_PEPPER; then
+      #       echo "App already has AUTH_HASH_PEPPER"
+      #       exit 0
+      #     fi
+      #     value="${AUTH_HASH_PEPPER}"
+      #     if [ -z "$value" ]; then
+      #       value="$(openssl rand -hex 16)"
+      #       echo "Generating AUTH_HASH_PEPPER"
+      #     fi
+      #     if [ "${#value}" -ne 32 ]; then
+      #       echo "AUTH_HASH_PEPPER must be exactly 32 bytes"
+      #       exit 1
+      #     fi
+      #     tmp="$(mktemp)"
+      #     chmod 600 "$tmp"
+      #     cleanup() { rm -f "$tmp"; }
+      #     trap cleanup EXIT
+      #     printf 'AUTH_HASH_PEPPER="%s"\n' "$value" >> "$tmp"
+      #     wasmer app secret create --non-interactive --app "$APP" --from-file "$tmp" --redeploy
+      #     echo "Created AUTH_HASH_PEPPER on $APP and redeployed"
