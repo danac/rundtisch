@@ -13,9 +13,9 @@ use crate::auth::services::{
     complete_password_registration, create_recovery_token, delete_passkey, finish_invite_passkey,
     finish_passkey_login, finish_recovery_passkey, finish_session_passkey,
     finish_step_up_passkey_login, list_passkey_info, list_session_info, login_with_password,
-    logout_all_for_user, logout_current, mint_cli_session, request_recovery,
-    revoke_session_for_user, set_session_alias, set_session_password, start_invite_passkey,
-    start_passkey_login,
+    logout_all_for_user, logout_current, mint_cli_session,
+    preview_invitation as preview_invitation_token, request_recovery, revoke_session_for_user,
+    set_session_alias, set_session_password, start_invite_passkey, start_passkey_login,
     start_recovery_passkey, start_session_passkey, start_step_up_passkey_login,
     step_up_with_password,
 };
@@ -35,6 +35,11 @@ use zeroize::Zeroize;
 
 #[cfg(test)]
 use crate::auth::password::TestPasswordHasher;
+
+#[derive(Debug, Deserialize)]
+pub struct PreviewInvitationBody {
+    pub token: String,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterPasswordBody {
@@ -161,6 +166,22 @@ pub async fn register_with_token(
     Json(body): Json<RegisterPasswordBody>,
 ) -> impl IntoResponse {
     register_password(State(state), headers, Json(body)).await
+}
+
+pub async fn preview_invitation(
+    State(state): State<AppState>,
+    Json(body): Json<PreviewInvitationBody>,
+) -> impl IntoResponse {
+    let result: Result<StatusCode, AuthError> = async {
+        let pepper = secret_bytes(&state, AUTH_HASH_PEPPER, 32)?;
+        preview_invitation_token(&state.db, &pepper, &body.token).await?;
+        Ok(StatusCode::NO_CONTENT)
+    }
+    .await;
+    match result {
+        Ok(status) => status.into_response(),
+        Err(err) => err.into_response(),
+    }
 }
 
 pub async fn register_password(
@@ -902,6 +923,10 @@ mod tests {
                 axum::routing::post(register_with_token),
             )
             .route(
+                "/api/auth/register/invitation",
+                axum::routing::post(preview_invitation),
+            )
+            .route(
                 "/api/auth/register/password",
                 axum::routing::post(register_password),
             )
@@ -1147,6 +1172,52 @@ mod tests {
             .expect("soft login");
         assertion.response.user_handle = Some(public_id.as_bytes().to_vec());
         assertion
+    }
+
+    #[tokio::test]
+    async fn invitation_preview_accepts_an_open_token_and_rejects_a_bad_one() {
+        let (app, db, _email) = app().await;
+        let token = invite(&db, "preview@example.com").await;
+        let ok = post_json(
+            &app,
+            "/api/auth/register/invitation",
+            json!({ "token": token }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(ok.status(), HttpStatus::NO_CONTENT);
+        let bad = post_json(
+            &app,
+            "/api/auth/register/invitation",
+            json!({ "token": "not-an-invitation" }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(bad.status(), HttpStatus::UNAUTHORIZED);
+        let consumed = post_json(
+            &app,
+            "/api/auth/register/password",
+            json!({
+                "token": token,
+                "password": "unique-passphrase-ok",
+                "alias": "preview"
+            }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(consumed.status(), HttpStatus::CREATED);
+        let used = post_json(
+            &app,
+            "/api/auth/register/invitation",
+            json!({ "token": token }),
+            None,
+            None,
+        )
+        .await;
+        assert_eq!(used.status(), HttpStatus::UNAUTHORIZED);
     }
 
     #[tokio::test]

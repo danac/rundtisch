@@ -19,13 +19,11 @@ package: .
 #   RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL
 #   RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
 #   RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS   # optional; insert only; defaults to the email local-part
-#
-# Public WebAuthn RP settings for this Edge hostname (not secrets).
+# WebAuthn RP settings (app secrets, not committed here):
+#   AUTH_WEBAUTHN_RP_ID
+#   AUTH_WEBAUTHN_RP_ORIGIN
+#   AUTH_WEBAUTHN_RP_NAME
 # Local Vite still uses the localhost defaults when these env vars are unset.
-env:
-  AUTH_WEBAUTHN_RP_ID: rundtisch.wasmer.app
-  AUTH_WEBAUTHN_RP_ORIGIN: https://rundtisch.wasmer.app
-  AUTH_WEBAUTHN_RP_NAME: rundtisch
 debug: false
 capabilities:
   database:

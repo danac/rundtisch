@@ -116,8 +116,8 @@ jobs:
           wasmer deploy --verbose --owner "$WASMER_OWNER" --non-interactive --bump --no-persist-id --publish-package
 
       # One-shot: create a missing AUTH_HASH_PEPPER app secret and redeploy.
-      # Uncomment when a new Edge app has no pepper yet. WebAuthn RP id/origin
-      # for this demo are set in demo/app.yaml `env` (not secrets).
+      # Uncomment when a new Edge app has no pepper yet. WebAuthn RP id,
+      # origin, and name are app secrets, not entries in demo/app.yaml.
       # - name: Ensure auth secrets
       #   working-directory: demo
       #   env:
