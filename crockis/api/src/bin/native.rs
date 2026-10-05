@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use axum::Router;
-use crockis::build_router;
+use crockis::{build_router, load_environment};
 use crockis::listen_addr;
 use crockis::native_platform;
 use crockis::static_dir;
@@ -11,6 +11,8 @@ use tokio::signal;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 10)]
 async fn main() {
+    load_environment();
+
     let db = native_platform::connect()
         .await
         .expect("database connection");

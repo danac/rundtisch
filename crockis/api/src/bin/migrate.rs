@@ -1,4 +1,4 @@
-use crockis::Migrator;
+use crockis::{load_environment, Migrator};
 use crockis::native_platform;
 use rundtisch::auth::bootstrap::{self, BootstrapAdminOutcome};
 use sea_orm_migration::MigratorTrait;
@@ -15,6 +15,8 @@ use sea_orm_migration::MigratorTrait;
 /// existing `public_id`, role, alias, and verification stay the same.
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    load_environment();
+        
     eprintln!("migrate: connecting");
     let db = native_platform::connect().await?;
     eprintln!("migrate: applying pending migrations");
