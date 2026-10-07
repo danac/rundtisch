@@ -87,7 +87,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::build_router;
-    use crate::library::catalog::mock_catalog;
+    use crate::library::catalog::{SERENITY_SPA_COVER_ID, SERENITY_SPA_ID, mock_catalog};
     use crate::library::seed::{BytesSource, seed_catalog};
     use crate::library::store::PNG_1X1;
     use crate::migrate;
@@ -192,19 +192,37 @@ mod tests {
         let collections: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let collections = collections.as_array().unwrap();
         assert_eq!(collections.len(), 4);
-        assert_eq!(collections[0]["id"], "serenity-spa");
+        assert_eq!(collections[0]["id"], SERENITY_SPA_ID.to_string());
         assert_eq!(collections[0]["name"], "Serenity Spa");
         assert_eq!(collections[0]["photoCount"], 16);
-        assert_eq!(collections[0]["cover"]["id"], "serenity-spa-07");
+        assert_eq!(
+            collections[0]["cover"]["id"],
+            SERENITY_SPA_COVER_ID.to_string()
+        );
         assert_eq!(collections[0]["cover"]["width"], 1);
         assert_eq!(collections[0]["cover"]["filename"], "Heat.png");
+        assert!(collections[0]["cover"].get("alt").is_none());
+        assert!(collections[0]["cover"].get("title").is_none());
         let src = collections[0]["cover"]["src"].as_str().unwrap().to_owned();
+
+        let malformed = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/api/collections/missing")
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
 
         let missing = app
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/api/collections/missing")
+                    .uri("/api/collections/018f5c10-0000-7000-8000-0000000000ff")
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -217,7 +235,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/api/collections/serenity-spa/photos")
+                    .uri(format!("/api/collections/{SERENITY_SPA_ID}/photos"))
                     .header("cookie", &cookie)
                     .body(Body::empty())
                     .unwrap(),
@@ -229,7 +247,10 @@ mod tests {
             serde_json::from_slice(&to_bytes(photos.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
         assert_eq!(photos.as_array().unwrap().len(), 16);
-        assert_eq!(photos[0]["collectionId"], "serenity-spa");
+        assert_eq!(photos[0]["collectionId"], SERENITY_SPA_ID.to_string());
+        assert_eq!(photos[0]["filename"], "Stones.png");
+        assert!(photos[0].get("alt").is_none());
+        assert!(photos[0].get("title").is_none());
         assert!(
             photos[0]["takenAt"]
                 .as_str()

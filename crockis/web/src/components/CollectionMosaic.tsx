@@ -32,7 +32,7 @@ function CollectionCard({ collection, featured }: { collection: Collection; feat
             {collection.cover ? (
               <img
                 src={collection.cover.src}
-                alt={collection.cover.alt}
+                alt=""
                 className={[
                   'w-full object-cover',
                   featured ? 'aspect-[16/10] lg:h-full lg:aspect-auto' : 'aspect-[4/3]',

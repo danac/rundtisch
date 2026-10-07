@@ -6,7 +6,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     #[sea_orm(unique)]
-    pub public_id: String,
+    pub public_id: Uuid,
     pub collection_id: i64,
     /// Pixel width of the stored file.
     pub width: i32,
@@ -15,11 +15,9 @@ pub struct Model {
     pub original_filename: String,
     pub captured_at: TimeDateTimeWithTimeZone,
     /// File name under the data directory. Unique UUID plus an extension.
+    /// Separate from `public_id`.
     #[sea_orm(unique)]
     pub storage_filename: String,
-    pub alt: String,
-    pub title: String,
-    pub sort_order: i32,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

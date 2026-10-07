@@ -1,6 +1,6 @@
 use sea_orm_migration::prelude::*;
 use sea_orm_migration::schema::{
-    big_integer, big_integer_null, big_pk_auto, integer, string, timestamp,
+    big_integer, big_integer_null, big_pk_auto, integer, string, timestamp, uuid,
 };
 
 #[derive(DeriveMigrationName)]
@@ -13,6 +13,9 @@ pub struct Migration;
 /// picture, picture → collection) makes inserts and deletes order-dependent
 /// on MySQL. The seed inserts the collection, then its pictures, then sets
 /// the thumbnail.
+///
+/// `public_id` uses the same `uuid` column as the auth tables (MySQL
+/// `binary(16)`). `storage_filename` stays a separate unique string.
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -22,11 +25,10 @@ impl MigrationTrait for Migration {
                     .table(Collection::Table)
                     .if_not_exists()
                     .col(big_pk_auto(Collection::Id))
-                    .col(string(Collection::PublicId).unique_key())
+                    .col(uuid(Collection::PublicId).unique_key())
                     .col(string(Collection::Name))
                     .col(string(Collection::Description))
                     .col(timestamp(Collection::CreatedAt))
-                    .col(integer(Collection::SortOrder))
                     .col(big_integer_null(Collection::ThumbnailPictureId))
                     .to_owned(),
             )
@@ -38,16 +40,13 @@ impl MigrationTrait for Migration {
                     .table(Picture::Table)
                     .if_not_exists()
                     .col(big_pk_auto(Picture::Id))
-                    .col(string(Picture::PublicId).unique_key())
+                    .col(uuid(Picture::PublicId).unique_key())
                     .col(big_integer(Picture::CollectionId))
                     .col(integer(Picture::Width))
                     .col(integer(Picture::Height))
                     .col(string(Picture::OriginalFilename))
                     .col(timestamp(Picture::CapturedAt))
                     .col(string(Picture::StorageFilename).unique_key())
-                    .col(string(Picture::Alt))
-                    .col(string(Picture::Title))
-                    .col(integer(Picture::SortOrder))
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_pictures_collection_id")
@@ -93,7 +92,6 @@ enum Collection {
     Name,
     Description,
     CreatedAt,
-    SortOrder,
     ThumbnailPictureId,
 }
 
@@ -109,7 +107,4 @@ enum Picture {
     OriginalFilename,
     CapturedAt,
     StorageFilename,
-    Alt,
-    Title,
-    SortOrder,
 }

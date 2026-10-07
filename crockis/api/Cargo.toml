@@ -8,8 +8,8 @@ publish = false
 rundtisch = { path = "../../crates/rundtisch", features = ["auth", "smtp"] }
 axum = { workspace = true, features = ["json", "http1", "tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "fs", "process", "time"] }
-sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time"] }
-sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time"] }
+sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time", "with-uuid"] }
 serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
 time = { workspace = true, features = ["formatting", "macros", "std"] }
@@ -22,8 +22,8 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
 async-trait = "0.1"
-sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time"] }
-sea-orm-migration = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time"] }
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+sea-orm-migration = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time", "with-uuid"] }
 
 [[bin]]
 name = "crockis-native"

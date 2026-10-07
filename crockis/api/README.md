@@ -40,9 +40,9 @@ Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so
 |--------|------|----------|
 | GET | `/api/health` | `{ "status": "ok", "headers": [...] }` |
 | GET | `/api/collections` | Signed-in library. Each item has `cover` and `photoCount` |
-| GET | `/api/collections/{id}` | One collection, or 404 |
-| GET | `/api/collections/{id}/photos` | Pictures in mosaic order |
-| GET | `/api/photos/{id}/file` | Stored image bytes (`image/*`), same session cookie |
+| GET | `/api/collections/{id}` | One collection. `{id}` is a UUID. Unknown UUID is 404; a non-UUID path is 400 |
+| GET | `/api/collections/{id}/photos` | Pictures in insertion order |
+| GET | `/api/photos/{id}/file` | Stored image bytes (`image/*`), same session cookie. `{id}` is the picture UUID |
 | POST | `/api/auth/register/invitation` | `204` when the invitation token is still open |
 | POST | `/api/auth/register/password`, `/api/auth/register_with_token` | Consume an invitation and set a password |
 | POST | `/api/auth/register/passkey/options`, `/api/auth/register/passkey` | Invitation passkey ceremony |
@@ -74,8 +74,10 @@ Library rows:
 
 | Table | Purpose |
 |-------|---------|
-| `collections` | `public_id` slug, name, description, `created_at`, `sort_order`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
-| `pictures` | `public_id`, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`), `alt`, `title`, `sort_order` |
+| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
+| `pictures` | `public_id` UUID, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`, separate from `public_id`) |
+
+Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, or sort positions.
 
 Files are `{DATA_DIR}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `CROCKIS_SEED=0` skips downloads. A second migrate leaves existing files in place and only fills gaps.
 

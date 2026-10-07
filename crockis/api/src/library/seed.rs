@@ -192,16 +192,14 @@ async fn upsert_collection(
         let mut active: collection::ActiveModel = row.into();
         active.name = Set(catalog.name.to_owned());
         active.description = Set(catalog.description.to_owned());
-        active.sort_order = Set(catalog.sort_order);
         let updated = active.update(db).await?;
         return Ok(updated.id);
     }
     let inserted = collection::ActiveModel {
-        public_id: Set(catalog.public_id.to_owned()),
+        public_id: Set(catalog.public_id),
         name: Set(catalog.name.to_owned()),
         description: Set(catalog.description.to_owned()),
         created_at: Set(catalog.created_at),
-        sort_order: Set(catalog.sort_order),
         thumbnail_picture_id: Set(None),
         ..Default::default()
     }
@@ -241,9 +239,6 @@ async fn upsert_picture<S: ImageSource>(
         }
         let extension = store::storage_extension(&row.storage_filename).to_owned();
         let mut active: picture::ActiveModel = row.into();
-        active.alt = Set(photo.alt.to_owned());
-        active.title = Set(photo.title.to_owned());
-        active.sort_order = Set(photo.sort_order);
         active.captured_at = Set(MOCK_CAPTURED_AT);
         active.original_filename = Set(store::filename_with_extension(
             photo.original_filename,
@@ -262,7 +257,7 @@ async fn upsert_picture<S: ImageSource>(
         .ok_or_else(|| SeedError::DataDir(format!("unsafe storage filename {storage_filename}")))?;
     write_file(&path, &bytes).await?;
     picture::ActiveModel {
-        public_id: Set(photo.public_id.to_owned()),
+        public_id: Set(photo.public_id),
         collection_id: Set(collection_id),
         width: Set(info.width),
         height: Set(info.height),
@@ -272,9 +267,6 @@ async fn upsert_picture<S: ImageSource>(
         )),
         captured_at: Set(MOCK_CAPTURED_AT),
         storage_filename: Set(storage_filename),
-        alt: Set(photo.alt.to_owned()),
-        title: Set(photo.title.to_owned()),
-        sort_order: Set(photo.sort_order),
         ..Default::default()
     }
     .insert(db)
@@ -376,7 +368,7 @@ mod tests {
         assert_eq!(source.hits.load(Ordering::SeqCst), 34);
 
         let picture = picture::Entity::find()
-            .filter(picture::Column::PublicId.eq("serenity-spa-01"))
+            .filter(picture::Column::PublicId.eq(crate::library::catalog::SERENITY_SPA_FIRST_ID))
             .one(&db)
             .await
             .unwrap()
@@ -392,7 +384,7 @@ mod tests {
         assert_eq!(source.hits.load(Ordering::SeqCst), 35);
 
         let collection = collection::Entity::find()
-            .filter(collection::Column::PublicId.eq("serenity-spa"))
+            .filter(collection::Column::PublicId.eq(crate::library::catalog::SERENITY_SPA_ID))
             .one(&db)
             .await
             .unwrap()
@@ -402,7 +394,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(cover.public_id, "serenity-spa-07");
+        assert_eq!(
+            cover.public_id,
+            crate::library::catalog::SERENITY_SPA_COVER_ID
+        );
         assert_eq!(picture.width, 1);
         assert_eq!(picture.height, 1);
         assert!(picture.storage_filename.ends_with(".png"));

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use sea_orm::{ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
+use uuid::Uuid;
 
 use super::entities::{collection, picture};
 
@@ -26,8 +27,6 @@ pub struct PhotoResponse {
     pub src: String,
     pub width: i32,
     pub height: i32,
-    pub alt: String,
-    pub title: String,
     pub taken_at: String,
     pub filename: String,
 }
@@ -46,12 +45,11 @@ pub async fn list_collections<C: ConnectionTrait>(
     db: &C,
 ) -> Result<Vec<CollectionResponse>, QueryError> {
     let collections = collection::Entity::find()
-        .order_by_asc(collection::Column::SortOrder)
+        .order_by_asc(collection::Column::CreatedAt)
         .order_by_asc(collection::Column::Id)
         .all(db)
         .await?;
     let pictures = picture::Entity::find()
-        .order_by_asc(picture::Column::SortOrder)
         .order_by_asc(picture::Column::Id)
         .all(db)
         .await?;
@@ -72,7 +70,7 @@ pub async fn list_collections<C: ConnectionTrait>(
 
 pub async fn collection_by_public_id<C: ConnectionTrait>(
     db: &C,
-    public_id: &str,
+    public_id: Uuid,
 ) -> Result<CollectionResponse, QueryError> {
     let collection = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(public_id))
@@ -81,7 +79,6 @@ pub async fn collection_by_public_id<C: ConnectionTrait>(
         .ok_or(QueryError::NotFound)?;
     let photos = picture::Entity::find()
         .filter(picture::Column::CollectionId.eq(collection.id))
-        .order_by_asc(picture::Column::SortOrder)
         .order_by_asc(picture::Column::Id)
         .all(db)
         .await?;
@@ -90,7 +87,7 @@ pub async fn collection_by_public_id<C: ConnectionTrait>(
 
 pub async fn photos_by_collection<C: ConnectionTrait>(
     db: &C,
-    public_id: &str,
+    public_id: Uuid,
 ) -> Result<Vec<PhotoResponse>, QueryError> {
     let collection = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(public_id))
@@ -99,19 +96,18 @@ pub async fn photos_by_collection<C: ConnectionTrait>(
         .ok_or(QueryError::NotFound)?;
     let photos = picture::Entity::find()
         .filter(picture::Column::CollectionId.eq(collection.id))
-        .order_by_asc(picture::Column::SortOrder)
         .order_by_asc(picture::Column::Id)
         .all(db)
         .await?;
     photos
         .into_iter()
-        .map(|photo| photo_response(photo, &collection.public_id))
+        .map(|photo| photo_response(photo, collection.public_id))
         .collect()
 }
 
 pub async fn picture_file<C: ConnectionTrait>(
     db: &C,
-    public_id: &str,
+    public_id: Uuid,
 ) -> Result<picture::Model, QueryError> {
     picture::Entity::find()
         .filter(picture::Column::PublicId.eq(public_id))
@@ -125,10 +121,10 @@ fn collection_response(
     photos: Vec<picture::Model>,
 ) -> Result<CollectionResponse, QueryError> {
     let cover = cover_photo(&collection, &photos)
-        .map(|photo| photo_response(photo.clone(), &collection.public_id))
+        .map(|photo| photo_response(photo.clone(), collection.public_id))
         .transpose()?;
     Ok(CollectionResponse {
-        id: collection.public_id,
+        id: collection.public_id.to_string(),
         name: collection.name,
         description: collection.description,
         cover,
@@ -150,7 +146,7 @@ fn cover_photo<'a>(
 
 fn photo_response(
     photo: picture::Model,
-    collection_public_id: &str,
+    collection_public_id: Uuid,
 ) -> Result<PhotoResponse, QueryError> {
     let taken_at = photo.captured_at.format(&Rfc3339).map_err(|err| {
         QueryError::Db(sea_orm::DbErr::Custom(format!(
@@ -160,12 +156,10 @@ fn photo_response(
     })?;
     Ok(PhotoResponse {
         src: format!("/api/photos/{}/file", photo.public_id),
-        id: photo.public_id,
-        collection_id: collection_public_id.to_owned(),
+        id: photo.public_id.to_string(),
+        collection_id: collection_public_id.to_string(),
         width: photo.width,
         height: photo.height,
-        alt: photo.alt,
-        title: photo.title,
         taken_at,
         filename: photo.original_filename,
     })

@@ -6,6 +6,8 @@ use rundtisch::AppState;
 use rundtisch::auth::extract::SessionUser;
 use serde_json::json;
 
+use uuid::Uuid;
+
 use super::queries::{self, CollectionResponse, PhotoResponse, QueryError};
 use super::store::{content_type_for_storage_name, data_dir, storage_path};
 
@@ -47,9 +49,9 @@ pub async fn list_collections(
 pub async fn get_collection(
     _user: SessionUser,
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<CollectionResponse>, LibraryError> {
-    queries::collection_by_public_id(&state.db, &id)
+    queries::collection_by_public_id(&state.db, id)
         .await
         .map(Json)
         .map_err(|err| {
@@ -64,9 +66,9 @@ pub async fn get_collection(
 pub async fn list_photos(
     _user: SessionUser,
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<PhotoResponse>>, LibraryError> {
-    queries::photos_by_collection(&state.db, &id)
+    queries::photos_by_collection(&state.db, id)
         .await
         .map(Json)
         .map_err(|err| {
@@ -81,9 +83,9 @@ pub async fn list_photos(
 pub async fn photo_file(
     _user: SessionUser,
     State(state): State<AppState>,
-    Path(id): Path<String>,
+    Path(id): Path<Uuid>,
 ) -> Result<Response, LibraryError> {
-    let picture = queries::picture_file(&state.db, &id)
+    let picture = queries::picture_file(&state.db, id)
         .await
         .map_err(|err| map_query(err, "Photo not found.", "Unable to load this photo."))?;
     let path = storage_path(&data_dir(), &picture.storage_filename).ok_or_else(|| {
