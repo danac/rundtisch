@@ -10,6 +10,7 @@ wasmer-extra-flags = "--net --enable-threads --enable-bulk-memory"
 
 # Guest path /app/web is what the native binary serves as the SPA.
 # Build the frontend first: `npm run build --prefix crockis/web`.
+# Image bytes are not packaged here. crockis/app.yaml mounts volume `data` at /data.
 [fs]
 "/app/web" = "./web/dist"
 
