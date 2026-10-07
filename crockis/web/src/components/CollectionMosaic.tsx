@@ -29,14 +29,23 @@ function CollectionCard({ collection, featured }: { collection: Collection; feat
       ].join(' ')}
     >
       <Link to={`/collections/${collection.id}`} className="relative block">
-            <img
-              src={collection.cover.src}
-              alt={collection.cover.alt}
-              className={[
-                'w-full object-cover',
-                featured ? 'aspect-[16/10] lg:h-full lg:aspect-auto' : 'aspect-[4/3]',
-              ].join(' ')}
-            />
+            {collection.cover ? (
+              <img
+                src={collection.cover.src}
+                alt={collection.cover.alt}
+                className={[
+                  'w-full object-cover',
+                  featured ? 'aspect-[16/10] lg:h-full lg:aspect-auto' : 'aspect-[4/3]',
+                ].join(' ')}
+              />
+            ) : (
+              <div
+                className={[
+                  'w-full bg-void',
+                  featured ? 'aspect-[16/10] lg:h-full lg:aspect-auto' : 'aspect-[4/3]',
+                ].join(' ')}
+              />
+            )}
             <div className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/70 via-black/10 to-transparent opacity-90 transition-opacity group-hover:opacity-100" />
             <DownloadControl
               nested

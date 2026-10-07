@@ -2,7 +2,7 @@ export type Collection = {
   id: string
   name: string
   description: string
-  cover: Photo
+  cover: Photo | null
   photoCount: number
 }
 

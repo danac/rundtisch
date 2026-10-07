@@ -1,6 +1,6 @@
 # Crockis — frontend
 
-React SPA for a private photo library. Sign-in uses the [Crockis API](../api/README.md). Collections and photos still load from the in-memory client.
+React SPA for a private photo library. Sign-in, collections, and photos use the [Crockis API](../api/README.md).
 
 ## Tech stack
 
@@ -29,7 +29,7 @@ React SPA for a private photo library. Sign-in uses the [Crockis API](../api/REA
 
 ## Data layer
 
-Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use `src/api` (`CrockisApi`), which is the mock client.
+Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use the same cookie against `/api/collections` and `/api/photos/{id}/file`.
 
 ## Commands
 

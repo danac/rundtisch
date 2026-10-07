@@ -125,7 +125,7 @@ Workflow: `.github/workflows/deploy-crockis.yml`
 | Push | WASIX release of `crockis` → `wasmer deploy` to Edge app `crockis-photos` |
 | **workflow_dispatch** | Same as production deploy |
 
-Wasmer Edge serves the Axum API and the built SPA (`crockis/wasmer.toml`, `crockis/app.yaml`), with managed MySQL in `fr-roub1` and a post-deploy migrate job. Hostname: `crockis-photos.wasmer.app`.
+Wasmer Edge serves the Axum API and the built SPA (`crockis/wasmer.toml`, `crockis/app.yaml`), with managed MySQL in `fr-roub1`, a `data` volume at `/data`, and a post-deploy migrate job that also seeds pictures. Hostname: `crockis-photos.wasmer.app`. The next deploy creates the volume; it is not attached yet.
 
 Requires `WASMER_TOKEN` (secret) and `WASMER_OWNER` (variable or secret) in the GitHub **Wasmer** environment.
 
