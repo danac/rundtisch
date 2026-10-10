@@ -1,6 +1,6 @@
 # Crockis — frontend
 
-React SPA for a private photo library. Sign-in uses the [Crockis API](../api/README.md). Collections and photos still load from the in-memory client.
+React SPA for a private photo library. Sign-in, collections, and photos use the [Crockis API](../api/README.md).
 
 ## Tech stack
 
@@ -22,14 +22,14 @@ React SPA for a private photo library. Sign-in uses the [Crockis API](../api/REA
 | `/authorize` | Let a signed-in user approve a command-line session |
 | `/authorize/done` | Result of that approval |
 | `/collections` | Tile list of collections |
-| `/collections/:collectionId` | Photo mosaic for one collection |
+| `/collections/:collectionId` | Photo mosaic for one collection. `collectionId` is the collection UUID |
 | `/settings` | Alias, password, passkeys, and sessions |
 
 `/?invite=` and `/?recover=` stay on the login screen. Unauthenticated visits to the library redirect to `/login`.
 
 ## Data layer
 
-Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use `src/api` (`CrockisApi`), which is the mock client.
+Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use the same cookie against `/api/collections` and `/api/photos/{id}/file`. Collection and photo ids are hyphenated UUIDs. Cover images use an empty `alt` (the collection name is the heading). Download labels use the original filename.
 
 ## Commands
 

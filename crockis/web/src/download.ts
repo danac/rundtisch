@@ -57,7 +57,7 @@ function photoUrl(photo: Photo) {
 
 function photoName(photo: Photo, blob: Blob) {
   if (photo.filename) return photo.filename
-  return `${slug(photo.title ?? photo.id)}.${extension(blob, photoUrl(photo))}`
+  return `${slug(photo.id)}.${extension(blob, photoUrl(photo))}`
 }
 
 export async function downloadPhoto(photo: Photo) {

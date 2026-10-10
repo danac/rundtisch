@@ -69,7 +69,7 @@ export function PhotoMosaic({ photos, selecting = false, selectedIds, onToggle }
               ) : (
                 <DownloadControl
                   nested
-                  label={`Download ${photo.title ?? photo.alt}`}
+                  label={`Download ${photo.filename ?? 'photo'}`}
                   busy={busyId === photo.id}
                   onDownload={() => {
                     void save(photo)

@@ -1,8 +1,8 @@
 # Crockis — API
 
-Axum app for the Crockis photo library. Auth routes come from [`rundtisch`](../../crates/rundtisch/README.md). `src/bin/native.rs` serves them as `crockis-native`. `src/bin/migrate.rs` applies pending migrations as `crockis-migrate`.
+Axum app for the Crockis photo library. Auth routes come from [`rundtisch`](../../crates/rundtisch/README.md). `src/bin/native.rs` serves them as `crockis-native`. `src/bin/migrate.rs` applies pending migrations, then seeds the library, as `crockis-migrate`.
 
-Collections and photos are still served by the frontend mock client. This crate does not define library routes.
+Collections and pictures are SeaORM tables. Image bytes are files in `DATA_DIR` (default `/data`, the Wasmer volume `data`).
 
 ## Tech stack
 
@@ -23,11 +23,12 @@ crockis/api/
     routes.rs
     handlers.rs
     native_platform.rs    # Database::connect(DATABASE_URL)
-    migrator.rs           # re-exports rundtisch::auth::Migrator
+    migrator/             # auth migrator, then crockis_migrations
+    library/              # entities, seed catalog, file paths, HTTP handlers
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8788
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists
-    bin/migrate.rs        # Migrator::up, then optional bootstrap Admin upsert
+    bin/migrate.rs        # migrate, seed /data, then optional bootstrap Admin upsert
     bin/auth_link.rs      # mint invitation and recovery links
 ```
 
@@ -38,6 +39,10 @@ Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so
 | Method | Path | Response |
 |--------|------|----------|
 | GET | `/api/health` | `{ "status": "ok", "headers": [...] }` |
+| GET | `/api/collections` | Signed-in library. Each item has `cover` and `photoCount` |
+| GET | `/api/collections/{id}` | One collection. `{id}` is a UUID. Unknown UUID is 404; a non-UUID path is 400 |
+| GET | `/api/collections/{id}/photos` | Pictures in insertion order |
+| GET | `/api/photos/{id}/file` | Stored image bytes (`image/*`), same session cookie. `{id}` is the picture UUID |
 | POST | `/api/auth/register/invitation` | `204` when the invitation token is still open |
 | POST | `/api/auth/register/password`, `/api/auth/register_with_token` | Consume an invitation and set a password |
 | POST | `/api/auth/register/passkey/options`, `/api/auth/register/passkey` | Invitation passkey ceremony |
@@ -63,12 +68,24 @@ Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so
 
 ## Run
 
-`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. After `Migrator::up`, that command upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same).
+`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate or seed on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. That command applies auth migrations (`rundtisch_migrations_auth`) and library migrations (`crockis_migrations`), downloads missing seed images into `DATA_DIR` (Edge: `/data`), then upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same).
+
+Library rows:
+
+| Table | Purpose |
+|-------|---------|
+| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), unique `storage_folder` UUID (separate from `public_id`; the directory under `DATA_DIR`), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
+| `pictures` | `public_id` UUID, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`, separate from `public_id`), `checksum_blake3` (`binary(32)`, raw BLAKE3 digest of the file) |
+
+Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, sort positions, `storage_folder`, or `checksum_blake3`.
+
+Files are `{DATA_DIR}/{storage_folder}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `CROCKIS_SEED=0` skips downloads. A second migrate leaves existing files in place when the stored BLAKE3 digest matches the file, and only fills gaps. A digest that does not match the file fails the seed.
 
 Local MySQL uses the same account as the demo, and a separate database name:
 
 ```bash
 export DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/crockis_dev
+export DATA_DIR=crockis/data
 export AUTH_HASH_PEPPER=cccccccccccccccccccccccccccccccc
 export AUTH_WEBAUTHN_RP_ID=localhost
 export AUTH_WEBAUTHN_RP_ORIGIN=http://localhost:5174
@@ -84,7 +101,7 @@ cargo run -p crockis --bin crockis-native
 curl -i http://localhost:8788/api/health
 ```
 
-The library's WebAuthn defaults are `localhost`, `http://localhost:5173`, and `rundtisch`. Crockis overrides them with the variables above so passkeys match Vite on port 5174. `npm run dev --prefix crockis` sets the same variables.
+The library's WebAuthn defaults are `localhost`, `http://localhost:5173`, and `rundtisch`. Crockis overrides them with the variables above so passkeys match Vite on port 5174. `npm run dev --prefix crockis` sets `DATA_DIR` to `crockis/data`; export the auth and SMTP variables above as well.
 
 `PORT` and `BIND_ADDR` override the listen address (Wasmer Edge uses `80` / `127.0.0.1`). When `/app/web` exists — the `[fs]` mount in `crockis/wasmer.toml` — or `STATIC_DIR` points at `crockis/web/dist`, the same process serves the built SPA. Leave both unset for Vite split-dev.
 
