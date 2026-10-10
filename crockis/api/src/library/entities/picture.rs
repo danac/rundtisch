@@ -14,10 +14,13 @@ pub struct Model {
     pub height: i32,
     pub original_filename: String,
     pub captured_at: TimeDateTimeWithTimeZone,
-    /// File name under the data directory. Unique UUID plus an extension.
+    /// File name under the collection storage folder. Unique UUID plus an extension.
     /// Separate from `public_id`.
     #[sea_orm(unique)]
     pub storage_filename: String,
+    /// Raw BLAKE3 digest of the stored file (32 bytes).
+    #[sea_orm(column_type = "Binary(32)")]
+    pub checksum_blake3: Vec<u8>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

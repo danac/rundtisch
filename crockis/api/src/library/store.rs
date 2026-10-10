@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use imagesize::{ImageType, blob_size, image_type};
+use uuid::Uuid;
 
 pub const DEFAULT_DATA_DIR: &str = "/data";
 
@@ -31,27 +32,35 @@ pub fn seed_enabled_from(value: Option<&str>) -> bool {
     }
 }
 
-/// Join a storage file name onto the data directory.
+/// Join a collection folder and storage file name onto the data directory.
 ///
-/// The name must be a single path segment of ASCII letters, digits, `-`, and
-/// `.`, so a row cannot escape the data directory.
-pub fn storage_path(dir: &Path, filename: &str) -> Option<PathBuf> {
+/// Files live at `{dir}/{storage_folder}/{filename}`. The folder is the
+/// hyphenated collection `storage_folder` UUID. The file name must be a
+/// single path segment of ASCII letters, digits, `-`, and `.`, so a row
+/// cannot escape the data directory.
+pub fn storage_path(dir: &Path, storage_folder: Uuid, filename: &str) -> Option<PathBuf> {
+    if !safe_storage_filename(filename) {
+        return None;
+    }
+    let folder = storage_folder.as_hyphenated().to_string();
+    Some(dir.join(folder).join(filename))
+}
+
+fn safe_storage_filename(filename: &str) -> bool {
     if filename.is_empty() || filename.len() > 255 || filename.starts_with('.') {
-        return None;
+        return false;
     }
-    if filename.contains("..") {
-        return None;
+    if filename.contains("..") || !filename.contains('.') {
+        return false;
     }
-    if !filename
+    filename
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.')
-    {
-        return None;
-    }
-    if !filename.contains('.') {
-        return None;
-    }
-    Some(dir.join(filename))
+}
+
+/// Raw 32-byte BLAKE3 digest of file contents.
+pub fn checksum_blake3(bytes: &[u8]) -> [u8; 32] {
+    *blake3::hash(bytes).as_bytes()
 }
 
 pub fn content_type_for_storage_name(filename: &str) -> &'static str {
@@ -160,15 +169,20 @@ mod tests {
     #[test]
     fn storage_path_rejects_escape() {
         let dir = Path::new("/data");
+        let folder = Uuid::from_u128(0x018f_5c20_0000_7000_8000_000000000001);
         assert_eq!(
-            storage_path(dir, "6f0d2c3a-1b2c-4d5e-8f90-aabbccddeeff.jpg"),
+            storage_path(dir, folder, "6f0d2c3a-1b2c-4d5e-8f90-aabbccddeeff.jpg"),
             Some(PathBuf::from(
-                "/data/6f0d2c3a-1b2c-4d5e-8f90-aabbccddeeff.jpg"
+                "/data/018f5c20-0000-7000-8000-000000000001/6f0d2c3a-1b2c-4d5e-8f90-aabbccddeeff.jpg"
             ))
         );
-        assert!(storage_path(dir, "../etc/passwd").is_none());
-        assert!(storage_path(dir, "a/b.jpg").is_none());
-        assert!(storage_path(dir, ".hidden.jpg").is_none());
+        assert!(storage_path(dir, folder, "../etc/passwd").is_none());
+        assert!(storage_path(dir, folder, "a/b.jpg").is_none());
+        assert!(storage_path(dir, folder, ".hidden.jpg").is_none());
+        assert_eq!(
+            checksum_blake3(b"crockis"),
+            *blake3::hash(b"crockis").as_bytes()
+        );
     }
 
     #[test]

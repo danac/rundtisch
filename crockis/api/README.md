@@ -74,12 +74,12 @@ Library rows:
 
 | Table | Purpose |
 |-------|---------|
-| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
-| `pictures` | `public_id` UUID, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`, separate from `public_id`) |
+| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), unique `storage_folder` UUID (separate from `public_id`; the directory under `DATA_DIR`), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
+| `pictures` | `public_id` UUID, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`, separate from `public_id`), `checksum_blake3` (`binary(32)`, raw BLAKE3 digest of the file) |
 
-Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, or sort positions.
+Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, sort positions, `storage_folder`, or `checksum_blake3`.
 
-Files are `{DATA_DIR}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `CROCKIS_SEED=0` skips downloads. A second migrate leaves existing files in place and only fills gaps.
+Files are `{DATA_DIR}/{storage_folder}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `CROCKIS_SEED=0` skips downloads. A second migrate leaves existing files in place when the stored BLAKE3 digest matches the file, and only fills gaps. A digest that does not match the file fails the seed.
 
 Local MySQL uses the same account as the demo, and a separate database name:
 

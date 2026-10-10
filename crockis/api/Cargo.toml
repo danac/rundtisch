@@ -17,6 +17,7 @@ tower-http = { workspace = true, features = ["fs"] }
 dotenvy.workspace = true
 uuid = { version = "1", default-features = false, features = ["v4"] }
 imagesize = "0.13"
+blake3 = { version = "1", default-features = false, features = ["std", "pure"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [dev-dependencies]

@@ -88,7 +88,12 @@ pub async fn photo_file(
     let picture = queries::picture_file(&state.db, id)
         .await
         .map_err(|err| map_query(err, "Photo not found.", "Unable to load this photo."))?;
-    let path = storage_path(&data_dir(), &picture.storage_filename).ok_or_else(|| {
+    let path = storage_path(
+        &data_dir(),
+        picture.storage_folder,
+        &picture.storage_filename,
+    )
+    .ok_or_else(|| {
         eprintln!(
             "library: rejected storage filename {}",
             picture.storage_filename

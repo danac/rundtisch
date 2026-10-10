@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::catalog::{CatalogCollection, MOCK_CAPTURED_AT, mock_catalog};
 use super::entities::{collection, picture};
-use super::store::{self, data_dir, image_info, seed_enabled_from, storage_path};
+use super::store::{self, checksum_blake3, data_dir, image_info, seed_enabled_from, storage_path};
 
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
 
@@ -132,9 +132,11 @@ impl ImageSource for BytesSource {
 
 /// Download the mock library into `data_dir` and upsert matching rows.
 ///
-/// A picture that already has its storage file is left in place. A picture row
-/// whose file is missing is downloaded again into that same file name. Text
-/// fields and the collection cover are refreshed from the catalog.
+/// Each collection's files live in `{data_dir}/{storage_folder}/`. A picture
+/// that already has its storage file is left in place when the file's BLAKE3
+/// digest matches `checksum_blake3`. A digest mismatch fails the seed. A
+/// picture row whose file is missing is downloaded again into that same file
+/// name. Text fields and the collection cover are refreshed from the catalog.
 pub async fn seed_catalog<S: ImageSource>(
     db: &DatabaseConnection,
     data_dir: &Path,
@@ -146,9 +148,23 @@ pub async fn seed_catalog<S: ImageSource>(
     })?;
     let mut report = SeedReport::default();
     for collection_catalog in catalog {
-        let collection_id = upsert_collection(db, collection_catalog, &mut report).await?;
+        let (collection_id, storage_folder) =
+            upsert_collection(db, collection_catalog, &mut report).await?;
+        let folder = data_dir.join(storage_folder.as_hyphenated().to_string());
+        tokio::fs::create_dir_all(&folder).await.map_err(|err| {
+            SeedError::DataDir(format!("cannot create {}: {err}", folder.display()))
+        })?;
         for photo in collection_catalog.photos {
-            upsert_picture(db, data_dir, source, collection_id, photo, &mut report).await?;
+            upsert_picture(
+                db,
+                data_dir,
+                source,
+                collection_id,
+                storage_folder,
+                photo,
+                &mut report,
+            )
+            .await?;
         }
         let cover = picture::Entity::find()
             .filter(picture::Column::PublicId.eq(collection_catalog.cover_public_id))
@@ -183,20 +199,28 @@ async fn upsert_collection(
     db: &DatabaseConnection,
     catalog: &CatalogCollection,
     report: &mut SeedReport,
-) -> Result<i64, SeedError> {
+) -> Result<(i64, uuid::Uuid), SeedError> {
     if let Some(row) = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(catalog.public_id))
         .one(db)
         .await?
     {
+        if row.storage_folder != catalog.storage_folder {
+            return Err(SeedError::DataDir(format!(
+                "collection {} storage folder {} does not match catalog {}",
+                catalog.public_id, row.storage_folder, catalog.storage_folder
+            )));
+        }
+        let storage_folder = row.storage_folder;
         let mut active: collection::ActiveModel = row.into();
         active.name = Set(catalog.name.to_owned());
         active.description = Set(catalog.description.to_owned());
         let updated = active.update(db).await?;
-        return Ok(updated.id);
+        return Ok((updated.id, storage_folder));
     }
     let inserted = collection::ActiveModel {
         public_id: Set(catalog.public_id),
+        storage_folder: Set(catalog.storage_folder),
         name: Set(catalog.name.to_owned()),
         description: Set(catalog.description.to_owned()),
         created_at: Set(catalog.created_at),
@@ -206,7 +230,7 @@ async fn upsert_collection(
     .insert(db)
     .await?;
     report.collections_inserted += 1;
-    Ok(inserted.id)
+    Ok((inserted.id, inserted.storage_folder))
 }
 
 async fn upsert_picture<S: ImageSource>(
@@ -214,6 +238,7 @@ async fn upsert_picture<S: ImageSource>(
     data_dir: &Path,
     source: &S,
     collection_id: i64,
+    storage_folder: uuid::Uuid,
     photo: &super::catalog::CatalogPhoto,
     report: &mut SeedReport,
 ) -> Result<(), SeedError> {
@@ -222,13 +247,23 @@ async fn upsert_picture<S: ImageSource>(
         .one(db)
         .await?
     {
-        let path = storage_path(data_dir, &row.storage_filename).ok_or_else(|| {
-            SeedError::DataDir(format!("unsafe storage filename {}", row.storage_filename))
-        })?;
+        let path =
+            storage_path(data_dir, storage_folder, &row.storage_filename).ok_or_else(|| {
+                SeedError::DataDir(format!("unsafe storage filename {}", row.storage_filename))
+            })?;
         let mut width = row.width;
         let mut height = row.height;
-        if file_ready(&path) {
+        let checksum = if file_ready(&path) {
+            let bytes = tokio::fs::read(&path).await?;
+            let checksum = checksum_blake3(&bytes);
+            if row.checksum_blake3.as_slice() != checksum.as_slice() {
+                return Err(SeedError::Image(format!(
+                    "checksum mismatch for {}",
+                    row.storage_filename
+                )));
+            }
             report.pictures_present += 1;
+            checksum
         } else {
             let bytes = source.fetch(photo.source_url).await?;
             let info = image_info(&bytes, photo.original_filename).map_err(SeedError::Image)?;
@@ -236,7 +271,8 @@ async fn upsert_picture<S: ImageSource>(
             width = info.width;
             height = info.height;
             report.files_written += 1;
-        }
+            checksum_blake3(&bytes)
+        };
         let extension = store::storage_extension(&row.storage_filename).to_owned();
         let mut active: picture::ActiveModel = row.into();
         active.captured_at = Set(MOCK_CAPTURED_AT);
@@ -246,14 +282,16 @@ async fn upsert_picture<S: ImageSource>(
         ));
         active.width = Set(width);
         active.height = Set(height);
+        active.checksum_blake3 = Set(checksum.to_vec());
         active.update(db).await?;
         return Ok(());
     }
 
     let bytes = source.fetch(photo.source_url).await?;
     let info = image_info(&bytes, photo.original_filename).map_err(SeedError::Image)?;
+    let checksum = checksum_blake3(&bytes);
     let storage_filename = format!("{}.{}", Uuid::new_v4(), info.extension);
-    let path = storage_path(data_dir, &storage_filename)
+    let path = storage_path(data_dir, storage_folder, &storage_filename)
         .ok_or_else(|| SeedError::DataDir(format!("unsafe storage filename {storage_filename}")))?;
     write_file(&path, &bytes).await?;
     picture::ActiveModel {
@@ -267,6 +305,7 @@ async fn upsert_picture<S: ImageSource>(
         )),
         captured_at: Set(MOCK_CAPTURED_AT),
         storage_filename: Set(storage_filename),
+        checksum_blake3: Set(checksum.to_vec()),
         ..Default::default()
     }
     .insert(db)
@@ -373,7 +412,25 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let path = storage_path(&dir, &picture.storage_filename).unwrap();
+        let path = storage_path(
+            &dir,
+            crate::library::catalog::SERENITY_SPA_STORAGE_FOLDER,
+            &picture.storage_filename,
+        )
+        .unwrap();
+        assert_eq!(
+            picture.checksum_blake3.as_slice(),
+            checksum_blake3(store::PNG_1X1).as_slice()
+        );
+        assert!(path.is_file());
+        tokio::fs::write(&path, b"tampered").await.unwrap();
+        let mismatch = seed_catalog(&db, &dir, mock_catalog(), &source)
+            .await
+            .unwrap_err();
+        assert!(
+            mismatch.to_string().contains("checksum mismatch"),
+            "{mismatch}"
+        );
         tokio::fs::remove_file(&path).await.unwrap();
         let third = seed_catalog(&db, &dir, mock_catalog(), &source)
             .await
@@ -401,6 +458,19 @@ mod tests {
         assert_eq!(picture.width, 1);
         assert_eq!(picture.height, 1);
         assert!(picture.storage_filename.ends_with(".png"));
+        assert_eq!(
+            collection.storage_folder,
+            crate::library::catalog::SERENITY_SPA_STORAGE_FOLDER
+        );
+        let repaired = picture::Entity::find_by_id(picture.id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            repaired.checksum_blake3.as_slice(),
+            checksum_blake3(store::PNG_1X1).as_slice()
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

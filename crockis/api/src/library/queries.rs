@@ -105,15 +105,28 @@ pub async fn photos_by_collection<C: ConnectionTrait>(
         .collect()
 }
 
+pub struct PictureFile {
+    pub storage_filename: String,
+    pub storage_folder: Uuid,
+}
+
 pub async fn picture_file<C: ConnectionTrait>(
     db: &C,
     public_id: Uuid,
-) -> Result<picture::Model, QueryError> {
-    picture::Entity::find()
+) -> Result<PictureFile, QueryError> {
+    let picture = picture::Entity::find()
         .filter(picture::Column::PublicId.eq(public_id))
         .one(db)
         .await?
-        .ok_or(QueryError::NotFound)
+        .ok_or(QueryError::NotFound)?;
+    let collection = collection::Entity::find_by_id(picture.collection_id)
+        .one(db)
+        .await?
+        .ok_or(QueryError::NotFound)?;
+    Ok(PictureFile {
+        storage_filename: picture.storage_filename,
+        storage_folder: collection.storage_folder,
+    })
 }
 
 fn collection_response(

@@ -5,7 +5,8 @@
 //! The high 32 bits mark the collection row (`018f5c10`) or a picture
 //! group (`018f5c11` Serenity Spa, `018f5c12` Alpine Light, `018f5c13`
 //! Summer Garden, `018f5c14` North Coast). The low 48 bits are the
-//! 1-based index. `storage_filename` is assigned separately at insert.
+//! 1-based index. `storage_folder` uses prefix `018f5c20` and the same index
+//! as the collection. `storage_filename` is assigned separately at insert.
 
 use time::OffsetDateTime;
 use time::macros::datetime;
@@ -15,6 +16,7 @@ use uuid::Uuid;
 pub const MOCK_CAPTURED_AT: OffsetDateTime = datetime!(2026-03-12 10:00 UTC);
 
 const COLLECTION_PREFIX: u32 = 0x018f_5c10;
+const STORAGE_FOLDER_PREFIX: u32 = 0x018f_5c20;
 const SERENITY_PHOTOS: u32 = 0x018f_5c11;
 const ALPINE_PHOTOS: u32 = 0x018f_5c12;
 const GARDEN_PHOTOS: u32 = 0x018f_5c13;
@@ -31,6 +33,10 @@ pub const SUMMER_GARDEN_ID: Uuid = catalog_uuid(COLLECTION_PREFIX, 3);
 pub const NORTH_COAST_ID: Uuid = catalog_uuid(COLLECTION_PREFIX, 4);
 pub const SERENITY_SPA_FIRST_ID: Uuid = catalog_uuid(SERENITY_PHOTOS, 1);
 pub const SERENITY_SPA_COVER_ID: Uuid = catalog_uuid(SERENITY_PHOTOS, 7);
+pub const SERENITY_SPA_STORAGE_FOLDER: Uuid = catalog_uuid(STORAGE_FOLDER_PREFIX, 1);
+pub const ALPINE_LIGHT_STORAGE_FOLDER: Uuid = catalog_uuid(STORAGE_FOLDER_PREFIX, 2);
+pub const SUMMER_GARDEN_STORAGE_FOLDER: Uuid = catalog_uuid(STORAGE_FOLDER_PREFIX, 3);
+pub const NORTH_COAST_STORAGE_FOLDER: Uuid = catalog_uuid(STORAGE_FOLDER_PREFIX, 4);
 
 pub struct CatalogPhoto {
     pub public_id: Uuid,
@@ -41,6 +47,8 @@ pub struct CatalogPhoto {
 
 pub struct CatalogCollection {
     pub public_id: Uuid,
+    /// Stable directory under the data volume. Separate from `public_id`.
+    pub storage_folder: Uuid,
     pub name: &'static str,
     pub description: &'static str,
     pub created_at: OffsetDateTime,
@@ -233,6 +241,7 @@ const NORTH_COAST: &[CatalogPhoto] = &[
 pub static MOCK_CATALOG: &[CatalogCollection] = &[
     CatalogCollection {
         public_id: SERENITY_SPA_ID,
+        storage_folder: SERENITY_SPA_STORAGE_FOLDER,
         name: "Serenity Spa",
         description: "A quiet weekend of water, heat, and low light.",
         created_at: datetime!(2026-01-01 0:00 UTC),
@@ -241,6 +250,7 @@ pub static MOCK_CATALOG: &[CatalogCollection] = &[
     },
     CatalogCollection {
         public_id: ALPINE_LIGHT_ID,
+        storage_folder: ALPINE_LIGHT_STORAGE_FOLDER,
         name: "Alpine Light",
         description: "High passes and still lakes after the thaw.",
         created_at: datetime!(2026-01-02 0:00 UTC),
@@ -249,6 +259,7 @@ pub static MOCK_CATALOG: &[CatalogCollection] = &[
     },
     CatalogCollection {
         public_id: SUMMER_GARDEN_ID,
+        storage_folder: SUMMER_GARDEN_STORAGE_FOLDER,
         name: "Summer Garden",
         description: "Rain, glasshouses, and late flowers.",
         created_at: datetime!(2026-01-03 0:00 UTC),
@@ -257,6 +268,7 @@ pub static MOCK_CATALOG: &[CatalogCollection] = &[
     },
     CatalogCollection {
         public_id: NORTH_COAST_ID,
+        storage_folder: NORTH_COAST_STORAGE_FOLDER,
         name: "North Coast",
         description: "Tide lines and long evenings by the water.",
         created_at: datetime!(2026-01-04 0:00 UTC),
@@ -282,6 +294,8 @@ mod tests {
         let mut photos = 0;
         for collection in catalog {
             assert!(ids.insert(collection.public_id));
+            assert!(ids.insert(collection.storage_folder));
+            assert_ne!(collection.storage_folder, collection.public_id);
             assert!(
                 collection
                     .photos
@@ -298,6 +312,7 @@ mod tests {
         }
         assert_eq!(photos, 34);
         assert_eq!(catalog[0].public_id, SERENITY_SPA_ID);
+        assert_eq!(catalog[0].storage_folder, SERENITY_SPA_STORAGE_FOLDER);
         assert_eq!(catalog[0].cover_public_id, SERENITY_SPA_COVER_ID);
         assert_eq!(catalog[0].photos[0].public_id, SERENITY_SPA_FIRST_ID);
         assert_eq!(catalog[0].photos[0].original_filename, "Stones.jpg");

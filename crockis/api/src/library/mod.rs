@@ -1,7 +1,8 @@
 //! Photo collections and the files behind them.
 //!
 //! Rows live in `collections` and `pictures`. Image bytes live as
-//! `{DATA_DIR}/{storage_filename}`, which is `/data/{uuid}.{ext}` on Wasmer Edge.
+//! `{DATA_DIR}/{storage_folder}/{storage_filename}`, which is
+//! `/data/{collection-folder-uuid}/{uuid}.{ext}` on Wasmer Edge.
 
 pub(crate) mod catalog;
 mod entities;

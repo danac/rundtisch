@@ -15,7 +15,9 @@ pub struct Migration;
 /// the thumbnail.
 ///
 /// `public_id` uses the same `uuid` column as the auth tables (MySQL
-/// `binary(16)`). `storage_filename` stays a separate unique string.
+/// `binary(16)`). `storage_folder` is a separate unique UUID: picture files
+/// live at `{DATA_DIR}/{storage_folder}/{storage_filename}`.
+/// `checksum_blake3` is the raw 32-byte BLAKE3 digest of those bytes.
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -26,6 +28,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(big_pk_auto(Collection::Id))
                     .col(uuid(Collection::PublicId).unique_key())
+                    .col(uuid(Collection::StorageFolder).unique_key())
                     .col(string(Collection::Name))
                     .col(string(Collection::Description))
                     .col(timestamp(Collection::CreatedAt))
@@ -47,6 +50,12 @@ impl MigrationTrait for Migration {
                     .col(string(Picture::OriginalFilename))
                     .col(timestamp(Picture::CapturedAt))
                     .col(string(Picture::StorageFilename).unique_key())
+                    .col(
+                        ColumnDef::new(Picture::ChecksumBlake3)
+                            .binary_len(32)
+                            .not_null()
+                            .take(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_pictures_collection_id")
@@ -89,6 +98,7 @@ enum Collection {
     Table,
     Id,
     PublicId,
+    StorageFolder,
     Name,
     Description,
     CreatedAt,
@@ -107,4 +117,5 @@ enum Picture {
     OriginalFilename,
     CapturedAt,
     StorageFilename,
+    ChecksumBlake3,
 }

@@ -7,6 +7,9 @@ pub struct Model {
     pub id: i64,
     #[sea_orm(unique)]
     pub public_id: Uuid,
+    /// Directory name under the data volume. Separate from `public_id`.
+    #[sea_orm(unique)]
+    pub storage_folder: Uuid,
     pub name: String,
     pub description: String,
     pub created_at: TimeDateTimeWithTimeZone,
