@@ -2,7 +2,7 @@
   "name": "crockis",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"PORT=8788 cargo run -p crockis --bin crockis-native\"",
+    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev --prefix web\" \"DATA_DIR=$PWD/data PORT=8788 cargo run -p crockis --bin crockis-native\"",
     "build": "npm run build --prefix web",
     "lint": "npm run lint --prefix web",
     "preview": "npm run preview --prefix web"

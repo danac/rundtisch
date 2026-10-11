@@ -1,8 +1,8 @@
 //! Mint a database-backed invitation or recovery link.
 //!
 //! Both subcommands need `DATABASE_URL` and `AUTH_HASH_PEPPER` (exactly 32
-//! bytes). Pending auth migrations are applied first. Only the hash of the
-//! opaque token is stored.
+//! bytes). Pending auth and library migrations are applied first. Only the
+//! hash of the opaque token is stored. This command does not seed photos.
 //!
 //! ```text
 //! cargo run -p crockis --bin crockis-auth-link -- invite \
@@ -11,11 +11,10 @@
 //!   --email user@example.com [--ttl-hours 1] [--base-url http://localhost:5174]
 //! ```
 
-use crockis::Migrator;
+use crockis::migrate;
 use crockis::native_platform;
 use rundtisch::auth::config::AUTH_HASH_PEPPER;
 use rundtisch::auth::handlers::{mint_invitation_link, mint_recovery_link};
-use sea_orm_migration::MigratorTrait;
 use time::Duration;
 
 const DEFAULT_BASE_URL: &str = "http://localhost:5174";
@@ -50,7 +49,7 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("{AUTH_HASH_PEPPER} must be exactly 32 bytes").into());
     }
     let db = native_platform::connect().await?;
-    Migrator::up(&db, None).await?;
+    migrate(&db).await?;
     let ttl = Duration::hours(args.ttl_hours);
     let (kind, token) = match args.command {
         Command::Invite => (

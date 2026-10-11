@@ -33,11 +33,22 @@ capabilities:
 locality:
   regions:
     - fr-roub1
+# Persistent image files. The name must stay `data`: renaming or removing
+# this entry on a later deploy deletes the volume. There is no separate
+# create command — `wasmer deploy` creates it and mounts it at /data for the
+# app and for execute jobs (including migrate). danac/crockis-photos has no
+# volume until that deploy. SSH sessions see the same mount, so the manual
+# `seed` command writes picture files under /data.
+volumes:
+  - name: data
+    mount: /data
 # Run the package `migrate` command once after each new version is created.
-# The job gets the app's DB_* env and secrets. SeaORM applies
-# pending migrations, then upserts a bootstrap Admin when
-# RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL and RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
-# are set. Do not call migrate from native startup or HTTP handlers.
+# The job gets the app's DB_* env, secrets, and the /data volume. SeaORM
+# applies pending auth and library migrations, then upserts a bootstrap Admin
+# when RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL and RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD
+# are set. It does not download pictures. Load the catalog by SSHing in and
+# running the package command `seed` (DATA_DIR defaults to /data). Do not call
+# migrate or seed from native startup or HTTP handlers.
 jobs:
   - name: migrate-database
     trigger: post-deployment

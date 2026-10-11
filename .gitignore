@@ -10,6 +10,9 @@ crockis/web/dist/*
 crockis/web/dist-ssr/
 *.tsbuildinfo
 
+# Local photo files (DATA_DIR for `npm run dev --prefix crockis`)
+crockis/data/
+
 # Local SQLite (native demo)
 *.sqlite
 *.sqlite-wal

@@ -1,19 +1,19 @@
 export type Collection = {
+  /** Hyphenated UUID. `/collections/:collectionId` uses this value. */
   id: string
   name: string
   description: string
-  cover: Photo
+  cover: Photo | null
   photoCount: number
 }
 
 export type Photo = {
+  /** Hyphenated UUID. Routes and `/api/photos/{id}/file` use this, not the storage filename. */
   id: string
   collectionId: string
   src: string
   width: number
   height: number
-  alt: string
-  title?: string
   takenAt?: string
   /** Original file when it differs from the display `src`. */
   downloadSrc?: string

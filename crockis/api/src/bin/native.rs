@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use axum::Router;
-use crockis::{build_router, load_environment};
 use crockis::listen_addr;
 use crockis::native_platform;
 use crockis::static_dir;
 use crockis::with_frontend;
+use crockis::{build_router, load_environment};
 use rundtisch::{AppState, SmtpEmailSender};
 use tokio::signal;
 

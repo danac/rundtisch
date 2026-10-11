@@ -1,13 +1,16 @@
-use crockis::{load_environment, Migrator};
 use crockis::native_platform;
+use crockis::{load_environment, migrate};
 use rundtisch::auth::bootstrap::{self, BootstrapAdminOutcome};
-use sea_orm_migration::MigratorTrait;
 
 /// Apply pending SeaORM migrations, optionally upsert a bootstrap admin, and exit.
 ///
 /// Wasmer Edge runs this as the `migrate` package command from a
 /// `post-deployment` job. It is a one-shot CLI, not an HTTP handler: do not
-/// call `Migrator::up` or the bootstrap upsert from `native` or from a request.
+/// call `migrate` from `native` or from a request. Photo files are loaded by
+/// the separate `crockis-seed` binary (`seed` on Edge), not by this command.
+///
+/// Auth history stays in `rundtisch_migrations_auth`. Library history is
+/// `crockis_migrations`.
 ///
 /// When `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and
 /// `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set, insert a verified Admin
@@ -16,11 +19,11 @@ use sea_orm_migration::MigratorTrait;
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     load_environment();
-        
+
     eprintln!("migrate: connecting");
     let db = native_platform::connect().await?;
     eprintln!("migrate: applying pending migrations");
-    Migrator::up(&db, None).await?;
+    migrate(&db).await?;
     match bootstrap::seed_bootstrap_admin_from_env(&db).await? {
         BootstrapAdminOutcome::SkippedUnset => {
             eprintln!("migrate: bootstrap admin unset, skipping");

@@ -8,15 +8,31 @@ publish = false
 rundtisch = { path = "../../crates/rundtisch", features = ["auth", "smtp"] }
 axum = { workspace = true, features = ["json", "http1", "tokio"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "fs", "process", "time"] }
-sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
-sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls"] }
+sea-orm = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+sea-orm-migration = { workspace = true, features = ["sqlx-mysql", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+serde = { version = "1", features = ["derive"] }
 serde_json.workspace = true
-time.workspace = true
+time = { workspace = true, features = ["formatting", "macros", "std"] }
 tower-http = { workspace = true, features = ["fs"] }
 dotenvy.workspace = true
+uuid = { version = "1", default-features = false, features = ["v4"] }
+imagesize = { version = "0.13", optional = true }
+blake3 = { version = "1", default-features = false, features = ["std", "pure"], optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+
+[features]
+# Catalog download. Enabled for the crockis-seed binary only, so the server
+# and migrate binaries do not compile the HTTP client.
+seed = ["dep:imagesize", "dep:blake3", "dep:reqwest"]
 
 [dev-dependencies]
 tower = { workspace = true, features = ["util"] }
+async-trait = "0.1"
+sea-orm = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+sea-orm-migration = { workspace = true, features = ["sqlx-sqlite", "runtime-tokio-rustls", "with-time", "with-uuid"] }
+imagesize = "0.13"
+blake3 = { version = "1", default-features = false, features = ["std", "pure"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [[bin]]
 name = "crockis-native"
@@ -29,3 +45,8 @@ path = "src/bin/migrate.rs"
 [[bin]]
 name = "crockis-auth-link"
 path = "src/bin/auth_link.rs"
+
+[[bin]]
+name = "crockis-seed"
+path = "src/bin/seed.rs"
+required-features = ["seed"]
