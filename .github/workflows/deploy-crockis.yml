@@ -90,11 +90,23 @@ jobs:
             echo "WASIX build failed (attempt $n), retrying..."
             sleep $((n * 8))
           done
+          # Second invocation so reqwest stays out of the server and migrate binaries.
+          n=0
+          until cargo wasix build --release -p crockis --bin crockis-seed --features seed; do
+            n=$((n + 1))
+            if [ "$n" -ge 3 ]; then
+              echo "WASIX seed build failed after $n attempts"
+              exit 1
+            fi
+            echo "WASIX seed build failed (attempt $n), retrying..."
+            sleep $((n * 8))
+          done
 
       - name: Verify WASIX artifacts
         run: |
           test -f target/wasm32-wasmer-wasi/release/crockis-native.wasi.wasm
           test -f target/wasm32-wasmer-wasi/release/crockis-migrate.wasi.wasm
+          test -f target/wasm32-wasmer-wasi/release/crockis-seed.wasi.wasm
           test -f crockis/web/dist/index.html
           ls -lh target/wasm32-wasmer-wasi/release/crockis-*.wasm crockis/web/dist
 

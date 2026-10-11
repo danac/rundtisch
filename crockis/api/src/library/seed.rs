@@ -7,7 +7,10 @@ use uuid::Uuid;
 
 use super::catalog::{CatalogCollection, MOCK_CAPTURED_AT, mock_catalog};
 use super::entities::{collection, picture};
-use super::store::{self, checksum_blake3, data_dir, image_info, seed_enabled_from, storage_path};
+#[cfg(test)]
+use super::inspect;
+use super::inspect::{checksum_blake3, filename_with_extension, image_info};
+use super::store::{self, storage_path};
 
 const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
 
@@ -276,10 +279,8 @@ async fn upsert_picture<S: ImageSource>(
         let extension = store::storage_extension(&row.storage_filename).to_owned();
         let mut active: picture::ActiveModel = row.into();
         active.captured_at = Set(MOCK_CAPTURED_AT);
-        active.original_filename = Set(store::filename_with_extension(
-            photo.original_filename,
-            &extension,
-        ));
+        active.original_filename =
+            Set(filename_with_extension(photo.original_filename, &extension));
         active.width = Set(width);
         active.height = Set(height);
         active.checksum_blake3 = Set(checksum.to_vec());
@@ -299,7 +300,7 @@ async fn upsert_picture<S: ImageSource>(
         collection_id: Set(collection_id),
         width: Set(info.width),
         height: Set(info.height),
-        original_filename: Set(store::filename_with_extension(
+        original_filename: Set(filename_with_extension(
             photo.original_filename,
             info.extension,
         )),
@@ -328,30 +329,13 @@ async fn write_file(path: &Path, bytes: &[u8]) -> Result<(), SeedError> {
     Ok(())
 }
 
+#[cfg_attr(not(feature = "seed"), allow(dead_code))]
 pub async fn seed_mock_library(
     db: &DatabaseConnection,
     data_dir: &Path,
 ) -> Result<SeedReport, SeedError> {
     let source = HttpSource::new()?;
     seed_catalog(db, data_dir, mock_catalog(), &source).await
-}
-
-pub async fn seed_if_enabled(db: &DatabaseConnection) -> Result<(), SeedError> {
-    if !seed_enabled_from(std::env::var("CROCKIS_SEED").ok().as_deref()) {
-        eprintln!("migrate: CROCKIS_SEED disabled, skipping library seed");
-        return Ok(());
-    }
-    let dir = data_dir();
-    eprintln!("migrate: seeding library into {}", dir.display());
-    let report = seed_mock_library(db, &dir).await?;
-    eprintln!(
-        "migrate: library seed collections_inserted={} pictures_inserted={} files_written={} pictures_already_stored={}",
-        report.collections_inserted,
-        report.pictures_inserted,
-        report.files_written,
-        report.pictures_present
-    );
-    Ok(())
 }
 
 #[cfg(test)]
@@ -386,7 +370,7 @@ mod tests {
         LibraryMigrator::up(&db, None).await.unwrap();
         let dir = temp_dir();
         let source = BytesSource {
-            bytes: store::PNG_1X1.to_vec(),
+            bytes: inspect::PNG_1X1.to_vec(),
             hits: AtomicUsize::new(0),
         };
         let first = seed_catalog(&db, &dir, mock_catalog(), &source)
@@ -420,7 +404,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             picture.checksum_blake3.as_slice(),
-            checksum_blake3(store::PNG_1X1).as_slice()
+            checksum_blake3(inspect::PNG_1X1).as_slice()
         );
         assert!(path.is_file());
         tokio::fs::write(&path, b"tampered").await.unwrap();
@@ -469,7 +453,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             repaired.checksum_blake3.as_slice(),
-            checksum_blake3(store::PNG_1X1).as_slice()
+            checksum_blake3(inspect::PNG_1X1).as_slice()
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -483,7 +467,7 @@ mod tests {
             axum::routing::get(|| async {
                 (
                     [(axum::http::header::CONTENT_TYPE, "image/png")],
-                    store::PNG_1X1.to_vec(),
+                    inspect::PNG_1X1.to_vec(),
                 )
             }),
         );
@@ -495,6 +479,6 @@ mod tests {
             .fetch(&format!("http://127.0.0.1:{port}/tiny.png"))
             .await
             .unwrap();
-        assert_eq!(bytes, store::PNG_1X1);
+        assert_eq!(bytes, inspect::PNG_1X1);
     }
 }

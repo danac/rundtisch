@@ -1,6 +1,6 @@
 # Crockis — API
 
-Axum app for the Crockis photo library. Auth routes come from [`rundtisch`](../../crates/rundtisch/README.md). `src/bin/native.rs` serves them as `crockis-native`. `src/bin/migrate.rs` applies pending migrations, then seeds the library, as `crockis-migrate`.
+Axum app for the Crockis photo library. Auth routes come from [`rundtisch`](../../crates/rundtisch/README.md). `src/bin/native.rs` serves them as `crockis-native`. `src/bin/migrate.rs` applies pending migrations as `crockis-migrate`. `src/bin/seed.rs` downloads the catalog as `crockis-seed`.
 
 Collections and pictures are SeaORM tables. Image bytes are files in `DATA_DIR` (default `/data`, the Wasmer volume `data`).
 
@@ -24,15 +24,16 @@ crockis/api/
     handlers.rs
     native_platform.rs    # Database::connect(DATABASE_URL)
     migrator/             # auth migrator, then crockis_migrations
-    library/              # entities, seed catalog, file paths, HTTP handlers
+    library/              # entities, file paths, HTTP handlers; catalog download behind feature `seed`
     listen.rs             # BIND_ADDR/PORT, default 0.0.0.0:8788
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists
-    bin/migrate.rs        # migrate, seed /data, then optional bootstrap Admin upsert
+    bin/migrate.rs        # migrations, then optional bootstrap Admin upsert
+    bin/seed.rs           # feature `seed`: download the catalog into DATA_DIR
     bin/auth_link.rs      # mint invitation and recovery links
 ```
 
-Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so they do not collide with the demo crate in the same Cargo workspace. Wasmer command names stay `native` and `migrate`.
+Binary names are `crockis-native`, `crockis-migrate`, `crockis-seed`, and `crockis-auth-link` so they do not collide with the demo crate in the same Cargo workspace. Wasmer command names are `native`, `migrate`, and `seed`. `crockis-seed` is built with `--features seed` so the HTTP client is not part of the server or migrate binaries.
 
 ## Endpoints
 
@@ -68,7 +69,7 @@ Binary names are `crockis-native`, `crockis-migrate`, and `crockis-auth-link` so
 
 ## Run
 
-`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate or seed on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. That command applies auth migrations (`rundtisch_migrations_auth`) and library migrations (`crockis_migrations`), downloads missing seed images into `DATA_DIR` (Edge: `/data`), then upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same).
+`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate or seed on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. That command applies auth migrations (`rundtisch_migrations_auth`) and library migrations (`crockis_migrations`), then upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same). Picture files are a separate step: `crockis-seed` locally, or the package command `seed` over SSH on Edge.
 
 Library rows:
 
@@ -79,7 +80,7 @@ Library rows:
 
 Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, sort positions, `storage_folder`, or `checksum_blake3`.
 
-Files are `{DATA_DIR}/{storage_folder}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `CROCKIS_SEED=0` skips downloads. A second migrate leaves existing files in place when the stored BLAKE3 digest matches the file, and only fills gaps. A digest that does not match the file fails the seed.
+Files are `{DATA_DIR}/{storage_folder}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `crockis-seed` creates each collection directory and downloads the catalog. A second run leaves existing files in place when the stored BLAKE3 digest matches the file, and only fills gaps. A digest that does not match the file fails the seed.
 
 Local MySQL uses the same account as the demo, and a separate database name:
 
@@ -97,6 +98,7 @@ export AUTH_SMTP_PASSWORD=crockis
 export AUTH_MAIL_FROM=crockis-photos@localhost
 
 cargo run -p crockis --bin crockis-migrate
+cargo run -p crockis --bin crockis-seed --features seed
 cargo run -p crockis --bin crockis-native
 curl -i http://localhost:8788/api/health
 ```
@@ -115,7 +117,7 @@ The library's WebAuthn defaults are `localhost`, `http://localhost:5173`, and `r
 | `AUTH_SMTP_USERNAME` | SMTP auth username |
 | `AUTH_SMTP_PASSWORD` | SMTP auth password |
 | `AUTH_MAIL_FROM` | optional; dev script uses `crockis-photos@localhost` |
-| `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip seed if unset |
+| `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` | optional; skip bootstrap admin if unset |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` | optional; must be set with the email; upserts the password |
 | `RUNDTISCH_BOOTSTRAP_ADMIN_ALIAS` | optional; defaults to the email local-part |
 

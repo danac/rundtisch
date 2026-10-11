@@ -88,8 +88,8 @@ mod tests {
 
     use super::build_router;
     use crate::library::catalog::{SERENITY_SPA_COVER_ID, SERENITY_SPA_ID, mock_catalog};
+    use crate::library::inspect::PNG_1X1;
     use crate::library::seed::{BytesSource, seed_catalog};
-    use crate::library::store::PNG_1X1;
     use crate::migrate;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());

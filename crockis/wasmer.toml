@@ -24,6 +24,12 @@ name = "migrate"
 source = "../target/wasm32-wasmer-wasi/release/crockis-migrate.wasi.wasm"
 abi = "wasi"
 
+# Manual catalog download. Not a post-deployment job.
+[[module]]
+name = "seed"
+source = "../target/wasm32-wasmer-wasi/release/crockis-seed.wasi.wasm"
+abi = "wasi"
+
 [[command]]
 name = "native"
 module = "native"
@@ -32,8 +38,14 @@ runner = "wasi"
 [command.annotations.wasi]
 env = ["PORT=80", "BIND_ADDR=127.0.0.1"]
 
-# Edge `jobs` in app.yaml run this command once per deploy.
+# Edge `jobs` in app.yaml run this command once per deploy. It does not seed.
 [[command]]
 name = "migrate"
 module = "migrate"
+runner = "wasi"
+
+# SSH in and run `seed`. Not a post-deployment job.
+[[command]]
+name = "seed"
+module = "seed"
 runner = "wasi"
