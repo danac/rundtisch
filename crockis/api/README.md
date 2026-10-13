@@ -2,7 +2,7 @@
 
 Axum app for the Crockis photo library. Auth routes come from [`rundtisch`](../../crates/rundtisch/README.md). `src/bin/native.rs` serves them as `crockis-native`. `src/bin/migrate.rs` applies pending migrations as `crockis-migrate`. `src/bin/seed.rs` downloads the catalog as `crockis-seed`.
 
-Collections and pictures are SeaORM tables. Image bytes are files in `DATA_DIR` (default `/data`, the Wasmer volume `data`).
+Collections and pictures are SeaORM tables. Image bytes are objects in the rundtisch object store (`storage_objects`). The local backend writes under `STORAGE_LOCAL_ROOT`, then `DATA_DIR`, then `/data` (the Wasmer volume `data`).
 
 ## Tech stack
 
@@ -29,7 +29,7 @@ crockis/api/
     static_files.rs       # optional SPA from /app/web or STATIC_DIR
     bin/native.rs         # listen; serve web/dist when the static dir exists
     bin/migrate.rs        # migrations, then optional bootstrap Admin upsert
-    bin/seed.rs           # feature `seed`: download the catalog into DATA_DIR
+    bin/seed.rs           # feature `seed`: download the catalog into the object store
     bin/auth_link.rs      # mint invitation and recovery links
 ```
 
@@ -69,18 +69,19 @@ Binary names are `crockis-native`, `crockis-migrate`, `crockis-seed`, and `crock
 
 ## Run
 
-`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate or seed on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. That command applies auth migrations (`rundtisch_migrations_auth`) and library migrations (`crockis_migrations`), then upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same). Picture files are a separate step: `crockis-seed` locally, or the package command `seed` over SSH on Edge.
+`DATABASE_URL` selects the backend (`sqlite://`, `mysql://`, or `postgres://`). Apply migrations before starting the server. The server does not migrate or seed on startup or per request. On Wasmer Edge, `app.yaml` runs the `migrate` command once per deploy as a `post-deployment` job. That command applies auth migrations (`rundtisch_migrations_auth`), object-storage migrations (`rundtisch_migrations_storage`), and library migrations (`crockis_migrations`), then upserts a bootstrap admin when `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set: insert a verified Admin if the email is absent, or reset the password on the existing row (`public_id`, role, alias, and verification stay the same). Picture files are a separate step: `crockis-seed` locally, or the package command `seed` over SSH on Edge.
 
 Library rows:
 
 | Table | Purpose |
 |-------|---------|
-| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), unique `storage_folder` UUID (separate from `public_id`; the directory under `DATA_DIR`), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
-| `pictures` | `public_id` UUID, `collection_id` FK, pixel `width`/`height` of the stored file, `original_filename`, `captured_at`, unique `storage_filename` (`{uuid}.{ext}`, separate from `public_id`), `checksum_blake3` (`binary(32)`, raw BLAKE3 digest of the file) |
+| `storage_objects` | Lib-owned. `public_id` UUID (`binary(16)`), unique `storage_key` (`varchar(512)`), size, content type, BLAKE3 and SHA-256 digests, original filename, pending/committed status. History table `rundtisch_migrations_storage`. |
+| `collections` | `public_id` UUID (`binary(16)` on MySQL, same column type as auth), unique `storage_folder` UUID (separate from `public_id`; the object-store key prefix), name, description, `created_at`, nullable `thumbnail_picture_id` (no FK; set after pictures exist) |
+| `pictures` | `public_id` UUID (the picture's own id, not the object's), `collection_id` FK, pixel `width`/`height`, `captured_at`, unique `object_id` FK to `storage_objects` (`ON DELETE RESTRICT`) |
 
-Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. Responses do not include alt text, titles, sort positions, `storage_folder`, or `checksum_blake3`.
+Collections are listed by `created_at`, then `id`. Pictures are listed by insertion `id`. JSON `id` values are hyphenated UUID strings. The displayed filename comes from `storage_objects.original_filename`. Responses do not include alt text, titles, sort positions, or storage keys.
 
-Files are `{DATA_DIR}/{storage_folder}/{storage_filename}`. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `crockis-seed` creates each collection directory and downloads the catalog. A second run leaves existing files in place when the stored BLAKE3 digest matches the file, and only fills gaps. A digest that does not match the file fails the seed.
+`GET /api/photos/{id}/file` authorizes the session, then delivers the committed object (Range, ETag from the BLAKE3 digest, and `Content-Disposition`). `?download=true` sends the file as an attachment. The local key is `{storage_folder}/{uuid}.{ext}` under the storage root. The thumbnail column is not a foreign key, so the picture → collection FK can cascade without a cycle. `crockis-seed` stages each new image and commits it in the same transaction as the picture row. A second run leaves a file in place when its BLAKE3 digest matches, and restores a missing file only when the downloaded bytes still match that digest. A mismatch fails the seed. `STORAGE_BACKEND=s3` is rejected until a later phase.
 
 Local MySQL uses the same account as the demo, and a separate database name:
 

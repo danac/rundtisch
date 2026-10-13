@@ -9,8 +9,8 @@ use rundtisch::auth::bootstrap::{self, BootstrapAdminOutcome};
 /// call `migrate` from `native` or from a request. Photo files are loaded by
 /// the separate `crockis-seed` binary (`seed` on Edge), not by this command.
 ///
-/// Auth history stays in `rundtisch_migrations_auth`. Library history is
-/// `crockis_migrations`.
+/// Auth history stays in `rundtisch_migrations_auth`. Object storage history
+/// is `rundtisch_migrations_storage`. Library history is `crockis_migrations`.
 ///
 /// When `RUNDTISCH_BOOTSTRAP_ADMIN_EMAIL` and
 /// `RUNDTISCH_BOOTSTRAP_ADMIN_PASSWORD` are both set, insert a verified Admin

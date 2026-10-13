@@ -1,5 +1,5 @@
-//! Pixel size and BLAKE3 digest of a stored image. Compiled for `crockis-seed`
-//! and for tests, not for the server.
+//! Pixel size of a catalog image. Compiled for `crockis-seed` and for tests,
+//! not for the server. Digests are computed by the object store.
 
 use imagesize::{ImageType, blob_size, image_type};
 
@@ -49,11 +49,6 @@ pub fn filename_with_extension(original: &str, extension: &str) -> String {
     format!("{stem}.{extension}")
 }
 
-/// Raw 32-byte BLAKE3 digest of file contents.
-pub fn checksum_blake3(bytes: &[u8]) -> [u8; 32] {
-    *blake3::hash(bytes).as_bytes()
-}
-
 #[cfg(test)]
 pub(crate) const PNG_1X1: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
@@ -84,10 +79,6 @@ mod tests {
         assert_eq!(
             filename_with_extension("pexels-photo-3764568.jpeg", "jpeg"),
             "pexels-photo-3764568.jpeg"
-        );
-        assert_eq!(
-            checksum_blake3(b"crockis"),
-            *blake3::hash(b"crockis").as_bytes()
         );
     }
 }

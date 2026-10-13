@@ -15,10 +15,7 @@ async fn main() {
         .await
         .expect("database connection");
     let email = SmtpEmailSender::from_env().expect("SMTP email configuration");
-    let state = AppState {
-        db,
-        email: Arc::new(email),
-    };
+    let state = AppState::new(db, Arc::new(email));
     let mut router = build_router(state);
     if let Some(dir) = static_dir() {
         println!("Serving frontend from {}", dir.display());

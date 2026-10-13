@@ -25,18 +25,9 @@ function extension(blob: Blob, url: string) {
   return match?.[1]?.toLowerCase() ?? 'jpg'
 }
 
-function sameOrigin(url: string) {
-  if (url.startsWith('/')) return true
-  try {
-    return new URL(url, window.location.origin).origin === window.location.origin
-  } catch {
-    return false
-  }
-}
-
 async function fetchAsset(url: string) {
   const response = await fetch(url, {
-    credentials: sameOrigin(url) ? 'include' : 'omit',
+    credentials: 'same-origin',
   })
   if (!response.ok) throw new Error('Unable to download this file.')
   return response.blob()

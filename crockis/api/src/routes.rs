@@ -118,7 +118,6 @@ mod tests {
         let pepper = "cccccccccccccccccccccccccccccccc";
         unsafe {
             std::env::set_var("AUTH_HASH_PEPPER", pepper);
-            std::env::set_var("DATA_DIR", &dir);
         }
 
         let mut opts = ConnectOptions::new("sqlite::memory:");
@@ -129,9 +128,9 @@ mod tests {
             bytes: PNG_1X1.to_vec(),
             hits: std::sync::atomic::AtomicUsize::new(0),
         };
-        seed_catalog(&db, &dir, mock_catalog(), &source)
-            .await
-            .unwrap();
+        let storage = Arc::new(rundtisch::storage::LocalFileStorage::new(&dir));
+        let store = rundtisch::storage::ObjectStore::new(db.clone(), storage.clone());
+        seed_catalog(&store, mock_catalog(), &source).await.unwrap();
 
         let now = OffsetDateTime::now_utc();
         let user_id = insert_user(
@@ -157,10 +156,7 @@ mod tests {
         .await
         .unwrap();
 
-        let state = AppState {
-            db,
-            email: Arc::new(SilentMail),
-        };
+        let state = AppState::new(db, Arc::new(SilentMail)).with_storage(storage);
         let app = build_router(state);
         let cookie = format!("session={raw}");
 
@@ -271,8 +267,74 @@ mod tests {
             .unwrap();
         assert_eq!(file.status(), StatusCode::OK);
         assert_eq!(file.headers().get("content-type").unwrap(), "image/png");
+        let etag = file
+            .headers()
+            .get("etag")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            file.headers()
+                .get("cache-control")
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("private, max-age=")
+        );
         let bytes = to_bytes(file.into_body(), usize::MAX).await.unwrap();
         assert_eq!(&bytes[..8], &PNG_1X1[..8]);
+
+        let ranged = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(&src)
+                    .header("cookie", &cookie)
+                    .header("range", "bytes=0-3")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+        let ranged_bytes = to_bytes(ranged.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(&ranged_bytes[..], &PNG_1X1[..4]);
+
+        let not_modified = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&src)
+                    .header("cookie", &cookie)
+                    .header("if-none-match", &etag)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(not_modified.status(), StatusCode::NOT_MODIFIED);
+
+        let download = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("{src}?download=true"))
+                    .header("cookie", &cookie)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(download.status(), StatusCode::OK);
+        let disposition = download
+            .headers()
+            .get("content-disposition")
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(disposition.starts_with("attachment;"), "{disposition}");
 
         let hidden = app
             .oneshot(Request::builder().uri(&src).body(Body::empty()).unwrap())

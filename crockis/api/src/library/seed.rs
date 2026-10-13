@@ -1,36 +1,36 @@
-use std::path::Path;
 #[cfg(test)]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
-use uuid::Uuid;
+use rundtisch::storage::{
+    ByteStream, NewObject, ObjectPrefix, ObjectStore, StoreError, Verified,
+    extension_for_content_type,
+};
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set, TransactionTrait};
 
 use super::catalog::{CatalogCollection, MOCK_CAPTURED_AT, mock_catalog};
 use super::entities::{collection, picture};
 #[cfg(test)]
 use super::inspect;
-use super::inspect::{checksum_blake3, filename_with_extension, image_info};
-use super::store::{self, storage_path};
+use super::inspect::{filename_with_extension, image_info};
 
-const MAX_IMAGE_BYTES: usize = 32 * 1024 * 1024;
+const MAX_IMAGE_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum SeedError {
     Db(sea_orm::DbErr),
-    Io(std::io::Error),
+    #[cfg_attr(not(feature = "seed"), allow(dead_code))]
     Http(String),
     Image(String),
-    DataDir(String),
+    Storage(String),
 }
 
 impl std::fmt::Display for SeedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SeedError::Db(err) => write!(f, "database: {err}"),
-            SeedError::Io(err) => write!(f, "filesystem: {err}"),
             SeedError::Http(message) => write!(f, "download: {message}"),
             SeedError::Image(message) => write!(f, "image: {message}"),
-            SeedError::DataDir(message) => write!(f, "data directory: {message}"),
+            SeedError::Storage(message) => write!(f, "storage: {message}"),
         }
     }
 }
@@ -43,9 +43,13 @@ impl From<sea_orm::DbErr> for SeedError {
     }
 }
 
-impl From<std::io::Error> for SeedError {
-    fn from(err: std::io::Error) -> Self {
-        SeedError::Io(err)
+impl From<StoreError> for SeedError {
+    fn from(err: StoreError) -> Self {
+        match err {
+            StoreError::Db(err) => SeedError::Db(err),
+            StoreError::ChecksumMismatch => SeedError::Image("checksum mismatch".into()),
+            other => SeedError::Storage(other.to_string()),
+        }
     }
 }
 
@@ -64,58 +68,29 @@ pub trait ImageSource: Send + Sync {
     ) -> impl std::future::Future<Output = Result<Vec<u8>, SeedError>> + Send;
 }
 
+/// HTTP catalog client. Only the `crockis-seed` binary enables this.
+#[cfg(feature = "seed")]
 pub struct HttpSource {
-    client: reqwest::Client,
+    inner: rundtisch::storage::HttpUrlFetcher,
 }
 
+#[cfg(feature = "seed")]
 impl HttpSource {
     pub fn new() -> Result<Self, SeedError> {
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (compatible; CrockisSeed/0.1)")
-            .timeout(std::time::Duration::from_secs(60))
-            .redirect(reqwest::redirect::Policy::limited(8))
-            .build()
+        let inner = rundtisch::storage::HttpUrlFetcher::new()
             .map_err(|err| SeedError::Http(err.to_string()))?;
-        Ok(Self { client })
+        Ok(Self { inner })
     }
 }
 
+#[cfg(feature = "seed")]
 impl ImageSource for HttpSource {
     async fn fetch(&self, url: &str) -> Result<Vec<u8>, SeedError> {
-        let response = self
-            .client
-            .get(url)
-            .header(
-                reqwest::header::ACCEPT,
-                "image/jpeg,image/png,image/webp,image/gif,*/*;q=0.8",
-            )
-            .send()
+        self.inner
+            .fetch(url, MAX_IMAGE_BYTES)
             .await
-            .map_err(|err| SeedError::Http(format!("{url}: {err}")))?;
-        if let Some(len) = response.content_length() {
-            if len > MAX_IMAGE_BYTES as u64 {
-                return Err(SeedError::Http(format!(
-                    "{url}: image is larger than {MAX_IMAGE_BYTES} bytes"
-                )));
-            }
-        }
-        let status = response.status();
-        if !status.is_success() {
-            return Err(SeedError::Http(format!("{url}: HTTP {status}")));
-        }
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|err| SeedError::Http(format!("{url}: {err}")))?;
-        if bytes.is_empty() {
-            return Err(SeedError::Http(format!("{url}: empty response")));
-        }
-        if bytes.len() > MAX_IMAGE_BYTES {
-            return Err(SeedError::Http(format!(
-                "{url}: image is larger than {MAX_IMAGE_BYTES} bytes"
-            )));
-        }
-        Ok(bytes.to_vec())
+            .map(|bytes| bytes.to_vec())
+            .map_err(|err| SeedError::Http(err.to_string()))
     }
 }
 
@@ -133,45 +108,30 @@ impl ImageSource for BytesSource {
     }
 }
 
-/// Download the mock library into `data_dir` and upsert matching rows.
+/// Download the mock library into the object store and upsert matching rows.
 ///
-/// Each collection's files live in `{data_dir}/{storage_folder}/`. A picture
-/// that already has its storage file is left in place when the file's BLAKE3
-/// digest matches `checksum_blake3`. A digest mismatch fails the seed. A
-/// picture row whose file is missing is downloaded again into that same file
-/// name. Text fields and the collection cover are refreshed from the catalog.
+/// The collection `storage_folder` is the object key prefix. A picture whose
+/// file matches its BLAKE3 digest is left in place. A digest mismatch fails
+/// the seed. A missing file is downloaded again and restored only when the
+/// bytes hash to the committed digest. Text fields and the collection cover
+/// are refreshed from the catalog.
 pub async fn seed_catalog<S: ImageSource>(
-    db: &DatabaseConnection,
-    data_dir: &Path,
+    store: &ObjectStore,
     catalog: &[CatalogCollection],
     source: &S,
 ) -> Result<SeedReport, SeedError> {
-    tokio::fs::create_dir_all(data_dir).await.map_err(|err| {
-        SeedError::DataDir(format!("cannot create {}: {err}", data_dir.display()))
-    })?;
     let mut report = SeedReport::default();
     for collection_catalog in catalog {
         let (collection_id, storage_folder) =
-            upsert_collection(db, collection_catalog, &mut report).await?;
-        let folder = data_dir.join(storage_folder.as_hyphenated().to_string());
-        tokio::fs::create_dir_all(&folder).await.map_err(|err| {
-            SeedError::DataDir(format!("cannot create {}: {err}", folder.display()))
-        })?;
+            upsert_collection(store, collection_catalog, &mut report).await?;
+        let prefix = ObjectPrefix::parse(&storage_folder.as_hyphenated().to_string())
+            .map_err(SeedError::Storage)?;
         for photo in collection_catalog.photos {
-            upsert_picture(
-                db,
-                data_dir,
-                source,
-                collection_id,
-                storage_folder,
-                photo,
-                &mut report,
-            )
-            .await?;
+            upsert_picture(store, source, collection_id, &prefix, photo, &mut report).await?;
         }
         let cover = picture::Entity::find()
             .filter(picture::Column::PublicId.eq(collection_catalog.cover_public_id))
-            .one(db)
+            .one(store.db())
             .await?
             .ok_or_else(|| {
                 SeedError::Image(format!(
@@ -186,30 +146,31 @@ pub async fn seed_catalog<S: ImageSource>(
             )));
         }
         let row = collection::Entity::find_by_id(collection_id)
-            .one(db)
+            .one(store.db())
             .await?
             .ok_or_else(|| {
                 SeedError::Db(sea_orm::DbErr::Custom("collection disappeared".into()))
             })?;
         let mut active: collection::ActiveModel = row.into();
         active.thumbnail_picture_id = Set(Some(cover.id));
-        active.update(db).await?;
+        active.update(store.db()).await?;
     }
     Ok(report)
 }
 
 async fn upsert_collection(
-    db: &DatabaseConnection,
+    store: &ObjectStore,
     catalog: &CatalogCollection,
     report: &mut SeedReport,
 ) -> Result<(i64, uuid::Uuid), SeedError> {
+    let db = store.db();
     if let Some(row) = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(catalog.public_id))
         .one(db)
         .await?
     {
         if row.storage_folder != catalog.storage_folder {
-            return Err(SeedError::DataDir(format!(
+            return Err(SeedError::Storage(format!(
                 "collection {} storage folder {} does not match catalog {}",
                 catalog.public_id, row.storage_folder, catalog.storage_folder
             )));
@@ -237,115 +198,130 @@ async fn upsert_collection(
 }
 
 async fn upsert_picture<S: ImageSource>(
-    db: &DatabaseConnection,
-    data_dir: &Path,
+    store: &ObjectStore,
     source: &S,
     collection_id: i64,
-    storage_folder: uuid::Uuid,
+    prefix: &ObjectPrefix,
     photo: &super::catalog::CatalogPhoto,
     report: &mut SeedReport,
 ) -> Result<(), SeedError> {
     if let Some(row) = picture::Entity::find()
         .filter(picture::Column::PublicId.eq(photo.public_id))
-        .one(db)
+        .one(store.db())
         .await?
     {
-        let path =
-            storage_path(data_dir, storage_folder, &row.storage_filename).ok_or_else(|| {
-                SeedError::DataDir(format!("unsafe storage filename {}", row.storage_filename))
-            })?;
+        let object = store.get(row.object_id).await?;
         let mut width = row.width;
         let mut height = row.height;
-        let checksum = if file_ready(&path) {
-            let bytes = tokio::fs::read(&path).await?;
-            let checksum = checksum_blake3(&bytes);
-            if row.checksum_blake3.as_slice() != checksum.as_slice() {
+        let extension = match store.verify(&object).await? {
+            Verified::Match => {
+                report.pictures_present += 1;
+                display_extension(photo.original_filename, &object.content_type)
+            }
+            Verified::Mismatch { .. } => {
                 return Err(SeedError::Image(format!(
                     "checksum mismatch for {}",
-                    row.storage_filename
+                    photo.public_id
                 )));
             }
-            report.pictures_present += 1;
-            checksum
-        } else {
-            let bytes = source.fetch(photo.source_url).await?;
-            let info = image_info(&bytes, photo.original_filename).map_err(SeedError::Image)?;
-            write_file(&path, &bytes).await?;
-            width = info.width;
-            height = info.height;
-            report.files_written += 1;
-            checksum_blake3(&bytes)
+            Verified::Missing => {
+                let bytes = source.fetch(photo.source_url).await?;
+                let info = image_info(&bytes, photo.original_filename).map_err(SeedError::Image)?;
+                store
+                    .restore(&object, ByteStream::from_bytes(bytes))
+                    .await?;
+                width = info.width;
+                height = info.height;
+                report.files_written += 1;
+                info.extension.to_owned()
+            }
         };
-        let extension = store::storage_extension(&row.storage_filename).to_owned();
+        let filename = filename_with_extension(photo.original_filename, &extension);
+        let txn = store.db().begin().await?;
+        store
+            .set_original_filename(&txn, object.id, Some(&filename))
+            .await?;
         let mut active: picture::ActiveModel = row.into();
         active.captured_at = Set(MOCK_CAPTURED_AT);
-        active.original_filename =
-            Set(filename_with_extension(photo.original_filename, &extension));
         active.width = Set(width);
         active.height = Set(height);
-        active.checksum_blake3 = Set(checksum.to_vec());
-        active.update(db).await?;
+        active.update(&txn).await?;
+        txn.commit().await?;
         return Ok(());
     }
 
     let bytes = source.fetch(photo.source_url).await?;
     let info = image_info(&bytes, photo.original_filename).map_err(SeedError::Image)?;
-    let checksum = checksum_blake3(&bytes);
-    let storage_filename = format!("{}.{}", Uuid::new_v4(), info.extension);
-    let path = storage_path(data_dir, storage_folder, &storage_filename)
-        .ok_or_else(|| SeedError::DataDir(format!("unsafe storage filename {storage_filename}")))?;
-    write_file(&path, &bytes).await?;
+    let filename = filename_with_extension(photo.original_filename, info.extension);
+    let staged = store
+        .stage(
+            NewObject {
+                prefix: Some(prefix),
+                content_type: content_type_for_extension(info.extension),
+                original_filename: Some(&filename),
+                max_len: MAX_IMAGE_BYTES,
+            },
+            ByteStream::from_bytes(bytes),
+        )
+        .await?;
+    let txn = store.db().begin().await?;
+    let committed = store.commit(&txn, staged).await?;
     picture::ActiveModel {
         public_id: Set(photo.public_id),
         collection_id: Set(collection_id),
         width: Set(info.width),
         height: Set(info.height),
-        original_filename: Set(filename_with_extension(
-            photo.original_filename,
-            info.extension,
-        )),
         captured_at: Set(MOCK_CAPTURED_AT),
-        storage_filename: Set(storage_filename),
-        checksum_blake3: Set(checksum.to_vec()),
+        object_id: Set(committed.id),
         ..Default::default()
     }
-    .insert(db)
+    .insert(&txn)
     .await?;
+    txn.commit().await?;
     report.pictures_inserted += 1;
     report.files_written += 1;
     Ok(())
 }
 
-fn file_ready(path: &Path) -> bool {
-    std::fs::metadata(path)
-        .map(|meta| meta.is_file() && meta.len() > 0)
-        .unwrap_or(false)
+fn content_type_for_extension(extension: &str) -> &'static str {
+    match extension {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "heic" => "image/heic",
+        "heif" => "image/heif",
+        _ => "application/octet-stream",
+    }
 }
 
-async fn write_file(path: &Path, bytes: &[u8]) -> Result<(), SeedError> {
-    let tmp = path.with_extension("partial");
-    tokio::fs::write(&tmp, bytes).await?;
-    tokio::fs::rename(&tmp, path).await?;
-    Ok(())
+/// Keep a catalog `.jpeg` suffix. Every other type follows the stored content type.
+fn display_extension(original_filename: &str, content_type: &str) -> String {
+    if content_type == "image/jpeg" && original_filename.to_ascii_lowercase().ends_with(".jpeg") {
+        return "jpeg".to_owned();
+    }
+    extension_for_content_type(content_type)
+        .unwrap_or("bin")
+        .to_owned()
 }
 
-#[cfg_attr(not(feature = "seed"), allow(dead_code))]
-pub async fn seed_mock_library(
-    db: &DatabaseConnection,
-    data_dir: &Path,
-) -> Result<SeedReport, SeedError> {
+#[cfg(feature = "seed")]
+pub async fn seed_mock_library(store: &ObjectStore) -> Result<SeedReport, SeedError> {
     let source = HttpSource::new()?;
-    seed_catalog(db, data_dir, mock_catalog(), &source).await
+    seed_catalog(store, mock_catalog(), &source).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::migrator::LibraryMigrator;
+    use crate::migrate;
+    use rundtisch::storage::entity::object;
+    use rundtisch::storage::{Blake3Digest, LocalFileStorage};
     use sea_orm::ConnectOptions;
-    use sea_orm_migration::MigratorTrait;
+    use std::sync::Arc;
 
-    async fn memory_db() -> DatabaseConnection {
+    async fn memory_db() -> sea_orm::DatabaseConnection {
         let mut opts = ConnectOptions::new("sqlite::memory:");
         opts.max_connections(1);
         sea_orm::Database::connect(opts).await.expect("sqlite")
@@ -367,23 +343,20 @@ mod tests {
     #[tokio::test]
     async fn seed_is_idempotent_and_repairs_a_missing_file() {
         let db = memory_db().await;
-        LibraryMigrator::up(&db, None).await.unwrap();
+        migrate(&db).await.unwrap();
         let dir = temp_dir();
+        let store = ObjectStore::new(db.clone(), Arc::new(LocalFileStorage::new(&dir)));
         let source = BytesSource {
             bytes: inspect::PNG_1X1.to_vec(),
             hits: AtomicUsize::new(0),
         };
-        let first = seed_catalog(&db, &dir, mock_catalog(), &source)
-            .await
-            .unwrap();
+        let first = seed_catalog(&store, mock_catalog(), &source).await.unwrap();
         assert_eq!(first.collections_inserted, 4);
         assert_eq!(first.pictures_inserted, 34);
         assert_eq!(first.files_written, 34);
         assert_eq!(source.hits.load(Ordering::SeqCst), 34);
 
-        let second = seed_catalog(&db, &dir, mock_catalog(), &source)
-            .await
-            .unwrap();
+        let second = seed_catalog(&store, mock_catalog(), &source).await.unwrap();
         assert_eq!(second.collections_inserted, 0);
         assert_eq!(second.pictures_inserted, 0);
         assert_eq!(second.files_written, 0);
@@ -396,19 +369,26 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let path = storage_path(
-            &dir,
-            crate::library::catalog::SERENITY_SPA_STORAGE_FOLDER,
-            &picture.storage_filename,
-        )
-        .unwrap();
+        let stored = object::Entity::find_by_id(picture.object_id)
+            .one(&db)
+            .await
+            .unwrap()
+            .unwrap();
+        let folder = crate::library::catalog::SERENITY_SPA_STORAGE_FOLDER
+            .as_hyphenated()
+            .to_string();
+        assert!(stored.storage_key.starts_with(&format!("{folder}/")));
+        assert!(stored.storage_key.ends_with(".png"));
+        assert_eq!(stored.content_type, "image/png");
+        assert_eq!(stored.original_filename.as_deref(), Some("Stones.png"));
         assert_eq!(
-            picture.checksum_blake3.as_slice(),
-            checksum_blake3(inspect::PNG_1X1).as_slice()
+            stored.blake3.as_deref(),
+            Some(Blake3Digest::hash(inspect::PNG_1X1).as_bytes().as_slice())
         );
+        let path = dir.join(&stored.storage_key);
         assert!(path.is_file());
         tokio::fs::write(&path, b"tampered").await.unwrap();
-        let mismatch = seed_catalog(&db, &dir, mock_catalog(), &source)
+        let mismatch = seed_catalog(&store, mock_catalog(), &source)
             .await
             .unwrap_err();
         assert!(
@@ -416,9 +396,7 @@ mod tests {
             "{mismatch}"
         );
         tokio::fs::remove_file(&path).await.unwrap();
-        let third = seed_catalog(&db, &dir, mock_catalog(), &source)
-            .await
-            .unwrap();
+        let third = seed_catalog(&store, mock_catalog(), &source).await.unwrap();
         assert_eq!(third.files_written, 1);
         assert_eq!(third.pictures_inserted, 0);
         assert!(path.is_file());
@@ -441,44 +419,26 @@ mod tests {
         );
         assert_eq!(picture.width, 1);
         assert_eq!(picture.height, 1);
-        assert!(picture.storage_filename.ends_with(".png"));
         assert_eq!(
             collection.storage_folder,
             crate::library::catalog::SERENITY_SPA_STORAGE_FOLDER
         );
-        let repaired = picture::Entity::find_by_id(picture.id)
+        let repaired = object::Entity::find_by_id(picture.object_id)
             .one(&db)
             .await
             .unwrap()
             .unwrap();
         assert_eq!(
-            repaired.checksum_blake3.as_slice(),
-            checksum_blake3(inspect::PNG_1X1).as_slice()
+            repaired.blake3.as_deref(),
+            Some(Blake3Digest::hash(inspect::PNG_1X1).as_bytes().as_slice())
+        );
+        assert_eq!(
+            store
+                .verify(&store.get(picture.object_id).await.unwrap())
+                .await
+                .unwrap(),
+            Verified::Match
         );
         std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[tokio::test]
-    async fn http_source_downloads_from_a_local_server() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let app = axum::Router::new().route(
-            "/tiny.png",
-            axum::routing::get(|| async {
-                (
-                    [(axum::http::header::CONTENT_TYPE, "image/png")],
-                    inspect::PNG_1X1.to_vec(),
-                )
-            }),
-        );
-        tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        let source = HttpSource::new().unwrap();
-        let bytes = source
-            .fetch(&format!("http://127.0.0.1:{port}/tiny.png"))
-            .await
-            .unwrap();
-        assert_eq!(bytes, inspect::PNG_1X1);
     }
 }
