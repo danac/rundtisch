@@ -26,8 +26,6 @@ package: .
 # Local Vite on port 5174 sets these in the dev script.
 debug: false
 capabilities:
-  ssh:
-    enabled: true
   database:
     engine: mysql
 # Managed MySQL is only offered in some regions. Apps with a database must
