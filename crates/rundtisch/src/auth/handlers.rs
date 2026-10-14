@@ -913,10 +913,7 @@ mod tests {
         let db = sea_orm::Database::connect(opts).await.expect("sqlite");
         Migrator::up(&db, None).await.expect("migrate");
         let email = RecordingEmailSender::new();
-        let state = AppState {
-            db: db.clone(),
-            email: Arc::new(email.clone()),
-        };
+        let state = AppState::new(db.clone(), Arc::new(email.clone()));
         let router = axum::Router::new()
             .route(
                 "/api/auth/register_with_token",

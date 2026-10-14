@@ -6,7 +6,7 @@
 //! group (`018f5c11` Serenity Spa, `018f5c12` Alpine Light, `018f5c13`
 //! Summer Garden, `018f5c14` North Coast). The low 48 bits are the
 //! 1-based index. `storage_folder` uses prefix `018f5c20` and the same index
-//! as the collection. `storage_filename` is assigned separately at insert.
+//! as the collection. The object store assigns each file's key under that prefix.
 
 use time::OffsetDateTime;
 use time::macros::datetime;

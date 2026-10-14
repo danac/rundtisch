@@ -37,7 +37,7 @@ DATABASE_URL=mysql://demo:demo@127.0.0.1:3306/crockis_dev \
   cargo run -p crockis --bin crockis-seed --features seed
 ```
 
-`crockis-migrate` applies auth and library migrations and, when both bootstrap admin variables are set, upserts that admin. `crockis-seed` downloads the catalog into `DATA_DIR` (default `/data` on Wasmer Edge). Re-running it leaves pictures whose files already match their BLAKE3 digest. The server does not seed.
+`crockis-migrate` applies auth, object-storage, and library migrations and, when both bootstrap admin variables are set, upserts that admin. `crockis-seed` downloads the catalog into the local object store (`STORAGE_LOCAL_ROOT`, then `DATA_DIR`, then `/data`). Re-running it leaves pictures whose files already match their BLAKE3 digest and restores a missing file only when the new bytes match. The server does not seed.
 
 `npm run dev` sets `DATA_DIR` to `crockis/data` (gitignored). It also expects `AUTH_HASH_PEPPER`, WebAuthn RP id `localhost`, origin `http://localhost:5174`, name `crockis-photos`, and placeholder SMTP variables so the process can start. Real recovery mail needs a reachable SMTP server. Mint links with:
 

@@ -5,6 +5,8 @@ use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
+use rundtisch::storage::{ObjectInfo, ObjectStore, StoreError};
+
 use super::entities::{collection, picture};
 
 #[derive(Debug)]
@@ -16,6 +18,15 @@ pub enum QueryError {
 impl From<sea_orm::DbErr> for QueryError {
     fn from(err: sea_orm::DbErr) -> Self {
         QueryError::Db(err)
+    }
+}
+
+impl From<StoreError> for QueryError {
+    fn from(err: StoreError) -> Self {
+        match err {
+            StoreError::Db(err) => QueryError::Db(err),
+            other => QueryError::Db(sea_orm::DbErr::Custom(other.to_string())),
+        }
     }
 }
 
@@ -41,9 +52,8 @@ pub struct CollectionResponse {
     pub photo_count: i64,
 }
 
-pub async fn list_collections<C: ConnectionTrait>(
-    db: &C,
-) -> Result<Vec<CollectionResponse>, QueryError> {
+pub async fn list_collections(store: &ObjectStore) -> Result<Vec<CollectionResponse>, QueryError> {
+    let db = store.db();
     let collections = collection::Entity::find()
         .order_by_asc(collection::Column::CreatedAt)
         .order_by_asc(collection::Column::Id)
@@ -60,18 +70,20 @@ pub async fn list_collections<C: ConnectionTrait>(
             .or_default()
             .push(picture);
     }
+    let objects = filenames(store, &by_collection).await?;
     let mut out = Vec::with_capacity(collections.len());
     for collection in collections {
         let photos = by_collection.remove(&collection.id).unwrap_or_default();
-        out.push(collection_response(collection, photos)?);
+        out.push(collection_response(collection, photos, &objects)?);
     }
     Ok(out)
 }
 
-pub async fn collection_by_public_id<C: ConnectionTrait>(
-    db: &C,
+pub async fn collection_by_public_id(
+    store: &ObjectStore,
     public_id: Uuid,
 ) -> Result<CollectionResponse, QueryError> {
+    let db = store.db();
     let collection = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(public_id))
         .one(db)
@@ -82,13 +94,15 @@ pub async fn collection_by_public_id<C: ConnectionTrait>(
         .order_by_asc(picture::Column::Id)
         .all(db)
         .await?;
-    collection_response(collection, photos)
+    let objects = load_objects(store, &photos).await?;
+    collection_response(collection, photos, &objects)
 }
 
-pub async fn photos_by_collection<C: ConnectionTrait>(
-    db: &C,
+pub async fn photos_by_collection(
+    store: &ObjectStore,
     public_id: Uuid,
 ) -> Result<Vec<PhotoResponse>, QueryError> {
+    let db = store.db();
     let collection = collection::Entity::find()
         .filter(collection::Column::PublicId.eq(public_id))
         .one(db)
@@ -99,42 +113,58 @@ pub async fn photos_by_collection<C: ConnectionTrait>(
         .order_by_asc(picture::Column::Id)
         .all(db)
         .await?;
+    let objects = load_objects(store, &photos).await?;
     photos
         .into_iter()
-        .map(|photo| photo_response(photo, collection.public_id))
+        .map(|photo| photo_response(photo, collection.public_id, &objects))
         .collect()
 }
 
-pub struct PictureFile {
-    pub storage_filename: String,
-    pub storage_folder: Uuid,
+pub struct PictureObject {
+    pub object_id: i64,
 }
 
-pub async fn picture_file<C: ConnectionTrait>(
+pub async fn picture_by_public_id<C: ConnectionTrait>(
     db: &C,
     public_id: Uuid,
-) -> Result<PictureFile, QueryError> {
+) -> Result<PictureObject, QueryError> {
     let picture = picture::Entity::find()
         .filter(picture::Column::PublicId.eq(public_id))
         .one(db)
         .await?
         .ok_or(QueryError::NotFound)?;
-    let collection = collection::Entity::find_by_id(picture.collection_id)
-        .one(db)
-        .await?
-        .ok_or(QueryError::NotFound)?;
-    Ok(PictureFile {
-        storage_filename: picture.storage_filename,
-        storage_folder: collection.storage_folder,
+    Ok(PictureObject {
+        object_id: picture.object_id,
     })
+}
+
+async fn filenames(
+    store: &ObjectStore,
+    by_collection: &HashMap<i64, Vec<picture::Model>>,
+) -> Result<HashMap<i64, ObjectInfo>, QueryError> {
+    let ids: Vec<i64> = by_collection
+        .values()
+        .flatten()
+        .map(|photo| photo.object_id)
+        .collect();
+    Ok(store.get_many(&ids).await?)
+}
+
+async fn load_objects(
+    store: &ObjectStore,
+    photos: &[picture::Model],
+) -> Result<HashMap<i64, ObjectInfo>, QueryError> {
+    let ids: Vec<i64> = photos.iter().map(|photo| photo.object_id).collect();
+    Ok(store.get_many(&ids).await?)
 }
 
 fn collection_response(
     collection: collection::Model,
     photos: Vec<picture::Model>,
+    objects: &HashMap<i64, ObjectInfo>,
 ) -> Result<CollectionResponse, QueryError> {
     let cover = cover_photo(&collection, &photos)
-        .map(|photo| photo_response(photo.clone(), collection.public_id))
+        .map(|photo| photo_response(photo.clone(), collection.public_id, objects))
         .transpose()?;
     Ok(CollectionResponse {
         id: collection.public_id.to_string(),
@@ -160,6 +190,7 @@ fn cover_photo<'a>(
 fn photo_response(
     photo: picture::Model,
     collection_public_id: Uuid,
+    objects: &HashMap<i64, ObjectInfo>,
 ) -> Result<PhotoResponse, QueryError> {
     let taken_at = photo.captured_at.format(&Rfc3339).map_err(|err| {
         QueryError::Db(sea_orm::DbErr::Custom(format!(
@@ -167,6 +198,15 @@ fn photo_response(
             photo.public_id
         )))
     })?;
+    let filename = objects
+        .get(&photo.object_id)
+        .and_then(|object| object.original_filename.clone())
+        .ok_or_else(|| {
+            QueryError::Db(sea_orm::DbErr::Custom(format!(
+                "picture {} has no stored filename",
+                photo.public_id
+            )))
+        })?;
     Ok(PhotoResponse {
         src: format!("/api/photos/{}/file", photo.public_id),
         id: photo.public_id.to_string(),
@@ -174,6 +214,6 @@ fn photo_response(
         width: photo.width,
         height: photo.height,
         taken_at,
-        filename: photo.original_filename,
+        filename,
     })
 }

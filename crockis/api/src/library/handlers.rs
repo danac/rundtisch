@@ -1,15 +1,18 @@
+use std::time::Duration;
+
 use axum::Json;
-use axum::extract::{Path, State};
-use axum::http::{StatusCode, header};
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use rundtisch::AppState;
 use rundtisch::auth::extract::SessionUser;
+use rundtisch::storage::{CachePolicy, DeliverOptions, Disposition, StoreError};
+use serde::Deserialize;
 use serde_json::json;
 
 use uuid::Uuid;
 
 use super::queries::{self, CollectionResponse, PhotoResponse, QueryError};
-use super::store::{content_type_for_storage_name, data_dir, storage_path};
 
 pub enum LibraryError {
     NotFound(&'static str),
@@ -40,7 +43,7 @@ pub async fn list_collections(
     _user: SessionUser,
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CollectionResponse>>, LibraryError> {
-    queries::list_collections(&state.db)
+    queries::list_collections(&state.objects)
         .await
         .map(Json)
         .map_err(|err| map_query(err, "Collection not found.", "Unable to load collections."))
@@ -51,7 +54,7 @@ pub async fn get_collection(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<CollectionResponse>, LibraryError> {
-    queries::collection_by_public_id(&state.db, id)
+    queries::collection_by_public_id(&state.objects, id)
         .await
         .map(Json)
         .map_err(|err| {
@@ -68,7 +71,7 @@ pub async fn list_photos(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<PhotoResponse>>, LibraryError> {
-    queries::photos_by_collection(&state.db, id)
+    queries::photos_by_collection(&state.objects, id)
         .await
         .map(Json)
         .map_err(|err| {
@@ -80,49 +83,55 @@ pub async fn list_photos(
         })
 }
 
+#[derive(Debug, Deserialize)]
+pub struct FileQuery {
+    #[serde(default)]
+    download: bool,
+}
+
 pub async fn photo_file(
     _user: SessionUser,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    Query(query): Query<FileQuery>,
+    method: Method,
+    headers: HeaderMap,
 ) -> Result<Response, LibraryError> {
-    let picture = queries::picture_file(&state.db, id)
+    let picture = queries::picture_by_public_id(&state.db, id)
         .await
         .map_err(|err| map_query(err, "Photo not found.", "Unable to load this photo."))?;
-    let path = storage_path(
-        &data_dir(),
-        picture.storage_folder,
-        &picture.storage_filename,
-    )
-    .ok_or_else(|| {
-        eprintln!(
-            "library: rejected storage filename {}",
-            picture.storage_filename
-        );
-        LibraryError::NotFound("Photo not found.")
-    })?;
-    let bytes = match tokio::fs::read(&path).await {
-        Ok(bytes) => bytes,
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("library: missing file {}", path.display());
-            return Err(LibraryError::NotFound("Photo not found."));
-        }
-        Err(err) => {
-            eprintln!("library: read {}: {err}", path.display());
-            return Err(LibraryError::Internal("Unable to load this photo."));
+    let object = state
+        .objects
+        .get(picture.object_id)
+        .await
+        .map_err(map_store)?;
+    let disposition = if query.download {
+        Disposition::attachment_from(&object)
+    } else {
+        Disposition::Inline {
+            filename: object.original_filename.clone(),
         }
     };
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            header::CONTENT_TYPE,
-            content_type_for_storage_name(&picture.storage_filename),
+    let delivery = state
+        .objects
+        .deliver(
+            &object,
+            DeliverOptions::new(
+                Some(disposition),
+                CachePolicy::private(Duration::from_secs(86_400)),
+            ),
         )
-        .header(header::CACHE_CONTROL, "private, max-age=86400")
-        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .header(header::CONTENT_LENGTH, bytes.len())
-        .body(axum::body::Body::from(bytes))
-        .map_err(|err| {
-            eprintln!("library: response: {err}");
+        .await
+        .map_err(map_store)?;
+    Ok(delivery.respond(&method, &headers).await)
+}
+
+fn map_store(err: StoreError) -> LibraryError {
+    match err {
+        StoreError::NotFound => LibraryError::NotFound("Photo not found."),
+        other => {
+            eprintln!("library: {other}");
             LibraryError::Internal("Unable to load this photo.")
-        })
+        }
+    }
 }

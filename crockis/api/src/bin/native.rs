@@ -6,6 +6,7 @@ use crockis::native_platform;
 use crockis::static_dir;
 use crockis::with_frontend;
 use crockis::{build_router, load_environment};
+use rundtisch::storage::storage_from_env;
 use rundtisch::{AppState, SmtpEmailSender};
 use tokio::signal;
 
@@ -17,10 +18,8 @@ async fn main() {
         .await
         .expect("database connection");
     let email = SmtpEmailSender::from_env().expect("SMTP email configuration");
-    let state = AppState {
-        db,
-        email: Arc::new(email),
-    };
+    let storage = storage_from_env().expect("object storage");
+    let state = AppState::new(db, Arc::new(email)).with_storage(storage);
     let mut router = build_router(state);
     if let Some(dir) = static_dir() {
         println!("Serving frontend from {}", dir.display());

@@ -15,9 +15,12 @@ pub struct Migration;
 /// the thumbnail.
 ///
 /// `public_id` uses the same `uuid` column as the auth tables (MySQL
-/// `binary(16)`). `storage_folder` is a separate unique UUID: picture files
-/// live at `{DATA_DIR}/{storage_folder}/{storage_filename}`.
-/// `checksum_blake3` is the raw 32-byte BLAKE3 digest of those bytes.
+/// `binary(16)`). `storage_folder` is a separate unique UUID and is the
+/// object-store prefix for that collection's files. Picture bytes, the
+/// original filename, and the BLAKE3 digest live on `storage_objects`.
+/// `pictures.object_id` points at that row and is not deleted with the file
+/// (`ON DELETE RESTRICT`). The storage migrator must run before this one so
+/// the foreign key target exists.
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
@@ -47,21 +50,22 @@ impl MigrationTrait for Migration {
                     .col(big_integer(Picture::CollectionId))
                     .col(integer(Picture::Width))
                     .col(integer(Picture::Height))
-                    .col(string(Picture::OriginalFilename))
                     .col(timestamp(Picture::CapturedAt))
-                    .col(string(Picture::StorageFilename).unique_key())
-                    .col(
-                        ColumnDef::new(Picture::ChecksumBlake3)
-                            .binary_len(32)
-                            .not_null()
-                            .take(),
-                    )
+                    .col(big_integer(Picture::ObjectId).unique_key())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk_pictures_collection_id")
                             .from(Picture::Table, Picture::CollectionId)
                             .to(Collection::Table, Collection::Id)
                             .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk_pictures_object_id")
+                            .from(Picture::Table, Picture::ObjectId)
+                            .to(StorageObject::Table, StorageObject::Id)
+                            .on_delete(ForeignKeyAction::Restrict)
                             .on_update(ForeignKeyAction::Cascade),
                     )
                     .to_owned(),
@@ -114,8 +118,13 @@ enum Picture {
     CollectionId,
     Width,
     Height,
-    OriginalFilename,
     CapturedAt,
-    StorageFilename,
-    ChecksumBlake3,
+    ObjectId,
+}
+
+#[derive(DeriveIden)]
+enum StorageObject {
+    #[sea_orm(iden = "storage_objects")]
+    Table,
+    Id,
 }

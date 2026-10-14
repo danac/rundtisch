@@ -1,11 +1,13 @@
 pub mod app;
-pub mod email;
 #[cfg(feature = "auth")]
 pub mod auth;
+pub mod email;
+#[cfg(feature = "storage")]
+pub mod storage;
 
 pub use app::{AppState, SecretError};
-pub use email::{EmailSendError, EmailSender};
 #[cfg(feature = "sendmail")]
 pub use email::SendmailEmailSender;
 #[cfg(feature = "smtp")]
 pub use email::SmtpEmailSender;
+pub use email::{EmailSendError, EmailSender};

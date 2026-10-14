@@ -48,6 +48,32 @@ smtp = [
     "lettre/ring",
     "lettre/webpki-roots",
 ]
+# Object store: table, hashing, and the FileStorage port. No HTTP delivery.
+storage = [
+    "dep:sea-orm-migration",
+    "dep:uuid",
+    "dep:getrandom",
+    "dep:time",
+    "dep:blake3",
+    "dep:sha2",
+    "dep:bytes",
+    "dep:futures-core",
+]
+# `deliver().respond()` — Range, validators, ETag, Content-Disposition.
+storage-http = [
+    "storage",
+    "dep:axum",
+    "dep:tower",
+    "dep:tower-http",
+    "dep:httpdate",
+    "dep:mime",
+    "dep:tokio",
+    "tokio/fs",
+    "tokio/rt",
+]
+storage-local = ["storage-http", "tokio/io-util"]
+storage-memory = ["storage"]
+storage-fetch = ["storage", "dep:reqwest", "dep:tokio", "tokio/rt"]
 
 [dependencies]
 async-trait = "0.1"
@@ -71,9 +97,17 @@ zeroize = { version = "1", default-features = false, features = ["alloc"], optio
 tokio = { version = "1.47.0", default-features = false, optional = true }
 lettre = { version = "0.11", default-features = false, optional = true }
 url = { version = "2", optional = true }
+blake3 = { version = "1", default-features = false, features = ["std", "pure"], optional = true }
+bytes = { version = "1", optional = true }
+futures-core = { version = "0.3", default-features = false, optional = true }
+tower = { version = "0.5", default-features = false, features = ["util"], optional = true }
+tower-http = { version = "0.6", default-features = false, features = ["fs"], optional = true }
+httpdate = { version = "1", optional = true }
+mime = { version = "0.3", optional = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
 
 [dev-dependencies]
-tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt"] }
+tokio = { version = "1.47.0", default-features = false, features = ["macros", "rt", "fs", "io-util", "net", "time"] }
 tower = { version = "0.5", default-features = false, features = ["util"] }
 sea-orm = { version = "2.0.3", default-features = false, features = ["sqlx-sqlite", "runtime-tokio-rustls"] }
 webauthn-authenticator-rs = { version = "0.6.1-dev", default-features = false, features = ["softpasskey"] }

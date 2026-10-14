@@ -29,7 +29,7 @@ React SPA for a private photo library. Sign-in, collections, and photos use the 
 
 ## Data layer
 
-Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use the same cookie against `/api/collections` and `/api/photos/{id}/file`. Collection and photo ids are hyphenated UUIDs. Cover images use an empty `alt` (the collection name is the heading). Download labels use the original filename.
+Auth calls `/api/auth/*` with `credentials: 'include'` (cookie session). Collection and photo reads use the same cookie against `/api/collections` and `/api/photos/{id}/file`. Downloads use `credentials: 'same-origin'` so a later cross-origin file redirect does not send the session cookie. Collection and photo ids are hyphenated UUIDs. Cover images use an empty `alt` (the collection name is the heading). Download labels use the original filename.
 
 ## Commands
 
@@ -52,7 +52,7 @@ npm run preview --prefix crockis/web
 
 ## API proxy
 
-Vite proxies `/api` to `http://localhost:8788` (`vite.config.ts`). Auth cookies need `credentials: 'include'`.
+Vite proxies `/api` to `http://localhost:8788` (`vite.config.ts`). Auth cookies need `credentials: 'include'`. Photo downloads use `credentials: 'same-origin'`.
 
 ## See also
 

@@ -4,10 +4,12 @@ use sea_orm::DatabaseConnection;
 use sea_orm::DbErr;
 use sea_orm_migration::prelude::*;
 
-/// Library migration history. Auth keeps its own table, `rundtisch_migrations_auth`.
+/// Library migration history. Auth keeps `rundtisch_migrations_auth` and the
+/// object store keeps `rundtisch_migrations_storage`.
 pub const MIGRATION_TABLE: &str = "crockis_migrations";
 
 pub use rundtisch::auth::Migrator as AuthMigrator;
+pub use rundtisch::storage::migrations::Migrator as StorageMigrator;
 
 /// Crockis photo-library migrations.
 pub struct LibraryMigrator;
@@ -22,12 +24,13 @@ impl MigratorTrait for LibraryMigrator {
     }
 }
 
-/// Apply auth migrations, then Crockis library migrations.
+/// Apply auth migrations, then object-store migrations, then library migrations.
 ///
-/// Each migrator records history in its own table, so an existing Edge
-/// database that already ran auth migrations only applies the library ones.
+/// Each migrator records history in its own table. `pictures.object_id`
+/// references `storage_objects`, so the storage migrator runs first.
 pub async fn migrate(db: &DatabaseConnection) -> Result<(), DbErr> {
     AuthMigrator::up(db, None).await?;
+    StorageMigrator::up(db, None).await?;
     LibraryMigrator::up(db, None).await?;
     Ok(())
 }
@@ -59,6 +62,8 @@ mod tests {
     #[tokio::test]
     async fn library_migration_is_repeatable_and_reversible() {
         let db = memory_db().await;
+        // MySQL refuses the pictures FK until `storage_objects` exists.
+        StorageMigrator::up(&db, None).await.unwrap();
         LibraryMigrator::up(&db, None).await.unwrap();
         LibraryMigrator::up(&db, None).await.unwrap();
         let names = table_names(&db).await;
@@ -82,6 +87,12 @@ mod tests {
         let names = table_names(&db).await;
         assert!(names.iter().any(|name| name == "auth_users"));
         assert!(names.iter().any(|name| name == "rundtisch_migrations_auth"));
+        assert!(names.iter().any(|name| name == "storage_objects"));
+        assert!(
+            names
+                .iter()
+                .any(|name| name == "rundtisch_migrations_storage")
+        );
         assert!(names.iter().any(|name| name == "collections"));
         assert!(names.iter().any(|name| name == "pictures"));
         assert!(names.iter().any(|name| name == MIGRATION_TABLE));
